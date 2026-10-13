@@ -163,14 +163,8 @@ export function useRestorePreviewAfterExport({
                   status: 'ready',
                   width: decoded.width,
                   height: decoded.height,
-                  timings: decoded.timings,
                 },
                 displaySource: 'quick',
-              },
-              renderState: {
-                ...prev.renderState,
-                status: 'ready',
-                lastRenderSource: 'quick',
               },
               sourceFile: {
                 ...prev.sourceFile,

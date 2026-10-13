@@ -33,7 +33,6 @@ function createSession(status: ImageSession['exportState']['status']) {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'idle' },
     exportState: {
       status,
       fullResCapability: { status: 'unknown' },

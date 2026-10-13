@@ -136,7 +136,6 @@ function createSession(): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready', lastRenderSource: 'bounded-hq' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },

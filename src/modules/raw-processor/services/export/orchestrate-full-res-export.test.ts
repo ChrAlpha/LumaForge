@@ -294,7 +294,6 @@ function createSession(
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready', lastRenderSource: 'quick' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 6000, height: 4000 },

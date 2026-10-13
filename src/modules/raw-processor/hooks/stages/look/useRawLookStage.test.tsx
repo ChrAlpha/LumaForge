@@ -123,7 +123,6 @@ function createSession(): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
       fullResCapability: {
@@ -976,9 +975,11 @@ describe('useRawLookStage setIntensity', () => {
     const session = createSession()
     const harness = renderLookStageHarness({ session })
 
-    // A render-state change that landed mid-scrub survives the update.
+    // A view change that landed mid-scrub survives the update.
     harness.publishSession((prev) =>
-      prev ? { ...prev, renderState: { status: 'rendering' } } : prev,
+      prev
+        ? { ...prev, viewState: { ...prev.viewState, compareSplit: 0.31 } }
+        : prev,
     )
     act(() => {
       harness.actions.setIntensity(0.62)
@@ -988,7 +989,7 @@ describe('useRawLookStage setIntensity', () => {
     // The session owns the look, so params are derived, not written.
     expect(harness.setColorIntent).not.toHaveBeenCalled()
     expect(harness.readSession()?.activeStyle?.currentIntensity).toBe(0.62)
-    expect(harness.readSession()?.renderState.status).toBe('rendering')
+    expect(harness.readSession()?.viewState.compareSplit).toBe(0.31)
   })
 })
 
@@ -1191,9 +1192,6 @@ describe('useRawLookStage LUT loads against the current session', () => {
       )
     })
 
-    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
-      'LUT_PARSE_FAILED',
-    )
     expect(harness.scheduleToast).toHaveBeenCalledTimes(1)
   })
 })
@@ -1322,9 +1320,6 @@ describe('useRawLookStage notifications', () => {
       ).resolves.toBe('failed')
     })
 
-    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
-      'LUT_UNSUPPORTED_FORMAT',
-    )
     harness.runScheduled()
     expect(shownToasts()).toEqual({
       error: [
@@ -1355,9 +1350,6 @@ describe('useRawLookStage notifications', () => {
     })
 
     expect(harness.setLut).not.toHaveBeenCalled()
-    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
-      'LUT_PARSE_FAILED',
-    )
     harness.runScheduled()
     expect(shownToasts()).toEqual({
       error: [
@@ -1392,9 +1384,6 @@ describe('useRawLookStage notifications', () => {
       ).resolves.toBe('failed')
     })
 
-    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
-      'LUT_PARSE_FAILED',
-    )
     harness.runScheduled()
     expect(shownToasts()).toEqual({
       error: [
@@ -1470,7 +1459,6 @@ describe('useRawLookStage notifications', () => {
     })
 
     expect(harness.scheduleToast).not.toHaveBeenCalled()
-    expect(getCurrentSession()?.renderState.lastErrorCode).toBeUndefined()
   })
 
   it('reports a cleared LUT', () => {
@@ -1499,9 +1487,6 @@ describe('useRawLookStage notifications', () => {
       )
     })
 
-    expect(getCurrentSession()?.renderState.lastErrorCode).toBe(
-      'LUT_PARSE_FAILED',
-    )
     harness.runScheduled()
     expect(shownToasts()).toEqual({
       error: [['Failed to load LUT', { description: 'Failed to parse LUT' }]],

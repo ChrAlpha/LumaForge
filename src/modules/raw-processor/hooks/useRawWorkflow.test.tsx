@@ -987,7 +987,6 @@ describe('useRawWorkflow embedded preview state', () => {
           await flushScheduledToasts()
 
           expect(jotaiStore.get(currentSessionAtom)).toBe(replacement)
-          expect(replacement?.renderState.lastErrorCode).toBeUndefined()
           expect(shownSource(result)).toBe('second.ARW')
           expect(result.current.status).toBe('ready')
           expect(result.current.error).toBeNull()
@@ -1077,7 +1076,6 @@ describe('useRawWorkflow embedded preview state', () => {
 
         const session = jotaiStore.get(currentSessionAtom)
         expect(session?.sourceFile.name).toBe('second.ARW')
-        expect(session?.renderState.lastErrorCode).toBeUndefined()
         expect(shownSource(result)).toBe('second.ARW')
         expect(result.current.error).toBeNull()
         expect(workers[0]!.runtime.dispose).toHaveBeenCalledTimes(1)

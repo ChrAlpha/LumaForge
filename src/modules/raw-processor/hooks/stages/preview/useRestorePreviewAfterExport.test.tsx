@@ -120,7 +120,6 @@ function createLoadingSession(
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'idle' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 400, height: 300 },
@@ -290,13 +289,8 @@ describe('useRestorePreviewAfterExport', () => {
       status: 'ready',
       width: 640,
       height: 480,
-      timings: { decodeMs: 12 },
     })
     expect(sessionRef.current?.previewBundle.displaySource).toBe('quick')
-    expect(sessionRef.current?.renderState).toEqual({
-      status: 'ready',
-      lastRenderSource: 'quick',
-    })
     expect(sessionRef.current?.sourceFile.metadata).toEqual(decoded.metadata)
     expect(runtimeWorkSessionIdRef.current).toBeNull()
     // Releasing the settled lease disposes its session once, without abort.

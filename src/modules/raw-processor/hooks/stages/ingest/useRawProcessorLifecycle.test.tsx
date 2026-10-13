@@ -39,7 +39,6 @@ function createSession(id = 'pending-session'): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'idle' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },

@@ -36,11 +36,7 @@ import {
 } from '../preview/preview-session-state'
 import { releaseSourceForReplacement } from '../workflow/raw-workflow-resources'
 import { prepareRawLoadState } from './raw-load-preparation'
-import {
-  getStableErrorCode,
-  mapRawDecodePhaseToProcessingStatus,
-  toUserFacingErrorCode,
-} from './workflow-status'
+import { mapRawDecodePhaseToProcessingStatus } from './workflow-status'
 
 class RawAdapterErrorLike extends Error {
   readonly code = 'RAW_PREWARM_FAILED'
@@ -235,7 +231,6 @@ export async function orchestrateRawLoad(
         height: number
         objectUrl?: string
         mimeType?: string
-        timings?: Record<string, number | undefined>
       },
       decoded?: DecodedImage | null,
     ) => {
@@ -426,7 +421,6 @@ export async function orchestrateRawLoad(
               height: event.height,
               objectUrl,
               mimeType: event.mimeType,
-              timings: event.timings,
             })
             break
           }
@@ -436,15 +430,11 @@ export async function orchestrateRawLoad(
             break
           }
           case 'quick-failed': {
-            const errorCode = toUserFacingErrorCode(event.errorCode)
-
-            ctx.atoms.setSession((prev) => {
-              if (!prev || prev.id !== nextSession.id) {
-                return prev
-              }
-
-              return applyQuickPreviewFailure(prev, errorCode)
-            })
+            ctx.atoms.setSession((prev) =>
+              prev && prev.id === nextSession.id
+                ? applyQuickPreviewFailure(prev)
+                : prev,
+            )
             ctx.atoms.setStatus('error')
             ctx.atoms.setProgress(100)
             ctx.atoms.setError(event.message)
@@ -466,15 +456,11 @@ export async function orchestrateRawLoad(
             break
           }
           case 'bounded-hq-failed': {
-            const errorCode = toUserFacingErrorCode(event.errorCode)
-
-            ctx.atoms.setSession((prev) => {
-              if (!prev || prev.id !== nextSession.id) {
-                return prev
-              }
-
-              return applyBoundedHqPreviewFailure(prev, errorCode)
-            })
+            ctx.atoms.setSession((prev) =>
+              prev && prev.id === nextSession.id
+                ? applyBoundedHqPreviewFailure(prev)
+                : prev,
+            )
             break
           }
           case 'bounded-hq-skipped': {
@@ -543,20 +529,7 @@ export async function orchestrateRawLoad(
     ctx.refs.pendingLoadSessionIdRef.current = null
 
     const message = err instanceof Error ? err.message : null
-    const errorCode = toUserFacingErrorCode(getStableErrorCode(err) ?? message)
     ctx.atoms.setError(message ?? 'Failed to load file')
-    ctx.atoms.setSession((prev) =>
-      prev && prev.id === loadSessionId
-        ? {
-            ...prev,
-            renderState: {
-              ...prev.renderState,
-              status: 'failed',
-              lastErrorCode: errorCode,
-            },
-          }
-        : prev,
-    )
     ctx.atoms.setStatus('error')
     ctx.services.notify({ kind: 'load-failed', message })
   } finally {

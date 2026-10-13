@@ -63,7 +63,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
@@ -153,7 +152,6 @@ describe('look session state transitions', () => {
       kind: 'builtin',
       name: 'Neutral',
       lutAsset: undefined,
-      inputPrepProfile: undefined,
     })
 
     const next = applyActiveLookToSession(session, {

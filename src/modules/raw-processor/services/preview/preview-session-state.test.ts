@@ -35,7 +35,6 @@ const baseSession: ImageSession = {
     panY: 0,
     fitMode: 'screen',
   },
-  renderState: { status: 'idle' },
   exportState: {
     status: 'idle',
     fullResCapability: { status: 'unknown' },
@@ -82,7 +81,6 @@ describe('preview session state transitions', () => {
         boundedHqPreview: { status: 'loading' },
         displaySource: 'none',
       },
-      renderState: { status: 'preparing' },
       exportState: {
         fullResCapability: { status: 'probing' },
       },
@@ -95,7 +93,6 @@ describe('preview session state transitions', () => {
       height: 1067,
       objectUrl: 'blob:embedded-preview',
       mimeType: 'image/jpeg',
-      timings: { total: 8 },
     })
 
     expect(session.previewBundle).toMatchObject({
@@ -105,12 +102,10 @@ describe('preview session state transitions', () => {
         height: 1067,
         objectUrl: 'blob:embedded-preview',
         mimeType: 'image/jpeg',
-        timings: { total: 8 },
       },
       displaySource: 'embedded',
     })
     expect(session.sourceFile).toEqual(baseSession.sourceFile)
-    expect(session.renderState).toEqual(baseSession.renderState)
   })
 
   it('upgrades quick preview to display source and records decoded metadata', () => {
@@ -135,21 +130,12 @@ describe('preview session state transitions', () => {
         status: 'ready',
         width: 800,
         height: 600,
-        timings: { total: 20 },
       },
       displaySource: 'quick',
     })
     expect(session.sourceFile).toMatchObject({
-      cameraBrand: 'Sony',
-      cameraModel: 'A7',
-      rawFormat: 'arw',
-      width: 800,
-      height: 600,
+      metadata: decoded.metadata,
       supportLevel: 'experimental',
-    })
-    expect(session.renderState).toEqual({
-      status: 'ready',
-      lastRenderSource: 'quick',
     })
   })
 
@@ -167,8 +153,7 @@ describe('preview session state transitions', () => {
     )
 
     expect(session.sourceFile).toMatchObject({
-      cameraBrand: 'Sony',
-      cameraModel: 'A7',
+      metadata: { make: 'Sony', model: 'A7' },
       supportLevel: 'unsupported',
     })
   })
@@ -194,13 +179,8 @@ describe('preview session state transitions', () => {
         status: 'ready',
         width: 4000,
         height: 3000,
-        timings: { total: 120 },
       },
       displaySource: 'bounded-hq',
-    })
-    expect(session.renderState).toEqual({
-      status: 'ready',
-      lastRenderSource: 'bounded-hq',
     })
   })
 
@@ -212,25 +192,12 @@ describe('preview session state transitions', () => {
       mimeType: 'image/jpeg',
     })
 
-    const session = applyQuickPreviewFailure(
-      embeddedSession,
-      'RAW_QUICK_DECODE_FAILED',
-    )
+    const session = applyQuickPreviewFailure(embeddedSession)
 
     expect(session.previewBundle).toMatchObject({
-      quickDecodePreview: {
-        status: 'failed',
-        errorCode: 'RAW_QUICK_DECODE_FAILED',
-      },
-      boundedHqPreview: {
-        status: 'failed',
-        errorCode: 'RAW_QUICK_DECODE_FAILED',
-      },
+      quickDecodePreview: { status: 'failed' },
+      boundedHqPreview: { status: 'failed' },
       displaySource: 'embedded',
-    })
-    expect(session.renderState).toEqual({
-      status: 'failed',
-      lastErrorCode: 'RAW_QUICK_DECODE_FAILED',
     })
     expect(session.exportState.fullResCapability).toEqual({
       status: 'unsupported',
@@ -246,20 +213,13 @@ describe('preview session state transitions', () => {
       createDecodedImage('quick'),
     )
 
-    const session = applyBoundedHqPreviewFailure(
-      quickSession,
-      'RAW_HQ_DECODE_FAILED',
-    )
+    const session = applyBoundedHqPreviewFailure(quickSession)
 
     expect(session.previewBundle).toMatchObject({
       quickDecodePreview: { status: 'ready' },
-      boundedHqPreview: {
-        status: 'failed',
-        errorCode: 'RAW_HQ_DECODE_FAILED',
-      },
+      boundedHqPreview: { status: 'failed' },
       displaySource: 'quick',
     })
-    expect(session.renderState).toEqual(quickSession.renderState)
     expect(session.exportState).toEqual(quickSession.exportState)
   })
 
@@ -284,6 +244,5 @@ describe('preview session state transitions', () => {
       },
       displaySource: 'quick',
     })
-    expect(session.renderState).toEqual(quickSession.renderState)
   })
 })

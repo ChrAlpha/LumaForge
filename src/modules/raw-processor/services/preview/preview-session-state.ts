@@ -8,7 +8,6 @@ type PreviewReadyPayload = {
   height: number
   objectUrl?: string
   mimeType?: string
-  timings?: Record<string, number | undefined>
 }
 
 export function applyPreviewLoadStarted(
@@ -27,9 +26,6 @@ export function applyPreviewLoadStarted(
       quickDecodePreview: { status: 'loading' },
       boundedHqPreview: { status: 'loading' },
     },
-    renderState: {
-      status: 'preparing',
-    },
     exportState: {
       ...session.exportState,
       fullResCapability: { status: 'probing' },
@@ -43,15 +39,6 @@ export function applyPreviewReady(
   payload: PreviewReadyPayload,
   decoded?: DecodedImage | null,
 ): ImageSession {
-  const decodedSource =
-    decoded?.source ?? (source === 'embedded' ? null : source)
-  const renderState: ImageSession['renderState'] = decodedSource
-    ? {
-        status: 'ready',
-        lastRenderSource: decodedSource,
-      }
-    : session.renderState
-
   const previewBundle = {
     ...session.previewBundle,
     embeddedPreview:
@@ -62,7 +49,6 @@ export function applyPreviewReady(
             height: payload.height,
             objectUrl: payload.objectUrl,
             mimeType: payload.mimeType,
-            timings: payload.timings,
           }
         : session.previewBundle.embeddedPreview,
     quickDecodePreview:
@@ -71,7 +57,6 @@ export function applyPreviewReady(
             status: 'ready' as const,
             width: payload.width,
             height: payload.height,
-            timings: payload.timings ?? decoded?.timings,
           }
         : session.previewBundle.quickDecodePreview,
     boundedHqPreview:
@@ -80,7 +65,6 @@ export function applyPreviewReady(
             status: 'ready' as const,
             width: payload.width,
             height: payload.height,
-            timings: payload.timings ?? decoded?.timings,
           }
         : session.previewBundle.boundedHqPreview,
   }
@@ -88,38 +72,20 @@ export function applyPreviewReady(
   return {
     ...session,
     sourceFile: decoded
-      ? {
-          ...session.sourceFile,
-          metadata: decoded.metadata,
-          cameraBrand: decoded.metadata.make,
-          cameraModel: decoded.metadata.model,
-          rawFormat: session.sourceFile.extension,
-          width: decoded.width,
-          height: decoded.height,
-        }
+      ? { ...session.sourceFile, metadata: decoded.metadata }
       : session.sourceFile,
     previewBundle: {
       ...previewBundle,
       displaySource: selectDisplaySource(previewBundle),
     },
-    renderState,
   }
 }
 
-export function applyQuickPreviewFailure(
-  session: ImageSession,
-  errorCode: string,
-): ImageSession {
+export function applyQuickPreviewFailure(session: ImageSession): ImageSession {
   const previewBundle = {
     ...session.previewBundle,
-    quickDecodePreview: {
-      status: 'failed' as const,
-      errorCode,
-    },
-    boundedHqPreview: {
-      status: 'failed' as const,
-      errorCode,
-    },
+    quickDecodePreview: { status: 'failed' as const },
+    boundedHqPreview: { status: 'failed' as const },
   }
 
   return {
@@ -127,11 +93,6 @@ export function applyQuickPreviewFailure(
     previewBundle: {
       ...previewBundle,
       displaySource: selectDisplaySource(previewBundle),
-    },
-    renderState: {
-      ...session.renderState,
-      status: 'failed',
-      lastErrorCode: errorCode,
     },
     exportState: {
       ...session.exportState,
@@ -145,14 +106,10 @@ export function applyQuickPreviewFailure(
 
 export function applyBoundedHqPreviewFailure(
   session: ImageSession,
-  errorCode: string,
 ): ImageSession {
   const previewBundle = {
     ...session.previewBundle,
-    boundedHqPreview: {
-      status: 'failed' as const,
-      errorCode,
-    },
+    boundedHqPreview: { status: 'failed' as const },
   }
 
   return {

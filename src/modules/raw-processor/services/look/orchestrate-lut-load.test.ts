@@ -629,22 +629,6 @@ describe('orchestrateLutLoadFromFile outcome', () => {
       },
     ])
   })
-
-  it('reports a failure only after recording its code on the session', async () => {
-    const file = asTextFile('not a lut', 'fixture.txt')
-    const { ctx } = buildCtx()
-    const order: string[] = []
-    vi.mocked(ctx.atoms.setSession).mockImplementation(() => {
-      order.push('session')
-    })
-    ctx.services.notify = (notification) => {
-      order.push(notification.kind)
-    }
-
-    await orchestrateLutLoadFromFile(file, ctx)
-
-    expect(order).toEqual(['session', 'unsupported-format'])
-  })
 })
 
 describe('orchestrateProfileSelection against the stored LUT', () => {

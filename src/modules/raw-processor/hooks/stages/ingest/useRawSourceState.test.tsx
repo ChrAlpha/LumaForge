@@ -39,7 +39,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'idle' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },

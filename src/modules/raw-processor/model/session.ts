@@ -75,11 +75,8 @@ export type PreviewAsset = {
   status: PreviewStatus
   width?: number
   height?: number
-  bitmap?: ImageBitmap | null
   objectUrl?: string
   mimeType?: string
-  timings?: Record<string, number | undefined>
-  errorCode?: string
 }
 
 export type PreviewBundle = {
@@ -110,10 +107,6 @@ export type StyleAsset = {
     /** SHA-256 of the .cube bytes; recorded in export manifests. */
     sha256?: string
     profileResolution?: LUTContractResolution
-  }
-  inputPrepProfile?: {
-    profileId: string
-    description: string
   }
 }
 
@@ -183,11 +176,6 @@ export type ImageSession = {
     extension: string
     sizeBytes: number
     metadata?: ImageMetadata
-    rawFormat?: string
-    cameraBrand?: string
-    cameraModel?: string
-    width?: number
-    height?: number
     supportLevel: SupportLevel
   }
   previewBundle: PreviewBundle
@@ -218,11 +206,6 @@ export type ImageSession = {
     panX: number
     panY: number
     fitMode: 'screen' | 'custom'
-  }
-  renderState: {
-    status: 'idle' | 'preparing' | 'rendering' | 'ready' | 'failed'
-    lastRenderSource?: Extract<DisplaySource, 'quick' | 'bounded-hq'>
-    lastErrorCode?: string
   }
   exportState: {
     status: 'idle' | 'preparing' | 'exporting' | 'ready' | 'failed'

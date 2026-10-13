@@ -33,7 +33,6 @@ function createSession(id = 'session-compare'): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready', lastRenderSource: 'quick' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },

@@ -43,7 +43,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready' },
     exportState: {
       status: 'ready',
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
@@ -115,7 +114,6 @@ describe('preview viewport session state', () => {
       fitMode: 'custom',
     })
     expect(next.previewBundle).toBe(session.previewBundle)
-    expect(next.renderState).toBe(session.renderState)
     expect(next.exportState).toBe(session.exportState)
   })
 })

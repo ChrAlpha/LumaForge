@@ -54,10 +54,7 @@ describe('session derivation', () => {
     const hqFailed = sessionWith(
       {
         quickDecodePreview: { status: 'ready', width: 2000, height: 1250 },
-        boundedHqPreview: {
-          status: 'failed',
-          errorCode: 'RAW_HQ_DECODE_FAILED',
-        },
+        boundedHqPreview: { status: 'failed' },
       },
       SUPPORTED,
     )

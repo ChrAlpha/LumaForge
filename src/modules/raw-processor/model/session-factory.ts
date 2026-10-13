@@ -84,7 +84,6 @@ export function createImageSession(
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'idle' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'unknown' },

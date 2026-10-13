@@ -25,11 +25,7 @@ import {
 } from '~/lib/profiles/fetch'
 
 import type { ImageSession } from '../../model/session'
-import {
-  getStableErrorCode,
-  isAbortError,
-  toUserFacingErrorCode,
-} from '../ingest/workflow-status'
+import { isAbortError } from '../ingest/workflow-status'
 import {
   applyActiveLookToSession,
   preserveCustomLookIntensity,
@@ -88,19 +84,9 @@ interface LoadLUTContentOptions {
   mayApply: () => boolean
 }
 
-export class LUTLoadError extends Error {
-  readonly code: string
-
-  constructor(code: string, message: string) {
-    super(message)
-    this.name = 'LUTLoadError'
-    this.code = code
-  }
-}
-
 /**
  * Thrown when a catalog's trusted contract does not apply to the LUT it came
- * with. It carries no code, so the session records it as a parse failure.
+ * with; it is reported as its own notification, not as a parse failure.
  */
 class UnsupportedLUTContractError extends Error {
   constructor() {
@@ -147,23 +133,6 @@ export interface LutLoadContext {
 
 function reportLUTLoadFailure(error: unknown, ctx: LutLoadContext): void {
   const message = error instanceof Error ? error.message : null
-  const stableCode = getStableErrorCode(error)
-  const errorCode =
-    toUserFacingErrorCode(stableCode ?? message) === 'RAW_UNKNOWN'
-      ? 'LUT_PARSE_FAILED'
-      : toUserFacingErrorCode(stableCode ?? message)
-
-  ctx.atoms.setSession((prev) =>
-    prev
-      ? {
-          ...prev,
-          renderState: {
-            ...prev.renderState,
-            lastErrorCode: errorCode,
-          },
-        }
-      : prev,
-  )
   ctx.services.notify(
     error instanceof UnsupportedLUTContractError
       ? { kind: 'unsupported-contract' }
@@ -220,10 +189,7 @@ async function loadLUTContent(
 
   const validation = validateLUT(contracted)
   if (!validation.valid) {
-    throw new LUTLoadError(
-      'LUT_INVALID',
-      validation.errors[0] ?? 'Invalid LUT file.',
-    )
+    throw new Error(validation.errors[0] ?? 'Invalid LUT file.')
   }
 
   if (!options.mayApply()) {
@@ -265,17 +231,6 @@ export async function orchestrateLutLoadFromFile(
 
   if (!mayApply()) return 'aborted'
   if (!isSupportedLUT(file.name)) {
-    ctx.atoms.setSession((prev) =>
-      prev
-        ? {
-            ...prev,
-            renderState: {
-              ...prev.renderState,
-              lastErrorCode: 'LUT_UNSUPPORTED_FORMAT',
-            },
-          }
-        : prev,
-    )
     ctx.services.notify({ kind: 'unsupported-format' })
     return 'failed'
   }

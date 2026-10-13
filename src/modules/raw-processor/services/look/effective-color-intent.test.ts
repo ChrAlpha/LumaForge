@@ -53,7 +53,6 @@ function createSession(activeStyle: StyleAsset | null): ImageSession {
       panY: 20,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },

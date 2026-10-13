@@ -73,7 +73,6 @@ function createSession(
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },

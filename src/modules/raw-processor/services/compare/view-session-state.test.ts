@@ -50,7 +50,6 @@ function createSession(overrides: Partial<ImageSession> = {}): ImageSession {
       panY: 0,
       fitMode: 'screen',
     },
-    renderState: { status: 'ready' },
     exportState: {
       status: 'idle',
       fullResCapability: { status: 'supported', width: 1600, height: 1200 },
