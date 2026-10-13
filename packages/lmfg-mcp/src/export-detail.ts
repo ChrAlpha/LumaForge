@@ -1,22 +1,25 @@
 import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises'
+import { link, mkdir, open, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import {
   resolveWorkspaceRoot,
-  SessionRecordSchema,
   toFileUri,
   workspacePaths,
 } from '@lumaforge/lmfg-cli'
 import type { RenderManifest } from '@lumaforge/render-engine'
 import { canonicalizeJson } from '@lumaforge/render-engine'
-import {
-  checkRecordedExportGeometry,
-  parseRenderManifest,
-} from '@lumaforge/render-engine/manifest'
+import { checkRecordedExportGeometry } from '@lumaforge/render-engine/manifest'
 import { z } from 'zod'
+
+import {
+  assertCanonical,
+  loadSession,
+  readCapturedFile,
+  readSealedManifest,
+} from './native-tool'
 
 export const EXPORT_DETAIL_LIMITS = {
   max_source_bytes: 512 * 1024 * 1024,
@@ -59,69 +62,8 @@ type DecoderLoader = () => Promise<{ default: typeof import('sharp') }>
 const digest = (bytes: Buffer) =>
   createHash('sha256').update(bytes).digest('hex')
 
-async function assertCanonical(path: string): Promise<void> {
-  if ((await realpath(path)) !== path)
-    throw new Error(
-      'Export detail paths must be canonical and contain no symlinks.',
-    )
-}
-
-async function readCaptured(path: string, limit: number): Promise<Buffer> {
-  await assertCanonical(path)
-  const handle = await open(
-    path,
-    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-  )
-  try {
-    const before = await handle.stat()
-    if (!before.isFile() || before.size > limit)
-      throw new Error(
-        `Export detail input must be a regular file of at most ${limit} bytes.`,
-      )
-    const bytes = Buffer.alloc(before.size + 1)
-    let length = 0
-    while (length < bytes.length) {
-      const read = await handle.read(bytes, length, bytes.length - length, null)
-      if (!read.bytesRead) break
-      length += read.bytesRead
-    }
-    const after = await handle.stat()
-    await assertCanonical(path)
-    const current = await lstat(path)
-    if (
-      length !== before.size ||
-      after.size !== before.size ||
-      after.mtimeMs !== before.mtimeMs ||
-      after.ctimeMs !== before.ctimeMs ||
-      current.ino !== before.ino ||
-      current.dev !== before.dev ||
-      current.isSymbolicLink()
-    )
-      throw new Error('Export detail input changed while it was being read.')
-    return bytes.subarray(0, length)
-  } finally {
-    await handle.close()
-  }
-}
-
-async function readMetadata(path: string): Promise<unknown> {
-  return JSON.parse((await readCaptured(path, 1024 * 1024)).toString('utf8'))
-}
-
 async function readExportManifest(path: string): Promise<RenderManifest> {
-  const parsed = parseRenderManifest(await readMetadata(path))
-  if (!parsed.ok) {
-    if (parsed.issues.some((issue) => issue.path === 'manifest_sha256'))
-      throw new Error(
-        'Export manifest canonical hash does not match its full content.',
-      )
-    throw new Error(
-      `Export manifest is not a valid render manifest: ${parsed.issues
-        .map((issue) => `${issue.path} ${issue.message}`)
-        .join(' ')}`,
-    )
-  }
-  const { manifest } = parsed
+  const manifest = await readSealedManifest(path)
   if (manifest.kind !== 'export' || manifest.policy.kind !== 'export-full')
     throw new Error(
       'Export detail requires a full-resolution export manifest (kind export, policy export-full).',
@@ -154,7 +96,7 @@ async function publish(path: string, bytes: Buffer): Promise<void> {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     }
-    if (!(await readCaptured(path, bytes.length)).equals(bytes))
+    if (!(await readCapturedFile(path, bytes.length)).equals(bytes))
       throw new Error(
         'Existing content-addressed export detail differs from its expected bytes.',
       )
@@ -207,11 +149,7 @@ export async function createExportDetail(
   const input = ExportDetailInputSchema.parse(args)
   const root = resolveWorkspaceRoot(cwd, input.workspace)
   await assertCanonical(root)
-  const session = SessionRecordSchema.parse(
-    await readMetadata(workspacePaths.sessionFile(root, input.session)),
-  )
-  if (session.id !== input.session)
-    throw new Error('Export detail session identity does not match.')
+  const session = await loadSession(root, input.session)
   const exportsDir = workspacePaths.exports(root, input.session)
   const manifest = await readExportManifest(
     workspacePaths.exportManifestFile(root, input.session, input.export_name),
@@ -240,7 +178,7 @@ export async function createExportDetail(
     input.session,
     input.export_name,
   )
-  const jpeg = await readCaptured(
+  const jpeg = await readCapturedFile(
     jpegPath,
     EXPORT_DETAIL_LIMITS.max_source_bytes,
   )

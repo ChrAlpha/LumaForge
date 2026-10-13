@@ -1,7 +1,6 @@
-import { Buffer } from 'node:buffer'
+import type { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { constants } from 'node:fs'
-import { open, realpath } from 'node:fs/promises'
+import { realpath } from 'node:fs/promises'
 import { basename } from 'node:path'
 
 import type { ContactSheetMap } from '@lumaforge/lmfg-cli'
@@ -9,15 +8,22 @@ import {
   ContactSheetMapSchema,
   IterationRecordSchema,
   resolveWorkspaceRoot,
-  SessionRecordSchema,
   toFileUri,
   workspacePaths,
 } from '@lumaforge/lmfg-cli'
 import type { RenderManifest } from '@lumaforge/render-engine'
-import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+
+import {
+  loadSession,
+  nativeError,
+  nativeResult,
+  readCapturedFile,
+  readJsonRecord,
+  readSealedManifest,
+} from './native-tool'
 
 export const IMAGE_LIMITS = {
   max_bytes: 8 * 1024 * 1024,
@@ -55,54 +61,6 @@ export const ImageReadInputSchema = z.strictObject({
 })
 
 type ImageReadInput = z.infer<typeof ImageReadInputSchema>
-
-async function readBounded(path: string, limit: number): Promise<Buffer> {
-  if ((await realpath(path)) !== path)
-    throw new Error('Artifact paths must not contain symlinks.')
-  const handle = await open(
-    path,
-    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-  )
-  try {
-    const stat = await handle.stat()
-    if (!stat.isFile() || stat.size > limit)
-      throw new Error(
-        `Artifact must be a regular file of at most ${limit} bytes.`,
-      )
-    const buffer = Buffer.alloc(limit + 1)
-    let length = 0
-    while (length < buffer.length) {
-      const { bytesRead } = await handle.read(
-        buffer,
-        length,
-        buffer.length - length,
-        null,
-      )
-      if (bytesRead === 0) break
-      length += bytesRead
-    }
-    if (length > limit) throw new Error(`Artifact exceeds ${limit} bytes.`)
-    return buffer.subarray(0, length)
-  } finally {
-    await handle.close()
-  }
-}
-
-async function readMetadata(path: string): Promise<unknown> {
-  return JSON.parse((await readBounded(path, 1024 * 1024)).toString('utf8'))
-}
-
-async function readManifest(path: string): Promise<RenderManifest> {
-  const parsed = parseRenderManifest(await readMetadata(path))
-  if (parsed.ok) return parsed.manifest
-  if (parsed.issues.some((issue) => issue.path === 'manifest_sha256'))
-    throw new Error('Manifest canonical hash does not match its full content.')
-  throw new Error(
-    `Manifest is not a valid render manifest: ${parsed.issues
-      .map((issue) => `${issue.path} ${issue.message}`)
-      .join(' ')}`,
-  )
-}
 
 function skipJpegScan(bytes: Buffer, start: number): number {
   let offset = start
@@ -183,13 +141,7 @@ function jpegDimensions(bytes: Buffer): { width: number; height: number } {
 
 async function loadImage(cwd: string, input: ImageReadInput) {
   const root = await realpath(resolveWorkspaceRoot(cwd, input.workspace))
-  const session = SessionRecordSchema.parse(
-    await readMetadata(workspacePaths.sessionFile(root, input.session)),
-  )
-  if (session.id !== input.session)
-    throw new Error(
-      'Session record identity does not match the requested session.',
-    )
+  const session = await loadSession(root, input.session)
   const { artifact } = input
   let path: string
   let manifest: RenderManifest | null = null
@@ -197,7 +149,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
   let tags = new Map<string, string | null>()
   if (artifact.kind === 'preview') {
     path = workspacePaths.previewFile(root, input.session, artifact.preview_id)
-    manifest = await readManifest(
+    manifest = await readSealedManifest(
       workspacePaths.previewManifestFile(
         root,
         input.session,
@@ -206,7 +158,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
     )
   } else {
     const plan = IterationRecordSchema.parse(
-      await readMetadata(
+      await readJsonRecord(
         workspacePaths.iterationPlanFile(
           root,
           input.session,
@@ -230,7 +182,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
         artifact.iteration_id,
         artifact.candidate_id,
       )
-      manifest = await readManifest(
+      manifest = await readSealedManifest(
         workspacePaths.candidateManifestFile(
           root,
           input.session,
@@ -246,7 +198,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
         artifact.name,
       )
       map = ContactSheetMapSchema.parse(
-        await readMetadata(
+        await readJsonRecord(
           workspacePaths.contactSheetMapFile(
             root,
             input.session,
@@ -264,7 +216,7 @@ async function loadImage(cwd: string, input: ImageReadInput) {
         )
     }
   }
-  const bytes = await readBounded(path, IMAGE_LIMITS.max_bytes)
+  const bytes = await readCapturedFile(path, IMAGE_LIMITS.max_bytes)
   const size = jpegDimensions(bytes)
   const digest = createHash('sha256').update(bytes).digest('hex')
   if (
@@ -329,34 +281,12 @@ export async function readSessionImage(
       cwd,
       ImageReadInputSchema.parse(args),
     )
-    const structured = { schema: 'lmfg.image.read.v1', ok: true, result }
-    return {
-      content: [
-        { type: 'text', text: JSON.stringify(structured) },
-        {
-          type: 'image',
-          mimeType: 'image/jpeg',
-          data: bytes.toString('base64'),
-        },
-      ],
-      structuredContent: structured,
-      isError: false,
-    }
+    return nativeResult('lmfg.image.read.v1', result, {
+      mimeType: 'image/jpeg',
+      bytes,
+    })
   } catch (error) {
-    const structured = {
-      schema: 'lmfg.error.v1',
-      ok: false,
-      error: {
-        code: 'image.refused',
-        message:
-          error instanceof Error ? error.message : 'Image could not be read.',
-      },
-    }
-    return {
-      content: [{ type: 'text', text: JSON.stringify(structured) }],
-      structuredContent: structured,
-      isError: true,
-    }
+    return nativeError('image.refused', error, 'Image could not be read.')
   }
 }
 

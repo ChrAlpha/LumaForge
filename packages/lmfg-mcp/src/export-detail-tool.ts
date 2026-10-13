@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 
 import type { ExportDetailInput } from './export-detail'
 import { createExportDetail, ExportDetailInputSchema } from './export-detail'
+import { nativeError, nativeResult } from './native-tool'
 
 export async function readExportDetail(
   cwd: string,
@@ -10,32 +11,16 @@ export async function readExportDetail(
 ): Promise<CallToolResult> {
   try {
     const { png, result } = await createExportDetail(cwd, args)
-    const structured = { schema: 'lmfg.export.detail.v1', ok: true, result }
-    return {
-      content: [
-        { type: 'text', text: JSON.stringify(structured) },
-        { type: 'image', mimeType: 'image/png', data: png.toString('base64') },
-      ],
-      structuredContent: structured,
-      isError: false,
-    }
+    return nativeResult('lmfg.export.detail.v1', result, {
+      mimeType: 'image/png',
+      bytes: png,
+    })
   } catch (error) {
-    const structured = {
-      schema: 'lmfg.error.v1',
-      ok: false,
-      error: {
-        code: 'export_detail.refused',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Export detail could not be decoded.',
-      },
-    }
-    return {
-      content: [{ type: 'text', text: JSON.stringify(structured) }],
-      structuredContent: structured,
-      isError: true,
-    }
+    return nativeError(
+      'export_detail.refused',
+      error,
+      'Export detail could not be decoded.',
+    )
   }
 }
 
