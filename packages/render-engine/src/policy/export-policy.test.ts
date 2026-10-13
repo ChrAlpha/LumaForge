@@ -16,7 +16,6 @@ const baseCap: CapabilityVector = {
 const opfsRuntime: ExportRuntimeResources = Object.freeze({
   opfsSinkAvailable: true,
   opfsAvailableMB: 4_000,
-  streamingSinkAvailable: true,
 })
 
 describe('deriveExportPolicy', () => {
@@ -28,7 +27,6 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'balanced',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       opfsRuntime,
     )
@@ -38,7 +36,6 @@ describe('deriveExportPolicy', () => {
     expect(p.workerMemoryProfile).toBe('desktop')
     expect(p.outputSink).toBe('opfs-file')
     expect(p.productCopy).toBe('high-performance')
-    expect(p.persistEveryNRows).toBe(4096)
     expect(p.derivedLabel).toBe(
       'desktop-thr2-rs512-opfs-file-wkchromium-ffdesktop',
     )
@@ -52,7 +49,6 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'max',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       opfsRuntime,
     )
@@ -76,7 +72,6 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'max',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       opfsRuntime,
     )
@@ -84,29 +79,6 @@ describe('deriveExportPolicy', () => {
     expect(p.rowSlice).toBe(128)
     expect(p.concurrency).toBe(1)
     expect(p.workerMemoryProfile).toBe('low-memory')
-  })
-
-  it('user-cancel is idempotent vs no prior state', () => {
-    const intent = {
-      performancePreference: 'balanced' as const,
-      previousResourceFailure: false,
-      previousCrashLikeInterruption: false,
-      previousUserInterrupted: false,
-    }
-    const a = deriveExportPolicy(
-      baseCap,
-      { width: 6000, height: 4000 },
-      intent,
-      opfsRuntime,
-    )
-    const b = deriveExportPolicy(
-      baseCap,
-      { width: 6000, height: 4000 },
-      { ...intent, previousUserInterrupted: true },
-      opfsRuntime,
-    )
-
-    expect(b).toEqual(a)
   })
 
   it('previousResourceFailure halves rowSlice and floors concurrency', () => {
@@ -117,7 +89,6 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'max',
         previousResourceFailure: true,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       opfsRuntime,
     )
@@ -135,7 +106,6 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'max',
         previousResourceFailure: false,
         previousCrashLikeInterruption: true,
-        previousUserInterrupted: false,
       },
       opfsRuntime,
     )
@@ -145,7 +115,7 @@ describe('deriveExportPolicy', () => {
     expect(p.productCopy).toBe('interrupted-retry')
   })
 
-  it('falls through to streaming when OPFS cannot fit', () => {
+  it('falls through to blob handoff when OPFS cannot fit', () => {
     const p = deriveExportPolicy(
       baseCap,
       { width: 20_000, height: 15_000 },
@@ -153,16 +123,14 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'balanced',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       Object.freeze({
         opfsSinkAvailable: true,
         opfsAvailableMB: 100,
-        streamingSinkAvailable: true,
       }),
     )
 
-    expect(p.outputSink).toBe('streaming')
+    expect(p.outputSink).toBe('blob-handoff')
   })
 
   it('keeps known-low-memory desktop export single-worker', () => {
@@ -176,7 +144,6 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'max',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       opfsRuntime,
     )
@@ -196,12 +163,10 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'safe',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       Object.freeze({
         opfsSinkAvailable: false,
         opfsAvailableMB: null,
-        streamingSinkAvailable: false,
       }),
     )
 
@@ -222,12 +187,10 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'safe',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       Object.freeze({
         opfsSinkAvailable: false,
         opfsAvailableMB: null,
-        streamingSinkAvailable: false,
       }),
     )
 
@@ -251,12 +214,10 @@ describe('deriveExportPolicy', () => {
         performancePreference: 'max',
         previousResourceFailure: false,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
       Object.freeze({
         opfsSinkAvailable: false,
         opfsAvailableMB: null,
-        streamingSinkAvailable: false,
       }),
     )
 

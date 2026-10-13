@@ -99,7 +99,6 @@ describe('export execution profile selection', () => {
       runtime: {
         opfsSinkAvailable: true,
         opfsAvailableMB: 4_000,
-        streamingSinkAvailable: false,
       },
     })
     const events: unknown[] = []

@@ -1,12 +1,11 @@
 import type { PerformancePreference } from '../policy/export-policy'
+import { preferenceWeight } from '../policy/export-policy'
 
 export function normalizeExportConcurrency(
   requested: number | undefined,
   preference: PerformancePreference,
 ) {
-  const defaultValue =
-    preference === 'safe' ? 1 : preference === 'balanced' ? 2 : 3
-  const raw = requested ?? defaultValue
+  const raw = requested ?? preferenceWeight(preference)
 
   if (!Number.isFinite(raw) || raw <= 0) {
     throw new Error('FULL_RES_EXPORT_INVALID_CONCURRENCY')

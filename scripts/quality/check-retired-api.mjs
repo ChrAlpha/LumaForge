@@ -64,6 +64,9 @@ const RETIRED_EXPORTS = Object.freeze({
     'VerifiedManifestRenderParamsFailure',
     'VerifiedManifestRenderParamsResult',
     'readVerifiedManifestRenderParams',
+    // Policy copy and inputs for a source reselection and a streaming sink.
+    'ExportOrchestrationCopy',
+    'ExportRuntimeResourcesInput',
   ]),
   '@lumaforge/luma-color-runtime': Object.freeze([
     // The duplicate color graph intent.
@@ -110,6 +113,11 @@ const RETIRED_MEMBERS = Object.freeze({
   '@lumaforge/render-engine': Object.freeze({
     // No writer records a Kelvin temperature.
     ColorBalanceParams: Object.freeze(['temp_k']),
+    // No export state outlives an attempt and no host wires a streaming sink.
+    ExportPolicy: Object.freeze(['persistEveryNRows']),
+    ExportIntent: Object.freeze(['previousUserInterrupted']),
+    ExportRuntimeResources: Object.freeze(['streamingSinkAvailable']),
+    InteractivePolicy: Object.freeze(['allowConcurrentDecodeAndLutParse']),
   }),
   '@lumaforge/luma-raw-runtime': Object.freeze({
     // Decode through a session, not one-shot from the file.
@@ -153,6 +161,8 @@ const RETIRED_IDENTIFIERS = Object.freeze([
   'ColorGraphIntentSource',
   'ExportCheckpointManifest',
   'ExportFidelity',
+  'ExportOrchestrationCopy',
+  'ExportRuntimeResourcesInput',
   'JpegResumeState',
   'LUTInputProfile',
   'LumaRenderContext',

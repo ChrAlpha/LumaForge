@@ -5,9 +5,4 @@
 export interface ExportRuntimeResources {
   readonly opfsSinkAvailable: boolean
   readonly opfsAvailableMB: number | null
-  readonly streamingSinkAvailable: boolean
-}
-
-export interface ExportRuntimeResourcesInput {
-  streamingSinkAvailable: boolean
 }

@@ -108,10 +108,10 @@ capability axes first, then derives device-class outcomes from those axes.
 
 ## Runtime Resource Budget
 
-`deriveRuntimeResourceBudget(cap)` is the shared resource decision helper used by
-interactive preview and export policy. It is the place where device class,
-memory profile, bounded-HQ preview pixels, export row ceilings, export
-concurrency ceilings, and safe side-work concurrency are aligned.
+`deriveRuntimeResourceBudget(cap)` is the engine's internal resource decision
+helper behind interactive preview and export policy. It is the place where
+memory profile, bounded-HQ preview pixels, export row ceilings, and export
+concurrency ceilings are aligned.
 
 Definitions:
 
@@ -147,19 +147,6 @@ balancedMobileExport =
   deviceMemoryGB >= 8
 ```
 
-Resource class:
-
-```text
-if desktopMemory:
-  resourceClass = "desktop-performance"
-else if balancedPreview:
-  resourceClass = "balanced-preview"
-else if mobileFormFactor:
-  resourceClass = "mobile-safe"
-else:
-  resourceClass = "compat-safe"
-```
-
 Worker memory profile:
 
 ```text
@@ -175,11 +162,11 @@ memory shapes.
 
 Base budgets:
 
-| Budget source                 | Base bounded-HQ pixels |
-| ----------------------------- | ---------------------: |
-| `desktop-performance`         |           `16_000_000` |
-| `balanced-preview`            |           `12_000_000` |
-| `mobile-safe` / `compat-safe` |            `8_000_000` |
+| Budget source     | Base bounded-HQ pixels |
+| ----------------- | ---------------------: |
+| `desktopMemory`   |           `16_000_000` |
+| `balancedPreview` |           `12_000_000` |
+| anything else     |            `8_000_000` |
 
 Known browser memory further caps this:
 
@@ -225,31 +212,17 @@ else:
   exportConcurrencyCeiling = 1
 ```
 
-Side-work concurrency:
-
-```text
-allowConcurrentDecodeAndLutParse =
-  pthread &&
-  hwConcurrency >= 4 &&
-  !mobileFormFactor &&
-  !knownLowMemory
-```
-
-This keeps mobile and known-low-memory devices from doing expensive background
-side work while a RAW decode path is already active, even when
-`hwConcurrency` is high. Desktop engines may use side-work concurrency only when
-pthread and CPU signals are present, and export still applies its separate
-row/concurrency limits.
-
 ## Interactive Preview Policy
 
 `deriveInteractivePolicy(cap)` is a thin projection of the shared budget:
 
 ```text
-boundedHqMaxPixels = budget.boundedHqMaxPixels
+boundedHqMaxPixels = options.boundedHqMaxPixels ?? budget.boundedHqMaxPixels
 previewWorkerMemoryProfile = budget.workerMemoryProfile
-allowConcurrentDecodeAndLutParse = budget.allowConcurrentDecodeAndLutParse
 ```
+
+The app passes the source's preview GPU budget as `boundedHqMaxPixels` once
+the preview backend is known.
 
 Preview capability is then decided from graphics facts:
 
@@ -324,8 +297,6 @@ opfsFits =
 
 if opfsFits:
   outputSink = "opfs-file"
-else if streamingSinkAvailable:
-  outputSink = "streaming"
 else:
   outputSink = "blob-handoff"
 ```
@@ -333,20 +304,9 @@ else:
 The `64MB` margin exists because OPFS quota is advisory and the export path has
 metadata, encoder, and handoff overhead beyond image megapixels.
 
-The app wires no streaming sink: it always reports `streamingSinkAvailable`
-as false, so a browser export uses `opfs-file` or `blob-handoff`.
-
-Persist cadence:
-
-```text
-targetRows = rowSlice <= 128 ? 2048 : 4096
-persistEveryNRows =
-  clamp(ceil(targetRows / rowSlice) * rowSlice, rowSlice, 4096)
-```
-
-The engine still reports `persistEveryNRows`, but neither the app nor `lmfg`
-persists export progress: there is no checkpoint or export journal, and every
-attempt, retries included, encodes from the first row.
+Neither the app nor `lmfg` persists export progress: there is no checkpoint or
+export journal, and every attempt, retries included, encodes from the first
+row.
 
 Interruption history:
 
@@ -436,7 +396,7 @@ device family.
 | Large local export                               | `megapixels > 50`                                      | If only `blob-handoff` is available, show non-durable desktop copy or fail-closed mobile copy | Large final JPEG handoff can spike memory.                                   |
 | 100MP-class export                               | `megapixels >= 100`                                    | Halve starting row slice before other caps                                                    | Bound RAW/JPEG strip working set.                                            |
 | OPFS available and enough quota                  | `opfsAvailableMB > megapixels * 4 + 64`                | Prefer `opfs-file`                                                                            | File-backed output; finalizing still reads the whole JPEG back once.         |
-| OPFS absent, unknown, private, or low quota      | Runtime snapshot has no fitting OPFS sink              | `blob-handoff` (the app wires no streaming sink)                                              | Storage capability is volatile and cannot be cached from boot.               |
+| OPFS absent, unknown, private, or low quota      | Runtime snapshot has no fitting OPFS sink              | `blob-handoff`                                                                                | Storage capability is volatile and cannot be cached from boot.               |
 | Worker cannot open the reserved OPFS output      | OPFS writable fails to open before any decode          | Re-derive without OPFS on a fresh worker, never above the current rows/concurrency            | The reported plan names the real sink; refusals still apply.                 |
 | Mobile form factor + large export + blob handoff | `mobileFormFactor`, `megapixels > 50`, no durable sink | `cannot-safely-complete`                                                                      | Fail closed instead of risking process termination or false full-res output. |
 | Previous resource failure                        | Resource-failure marker for the same file tuple        | Halve rows, force concurrency `1`, fresh worker retry                                         | Do not retry near the same heap boundary.                                    |

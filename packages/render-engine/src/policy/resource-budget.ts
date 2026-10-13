@@ -5,19 +5,11 @@ import {
 } from '../preview/preview-plan'
 import type { CapabilityVector } from './capability-input'
 
-export type RuntimeResourceClass =
-  | 'desktop-performance'
-  | 'balanced-preview'
-  | 'mobile-safe'
-  | 'compat-safe'
-
 export interface RuntimeResourceBudget {
-  readonly resourceClass: RuntimeResourceClass
   readonly boundedHqMaxPixels: number
   readonly workerMemoryProfile: 'low-memory' | 'desktop'
   readonly exportRowSliceCeiling: number
   readonly exportConcurrencyCeiling: number
-  readonly allowConcurrentDecodeAndLutParse: boolean
 }
 
 const DESKTOP_HQ_MAX_PIXELS = 16_000_000
@@ -84,13 +76,6 @@ export function deriveRuntimeResourceBudget(
   const mobileFormFactor = isMobileFormFactor(cap)
 
   const workerMemoryProfile = desktopMemory ? 'desktop' : 'low-memory'
-  const resourceClass: RuntimeResourceClass = desktopMemory
-    ? 'desktop-performance'
-    : balancedPreview
-      ? 'balanced-preview'
-      : mobileFormFactor
-        ? 'mobile-safe'
-        : 'compat-safe'
 
   const boundedHqBasePixels = desktopMemory
     ? DESKTOP_HQ_MAX_PIXELS
@@ -117,15 +102,9 @@ export function deriveRuntimeResourceBudget(
       : 1
 
   return Object.freeze({
-    resourceClass,
     boundedHqMaxPixels: capByDeviceMemory(boundedHqBasePixels, cap),
     workerMemoryProfile,
     exportRowSliceCeiling,
     exportConcurrencyCeiling,
-    allowConcurrentDecodeAndLutParse:
-      cap.pthread &&
-      cap.hwConcurrency >= 4 &&
-      !mobileFormFactor &&
-      !knownLowMemory,
   })
 }

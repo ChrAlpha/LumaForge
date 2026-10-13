@@ -33,13 +33,10 @@ describe('snapshotExportRuntimeResources', () => {
       },
     } as never)
 
-    const snap = await snapshotExportRuntimeResources({
-      streamingSinkAvailable: true,
-    })
+    const snap = await snapshotExportRuntimeResources()
 
     expect(snap.opfsSinkAvailable).toBe(true)
     expect(snap.opfsAvailableMB).toBe(800)
-    expect(snap.streamingSinkAvailable).toBe(true)
   })
 
   it('marks opfs unavailable when capability vector says so', async () => {
@@ -53,9 +50,7 @@ describe('snapshotExportRuntimeResources', () => {
       maybeOpfsSupported: false,
     })
 
-    const snap = await snapshotExportRuntimeResources({
-      streamingSinkAvailable: true,
-    })
+    const snap = await snapshotExportRuntimeResources()
 
     expect(snap.opfsSinkAvailable).toBe(false)
     expect(snap.opfsAvailableMB).toBeNull()
@@ -67,14 +62,11 @@ describe('snapshotExportRuntimeResources', () => {
       storage: { estimate, getDirectory: vi.fn(async () => ({})) },
     } as never)
 
-    const snap = await snapshotExportRuntimeResources({
-      streamingSinkAvailable: false,
-    })
+    const snap = await snapshotExportRuntimeResources()
 
     expect(snap).toEqual({
       opfsSinkAvailable: false,
       opfsAvailableMB: null,
-      streamingSinkAvailable: false,
     })
     expect(Object.isFrozen(snap)).toBe(true)
     expect(estimate).not.toHaveBeenCalled()
@@ -148,11 +140,9 @@ describe('snapshotExportRuntimeResources', () => {
         },
       } as never)
 
-      const snap = await snapshotExportRuntimeResources({
-        streamingSinkAvailable: true,
-      })
+      const snap = await snapshotExportRuntimeResources()
 
-      expect(snap).toEqual({ ...expected, streamingSinkAvailable: true })
+      expect(snap).toEqual(expected)
       expect(Object.isFrozen(snap)).toBe(true)
       expect(getDirectory).toHaveBeenCalledTimes(probed ? 1 : 0)
     },
@@ -177,14 +167,11 @@ describe('snapshotExportRuntimeResources', () => {
       },
     } as never)
 
-    const snap = await snapshotExportRuntimeResources({
-      streamingSinkAvailable: true,
-    })
+    const snap = await snapshotExportRuntimeResources()
 
     expect(snap).toEqual({
       opfsSinkAvailable: false,
       opfsAvailableMB: null,
-      streamingSinkAvailable: true,
     })
     expect(Object.isFrozen(snap)).toBe(true)
   })

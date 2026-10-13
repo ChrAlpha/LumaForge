@@ -41,18 +41,15 @@ const RUNTIMES = {
   opfs: {
     opfsSinkAvailable: true,
     opfsAvailableMB: 10_000,
-    streamingSinkAvailable: false,
   },
   /** Reachable, but too small for the output it would have to hold. */
   opfsSmall: {
     opfsSinkAvailable: true,
     opfsAvailableMB: 100,
-    streamingSinkAvailable: false,
   },
   blob: {
     opfsSinkAvailable: false,
     opfsAvailableMB: null,
-    streamingSinkAvailable: false,
   },
 } satisfies Record<string, ExportRuntimeResources>
 
@@ -148,7 +145,6 @@ describe('selectExportPlan request', () => {
       history: {
         previousCrashLikeInterruption: false,
         previousResourceFailure: true,
-        previousUserInterrupted: false,
       },
     })
     // The device facts are not kept on the plan: a retry samples its own.
@@ -172,7 +168,6 @@ describe('selectExportPlan request', () => {
         history: {
           previousCrashLikeInterruption: false,
           previousResourceFailure: false,
-          previousUserInterrupted: false,
         },
         ...facts,
       }),

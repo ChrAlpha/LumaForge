@@ -1,15 +1,14 @@
 import type { CapabilityVector } from './capability-input'
-import type { PreviewGpuBudget } from './preview-gpu-budget'
 import { deriveRuntimeResourceBudget } from './resource-budget'
 
 export interface InteractivePolicy {
   readonly boundedHqMaxPixels: number
   readonly previewWorkerMemoryProfile: 'low-memory' | 'desktop'
-  readonly allowConcurrentDecodeAndLutParse: boolean
 }
 
 export interface InteractivePolicyOptions {
-  readonly previewGpuBudget?: Pick<PreviewGpuBudget, 'boundedHqMaxPixels'>
+  /** The source's preview GPU budget, which replaces the device budget. */
+  readonly boundedHqMaxPixels?: number
 }
 
 export function deriveInteractivePolicy(
@@ -19,9 +18,7 @@ export function deriveInteractivePolicy(
   const budget = deriveRuntimeResourceBudget(cap)
 
   return Object.freeze({
-    boundedHqMaxPixels:
-      options.previewGpuBudget?.boundedHqMaxPixels ?? budget.boundedHqMaxPixels,
+    boundedHqMaxPixels: options.boundedHqMaxPixels ?? budget.boundedHqMaxPixels,
     previewWorkerMemoryProfile: budget.workerMemoryProfile,
-    allowConcurrentDecodeAndLutParse: budget.allowConcurrentDecodeAndLutParse,
   })
 }

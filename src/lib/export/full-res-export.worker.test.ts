@@ -884,20 +884,6 @@ describe('full-resolution export worker output sink', () => {
     })
   })
 
-  it('refuses a streaming plan because no streaming sink is wired', async () => {
-    installRawRuntime()
-
-    const response = await startExport({
-      executionPlan: { ...BLOB_PLAN, outputSink: 'streaming' },
-    })
-
-    expect(response).toMatchObject({
-      kind: 'error',
-      message: 'FULL_RES_EXPORT_OUTPUT_SINK_UNAVAILABLE',
-    })
-    expect(runFullResolutionJpegExport).not.toHaveBeenCalled()
-  })
-
   it('encodes a blob-handoff plan in memory', async () => {
     installRawRuntime()
 

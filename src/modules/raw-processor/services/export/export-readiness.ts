@@ -86,7 +86,6 @@ export function planFullResExportRequest(input: {
         input.interruption?.previousCrashLikeInterruption ?? false,
       previousResourceFailure:
         input.interruption?.previousResourceFailure ?? false,
-      previousUserInterrupted: false,
     },
   }
 }
@@ -147,7 +146,6 @@ function optimisticReadinessPlanFacts(): ExportPlanFacts {
     runtime: {
       opfsSinkAvailable: opfsAvailable,
       opfsAvailableMB: opfsAvailable ? Number.POSITIVE_INFINITY : null,
-      streamingSinkAvailable: false,
     },
   }
 }

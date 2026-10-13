@@ -61,12 +61,10 @@ const MOBILE: CapabilityVector = {
 const OPFS_RUNTIME: ExportRuntimeResources = {
   opfsSinkAvailable: true,
   opfsAvailableMB: 10_000,
-  streamingSinkAvailable: false,
 }
 const BLOB_RUNTIME: ExportRuntimeResources = {
   opfsSinkAvailable: false,
   opfsAvailableMB: null,
-  streamingSinkAvailable: false,
 }
 /** Above the large-export threshold, where a mobile blob handoff is refused. */
 const LARGE = { width: 9000, height: 6700 }

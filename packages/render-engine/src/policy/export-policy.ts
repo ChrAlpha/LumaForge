@@ -10,17 +10,12 @@ export type PolicyProductCopy =
   | 'non-durable-checkpoint'
   | 'cannot-safely-complete'
 
-export type ExportOrchestrationCopy =
-  | PolicyProductCopy
-  | 'interrupted-source-needed'
-
 export type PerformancePreference = 'safe' | 'balanced' | 'max'
 
 export interface ExportIntent {
   readonly performancePreference: PerformancePreference
   readonly previousResourceFailure: boolean
   readonly previousCrashLikeInterruption: boolean
-  readonly previousUserInterrupted: boolean
 }
 
 export interface ExportPolicy {
@@ -28,13 +23,12 @@ export interface ExportPolicy {
   readonly concurrency: number
   readonly maxConcurrency: number
   readonly workerMemoryProfile: 'low-memory' | 'desktop'
-  readonly persistEveryNRows: number
-  readonly outputSink: 'opfs-file' | 'streaming' | 'blob-handoff'
+  readonly outputSink: 'opfs-file' | 'blob-handoff'
   readonly productCopy: PolicyProductCopy
   readonly derivedLabel: string
 }
 
-export const LARGE_EXPORT_MEGAPIXEL_THRESHOLD = 50
+const LARGE_EXPORT_MEGAPIXEL_THRESHOLD = 50
 
 const OPFS_SAFETY_MARGIN_MB = 64
 const OPFS_MB_PER_MEGAPIXEL = 4
@@ -43,7 +37,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-function preferenceWeight(preference: PerformancePreference): number {
+export function preferenceWeight(preference: PerformancePreference): number {
   return preference === 'safe' ? 1 : preference === 'balanced' ? 2 : 3
 }
 
@@ -81,13 +75,6 @@ export function deriveExportPolicy(
 
   const workerMemoryProfile = budget.workerMemoryProfile
 
-  const targetRows = rowSlice <= 128 ? 2048 : 4096
-  const persistEveryNRows = clamp(
-    Math.ceil(targetRows / rowSlice) * rowSlice,
-    rowSlice,
-    4096,
-  )
-
   const opfsFits =
     runtime.opfsSinkAvailable &&
     runtime.opfsAvailableMB != null &&
@@ -95,9 +82,7 @@ export function deriveExportPolicy(
       megapixels * OPFS_MB_PER_MEGAPIXEL + OPFS_SAFETY_MARGIN_MB
   const outputSink: ExportPolicy['outputSink'] = opfsFits
     ? 'opfs-file'
-    : runtime.streamingSinkAvailable
-      ? 'streaming'
-      : 'blob-handoff'
+    : 'blob-handoff'
 
   let productCopy: PolicyProductCopy
   if (
@@ -132,7 +117,6 @@ export function deriveExportPolicy(
     concurrency,
     maxConcurrency,
     workerMemoryProfile,
-    persistEveryNRows,
     outputSink,
     productCopy,
     derivedLabel,

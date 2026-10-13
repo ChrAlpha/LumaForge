@@ -46,7 +46,7 @@ describe('progressOverlay', () => {
       preferredRows: 256,
       concurrency: 2,
       runtimeMemoryProfile: 'low-memory',
-      outputSink: 'streaming',
+      outputSink: 'blob-handoff',
     })
 
     expect(
@@ -59,7 +59,7 @@ describe('progressOverlay', () => {
       preferredRows: 1024,
       concurrency: 3,
       runtimeMemoryProfile: 'desktop',
-      outputSink: 'streaming',
+      outputSink: 'blob-handoff',
     })
 
     const overlay = screen.getByRole('status')
@@ -83,7 +83,7 @@ describe('progressOverlay', () => {
       preferredRows: 1024,
       concurrency: 3,
       runtimeMemoryProfile: 'desktop',
-      outputSink: 'streaming',
+      outputSink: 'blob-handoff',
     })
 
     expect(

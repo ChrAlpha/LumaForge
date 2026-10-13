@@ -1,7 +1,4 @@
-import type {
-  ExportRuntimeResources,
-  ExportRuntimeResourcesInput,
-} from '@lumaforge/render-engine/policy'
+import type { ExportRuntimeResources } from '@lumaforge/render-engine/policy'
 
 import { getCapabilityVectorSnapshot } from './capability-vector'
 
@@ -30,15 +27,12 @@ async function probeOpfsReachable(): Promise<boolean> {
   }
 }
 
-export async function snapshotExportRuntimeResources(
-  input: ExportRuntimeResourcesInput,
-): Promise<ExportRuntimeResources> {
+export async function snapshotExportRuntimeResources(): Promise<ExportRuntimeResources> {
   const cap = getCapabilityVectorSnapshot()
   if (!cap?.maybeOpfsSupported) {
     return Object.freeze({
       opfsSinkAvailable: false,
       opfsAvailableMB: null,
-      streamingSinkAvailable: input.streamingSinkAvailable,
     })
   }
 
@@ -56,13 +50,11 @@ export async function snapshotExportRuntimeResources(
       opfsAvailableMB: opfsQuotaOk
         ? Math.floor(availableBytes / 1_000_000)
         : null,
-      streamingSinkAvailable: input.streamingSinkAvailable,
     })
   } catch {
     return Object.freeze({
       opfsSinkAvailable: false,
       opfsAvailableMB: null,
-      streamingSinkAvailable: input.streamingSinkAvailable,
     })
   }
 }

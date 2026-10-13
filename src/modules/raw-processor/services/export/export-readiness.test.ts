@@ -619,12 +619,10 @@ describe('full-resolution export request planning', () => {
   const BLOB: ExportRuntimeResources = {
     opfsSinkAvailable: false,
     opfsAvailableMB: null,
-    streamingSinkAvailable: false,
   }
   const OPFS: ExportRuntimeResources = {
     opfsSinkAvailable: true,
     opfsAvailableMB: 10_000,
-    streamingSinkAvailable: false,
   }
   const LARGE = { width: 9000, height: 6000 }
 
@@ -645,7 +643,6 @@ describe('full-resolution export request planning', () => {
       history: {
         previousCrashLikeInterruption: true,
         previousResourceFailure: false,
-        previousUserInterrupted: false,
       },
     })
     // No preference asks for the balanced plan; no hint asks for nothing.
@@ -657,7 +654,6 @@ describe('full-resolution export request planning', () => {
           history: {
             previousCrashLikeInterruption: false,
             previousResourceFailure: false,
-            previousUserInterrupted: false,
           },
         },
       )

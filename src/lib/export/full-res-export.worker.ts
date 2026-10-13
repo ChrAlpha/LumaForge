@@ -65,8 +65,7 @@ function isOpfsEntryName(value: unknown): value is string {
 /**
  * The sink comes from the execution plan and its output location alone. An
  * `opfs-file` plan needs a well-formed OPFS location inside a tab directory,
- * any other plan must not carry one, and a plan this worker has no sink for
- * is refused rather than encoded in memory.
+ * and a blob-handoff plan must not carry one.
  */
 function resolveOutputLocation(
   message: FullResExportWorkerStartMessage,
@@ -89,9 +88,6 @@ function resolveOutputLocation(
 
   if (location !== undefined && location !== null) {
     throw new Error('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
-  }
-  if (outputSink === 'streaming') {
-    throw new Error('FULL_RES_EXPORT_OUTPUT_SINK_UNAVAILABLE')
   }
   return null
 }

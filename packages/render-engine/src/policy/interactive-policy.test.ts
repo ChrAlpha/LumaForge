@@ -19,7 +19,6 @@ describe('deriveInteractivePolicy', () => {
 
     expect(p.boundedHqMaxPixels).toBe(16_000_000)
     expect(p.previewWorkerMemoryProfile).toBe('desktop')
-    expect(p.allowConcurrentDecodeAndLutParse).toBe(true)
   })
 
   it('caps to 8MP on webkit-mobile', () => {
@@ -58,22 +57,16 @@ describe('deriveInteractivePolicy', () => {
 
     expect(p.boundedHqMaxPixels).toBe(8_000_000)
     expect(p.previewWorkerMemoryProfile).toBe('low-memory')
-    expect(p.allowConcurrentDecodeAndLutParse).toBe(false)
   })
 
-  it('uses GPU preview budget without promoting worker concurrency', () => {
+  it('uses the GPU preview budget without promoting the worker memory profile', () => {
     const p = deriveInteractivePolicy(
       { ...baseCap, pthread: false },
-      {
-        previewGpuBudget: {
-          boundedHqMaxPixels: 12_000_000,
-        },
-      },
+      { boundedHqMaxPixels: 12_000_000 },
     )
 
     expect(p.boundedHqMaxPixels).toBe(12_000_000)
     expect(p.previewWorkerMemoryProfile).toBe('low-memory')
-    expect(p.allowConcurrentDecodeAndLutParse).toBe(false)
   })
 
   it('gates desktop memory profile to chromium only', () => {
@@ -85,7 +78,7 @@ describe('deriveInteractivePolicy', () => {
     expect(p.previewWorkerMemoryProfile).toBe('low-memory')
   })
 
-  it('uses mobile-safe side-work policy for strong Chromium phones', () => {
+  it('keeps strong Chromium phones on the low-memory worker', () => {
     const p = deriveInteractivePolicy({
       ...baseCap,
       deviceMemoryGB: 8,
@@ -95,6 +88,5 @@ describe('deriveInteractivePolicy', () => {
 
     expect(p.boundedHqMaxPixels).toBe(12_000_000)
     expect(p.previewWorkerMemoryProfile).toBe('low-memory')
-    expect(p.allowConcurrentDecodeAndLutParse).toBe(false)
   })
 })

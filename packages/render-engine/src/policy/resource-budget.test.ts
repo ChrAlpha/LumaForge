@@ -21,7 +21,6 @@ const baseCap: CapabilityVector = {
 describe('deriveRuntimeResourceBudget', () => {
   it('keeps Chromium desktop on the performance budget', () => {
     expect(deriveRuntimeResourceBudget(baseCap)).toMatchObject({
-      resourceClass: 'desktop-performance',
       boundedHqMaxPixels: 16_000_000,
       workerMemoryProfile: 'desktop',
       exportRowSliceCeiling: 2048,
@@ -38,7 +37,6 @@ describe('deriveRuntimeResourceBudget', () => {
         deviceFormFactor: 'mobile',
       }),
     ).toMatchObject({
-      resourceClass: 'balanced-preview',
       boundedHqMaxPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS,
       workerMemoryProfile: 'low-memory',
       exportRowSliceCeiling: 128,
@@ -56,7 +54,6 @@ describe('deriveRuntimeResourceBudget', () => {
         deviceFormFactor: 'mobile',
       }),
     ).toMatchObject({
-      resourceClass: 'mobile-safe',
       boundedHqMaxPixels: BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
       workerMemoryProfile: 'low-memory',
       exportRowSliceCeiling: 128,
@@ -73,12 +70,10 @@ describe('deriveRuntimeResourceBudget', () => {
         deviceFormFactor: 'mobile',
       }),
     ).toMatchObject({
-      resourceClass: 'balanced-preview',
       boundedHqMaxPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS,
       workerMemoryProfile: 'low-memory',
       exportRowSliceCeiling: 256,
       exportConcurrencyCeiling: 1,
-      allowConcurrentDecodeAndLutParse: false,
     })
   })
 
@@ -91,12 +86,10 @@ describe('deriveRuntimeResourceBudget', () => {
         deviceFormFactor: 'mobile',
       }),
     ).toMatchObject({
-      resourceClass: 'balanced-preview',
       boundedHqMaxPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS,
       workerMemoryProfile: 'low-memory',
       exportRowSliceCeiling: 128,
       exportConcurrencyCeiling: 1,
-      allowConcurrentDecodeAndLutParse: false,
     })
   })
 
@@ -107,12 +100,10 @@ describe('deriveRuntimeResourceBudget', () => {
         deviceMemoryGB: 4,
       }),
     ).toMatchObject({
-      resourceClass: 'compat-safe',
       boundedHqMaxPixels: BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
       workerMemoryProfile: 'low-memory',
       exportRowSliceCeiling: 128,
       exportConcurrencyCeiling: 1,
-      allowConcurrentDecodeAndLutParse: false,
     })
   })
 
@@ -123,7 +114,6 @@ describe('deriveRuntimeResourceBudget', () => {
         deviceFormFactor: 'desktop',
       }),
     ).toMatchObject({
-      resourceClass: 'desktop-performance',
       workerMemoryProfile: 'desktop',
       exportRowSliceCeiling: 2048,
       exportConcurrencyCeiling: 3,

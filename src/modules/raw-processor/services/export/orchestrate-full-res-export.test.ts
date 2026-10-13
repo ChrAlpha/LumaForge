@@ -194,13 +194,11 @@ const MOBILE_CAPABILITY: CapabilityVector = {
 const BLOB_RUNTIME: ExportRuntimeResources = {
   opfsSinkAvailable: false,
   opfsAvailableMB: null,
-  streamingSinkAvailable: false,
 }
 
 const OPFS_RUNTIME: ExportRuntimeResources = {
   opfsSinkAvailable: true,
   opfsAvailableMB: 10_000,
-  streamingSinkAvailable: false,
 }
 
 const DESKTOP_ACTIVE_PLAN = {
@@ -1125,7 +1123,6 @@ describe('orchestrateFullResExport success', () => {
         history: {
           previousCrashLikeInterruption: false,
           previousResourceFailure: false,
-          previousUserInterrupted: false,
         },
       },
     ])
@@ -1306,7 +1303,6 @@ describe('orchestrateFullResExport success', () => {
           history: {
             previousCrashLikeInterruption: true,
             previousResourceFailure: false,
-            previousUserInterrupted: false,
           },
         },
       ])
@@ -1796,7 +1792,6 @@ describe('orchestrateFullResExport refusals', () => {
       runtime: {
         opfsSinkAvailable: true,
         opfsAvailableMB: 100,
-        streamingSinkAvailable: false,
       },
       session: createSession('session-1', {
         exportState: {

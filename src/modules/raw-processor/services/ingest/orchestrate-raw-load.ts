@@ -274,7 +274,7 @@ export async function orchestrateRawLoad(
         })
       : undefined
     const interactivePolicy = deriveInteractivePolicy(capability, {
-      previewGpuBudget,
+      boundedHqMaxPixels: previewGpuBudget?.boundedHqMaxPixels,
     })
     const previewPlan = createProgressivePreviewPlan({
       sourceWidth: activeRuntimeSession.sourceDimensions.width ?? 0,

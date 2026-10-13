@@ -335,7 +335,7 @@ function expectCoherentPlan(plan: Record<string, unknown>) {
     rowSlice: plan.preferredRows,
   })
   expect(['desktop', 'low-memory']).toContain(plan.runtimeMemoryProfile)
-  expect(['opfs-file', 'streaming', 'blob-handoff']).toContain(plan.outputSink)
+  expect(['opfs-file', 'blob-handoff']).toContain(plan.outputSink)
   const concurrency = Number(plan.concurrency)
   const rows = Number(plan.preferredRows)
   expect(concurrency).toBeGreaterThanOrEqual(1)

@@ -70,12 +70,6 @@ export function resolveHqPreviewExportSize({
   }
 }
 
-function isJpegStreamingOutputSinkAvailable() {
-  // Web Streams alone are not an export sink; only return true once a bounded
-  // JPEG streaming handoff is wired into the worker path.
-  return false
-}
-
 /**
  * Samples the device facts an export plan runs on: the capability vector and
  * the storage the runtime can actually reach right now. The first attempt
@@ -83,9 +77,7 @@ function isJpegStreamingOutputSinkAvailable() {
  */
 export async function sampleExportPlanFacts(): Promise<ExportPlanFacts> {
   const capability = await detectCapabilityVector()
-  const runtime = await snapshotExportRuntimeResources({
-    streamingSinkAvailable: isJpegStreamingOutputSinkAvailable(),
-  })
+  const runtime = await snapshotExportRuntimeResources()
   return { capability, runtime }
 }
 
@@ -249,7 +241,6 @@ function selectPlanAfterResourceFailure(
       history: {
         previousResourceFailure: true,
         previousCrashLikeInterruption: false,
-        previousUserInterrupted: false,
       },
     },
     sampleFacts,

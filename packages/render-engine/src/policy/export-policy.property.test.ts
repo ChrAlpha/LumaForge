@@ -31,7 +31,6 @@ const intentArb = fc.record({
   performancePreference: fc.constantFrom('safe', 'balanced', 'max'),
   previousResourceFailure: fc.boolean(),
   previousCrashLikeInterruption: fc.boolean(),
-  previousUserInterrupted: fc.boolean(),
 })
 
 const imageArb = fc.record({
@@ -44,7 +43,6 @@ const runtimeArb: fc.Arbitrary<ExportRuntimeResources> = fc.record({
   opfsAvailableMB: fc.option(fc.integer({ min: 0, max: 100_000 }), {
     nil: null,
   }),
-  streamingSinkAvailable: fc.boolean(),
 })
 
 describe('deriveExportPolicy invariants (property)', () => {
@@ -63,8 +61,6 @@ describe('deriveExportPolicy invariants (property)', () => {
           expect(p.concurrency).toBeGreaterThanOrEqual(1)
           expect(p.maxConcurrency).toBeGreaterThanOrEqual(1)
           expect(p.concurrency).toBeLessThanOrEqual(p.maxConcurrency)
-          expect(p.persistEveryNRows).toBeGreaterThanOrEqual(p.rowSlice)
-          expect(p.persistEveryNRows).toBeLessThanOrEqual(4096)
           if (p.workerMemoryProfile === 'desktop') {
             expect(cap.coi).toBe(true)
             expect(cap.pthread).toBe(true)
@@ -74,34 +70,6 @@ describe('deriveExportPolicy invariants (property)', () => {
         },
       ),
       { numRuns: 1_000 },
-    )
-  })
-
-  it('user-cancel does not change the policy', () => {
-    fc.assert(
-      fc.property(
-        capArb,
-        imageArb,
-        intentArb,
-        runtimeArb,
-        (cap, image, intent, runtime) => {
-          const a = deriveExportPolicy(
-            cap,
-            image,
-            { ...intent, previousUserInterrupted: false },
-            runtime,
-          )
-          const b = deriveExportPolicy(
-            cap,
-            image,
-            { ...intent, previousUserInterrupted: true },
-            runtime,
-          )
-
-          expect(b).toEqual(a)
-        },
-      ),
-      { numRuns: 500 },
     )
   })
 

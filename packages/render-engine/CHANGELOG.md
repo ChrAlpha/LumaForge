@@ -8,6 +8,17 @@ predates this file.
 
 ### Breaking
 
+- `@lumaforge/render-engine/policy` drops what no host read or could use:
+  the `'streaming'` output sink with `ExportRuntimeResources.streamingSinkAvailable`
+  and `ExportRuntimeResourcesInput` (no host wires a streaming JPEG sink),
+  `ExportPolicy.persistEveryNRows` (nothing persists export progress),
+  `ExportIntent.previousUserInterrupted` (it never changed the policy),
+  `InteractivePolicy.allowConcurrentDecodeAndLutParse`, and the
+  `ExportOrchestrationCopy` type with its `'interrupted-source-needed'` copy;
+  product copy is `PolicyProductCopy`. `deriveRuntimeResourceBudget` and
+  `LARGE_EXPORT_MEGAPIXEL_THRESHOLD` are no longer exported, and
+  `deriveInteractivePolicy` takes the source's bounded-HQ cap as
+  `{ boundedHqMaxPixels }` instead of `{ previewGpuBudget }`.
 - The package root entry `@lumaforge/render-engine` is removed, with the
   package `main` and `types` fields. Every name it exported is exported by a
   subpath: import manifest types, hashing, `createRenderManifest`,

@@ -1,10 +1,10 @@
 import type {
   CapabilityVector,
   ExportIntent,
-  ExportOrchestrationCopy,
   ExportPolicy,
   ExportRuntimeResources,
   PerformancePreference,
+  PolicyProductCopy,
 } from '@lumaforge/render-engine/policy'
 import { deriveExportPolicy } from '@lumaforge/render-engine/policy'
 
@@ -13,7 +13,7 @@ export type ExportExecutionProfileName =
   | 'mobile-balanced'
   | 'desktop-fast'
 
-export type ExportOutputSink = 'opfs-file' | 'streaming' | 'blob-handoff'
+export type ExportOutputSink = ExportPolicy['outputSink']
 export type ExportRuntimeMemoryProfile = 'low-memory' | 'desktop'
 
 /** The sensor frame the export decodes; its memory cost sizes the plan. */
@@ -23,7 +23,6 @@ export type ExportPlanSource = { width: number; height: number }
 export type ExportPlanHistory = {
   previousCrashLikeInterruption?: boolean
   previousResourceFailure?: boolean
-  previousUserInterrupted?: boolean
 }
 
 /** The intent half of a plan: everything except the device facts. */
@@ -54,7 +53,7 @@ export type ExportExecutionPlan = {
   concurrency: number
   runtimeMemoryProfile: ExportRuntimeMemoryProfile
   outputSink: ExportOutputSink
-  productCopy: ExportOrchestrationCopy
+  productCopy: PolicyProductCopy
   derivedLabel: string
   policyVector: ExportPolicy
   /**
@@ -114,7 +113,6 @@ export function selectExportPlan(
     previousCrashLikeInterruption:
       input.history?.previousCrashLikeInterruption ?? false,
     previousResourceFailure: input.history?.previousResourceFailure ?? false,
-    previousUserInterrupted: input.history?.previousUserInterrupted ?? false,
   }
   const intent: ExportIntent = {
     performancePreference: input.preference,
