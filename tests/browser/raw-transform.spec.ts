@@ -1366,7 +1366,6 @@ async function replayWithLmfg(
         LMFG_BIN,
         '--workspace',
         workspace,
-        '--json',
         '--quiet',
         '--memory-profile',
         manifest.environment.native_artifacts.variant,
