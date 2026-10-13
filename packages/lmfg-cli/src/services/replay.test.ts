@@ -763,9 +763,7 @@ describe('runReplay with a geometry', () => {
       probeExportCapability: vi.fn(async () =>
         syntheticExportCapability(frame),
       ),
-      beginProcessedWindowExport: vi.fn(async () => ({ active: true })),
       readProcessedWindow: vi.fn(readWindow),
-      endProcessedWindowExport: vi.fn(async () => ({ ended: true as const })),
       dispose: vi.fn(),
     }
     const runtime = {
@@ -1028,7 +1026,6 @@ describe('runReplay with a geometry', () => {
         actual: decoded,
       },
     })
-    expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
     expect(session.readProcessedWindow).not.toHaveBeenCalled()
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(existsSync(join(dir, 'replay'))).toBe(false)

@@ -185,12 +185,12 @@ describe('toLmfgError', () => {
 
   it('classifies a cleanup step that fails with a RAW code', () => {
     const failure = cleanupFailure(
-      'end_processed_window_export',
+      'dispose_jpeg_runtime',
       new LumaRawRuntimeError('RAW_MEMORY_LIMIT', 'cleanup said no'),
     )
     // A runtime error carries no errno, and its message stays out.
     expect(failure).toEqual({
-      step: 'end_processed_window_export',
+      step: 'dispose_jpeg_runtime',
       code: 'render.failed',
     })
   })
@@ -204,7 +204,7 @@ describe('toLmfgError', () => {
       { length: MAX_CLEANUP_FAILURES + 2 },
       (_, index) =>
         cleanupFailure(
-          index % 2 === 0 ? 'end_processed_window_export' : 'close_temp_file',
+          index % 2 === 0 ? 'dispose_jpeg_runtime' : 'close_temp_file',
           new LumaRawRuntimeError('RAW_JOB_CANCELLED', 'cancelled'),
         ),
     )
@@ -310,14 +310,14 @@ describe('cleanup failures', () => {
       errno: 'EACCES',
     })
     expect(
-      cleanupFailure('end_processed_window_export', new Error('END_FAILED')),
-    ).toEqual({ step: 'end_processed_window_export', code: 'internal' })
+      cleanupFailure('dispose_jpeg_runtime', new Error('END_FAILED')),
+    ).toEqual({ step: 'dispose_jpeg_runtime', code: 'internal' })
     expect(
       cleanupFailure(
-        'end_processed_window_export',
+        'dispose_jpeg_runtime',
         new LumaRawRuntimeError('RAW_JOB_CANCELLED', 'cancelled'),
       ),
-    ).toEqual({ step: 'end_processed_window_export', code: 'cancelled' })
+    ).toEqual({ step: 'dispose_jpeg_runtime', code: 'cancelled' })
     expect(cleanupFailure('abort_jpeg_encoder', 'boom')).toEqual({
       step: 'abort_jpeg_encoder',
       code: 'internal',

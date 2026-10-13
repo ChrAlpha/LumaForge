@@ -233,24 +233,6 @@ export async function createLumaRawRuntimeForNode(
           stageSignal,
         ) as Promise<LumaRawExportCapability>
       },
-      beginProcessedWindowExport(stageSignal?: AbortSignal) {
-        return dispatch(
-          core,
-          'beginProcessedWindowExportFromSession',
-          { sessionId: sessionInfo.sessionId },
-          counter,
-          stageSignal,
-        ) as Promise<{ active: true }>
-      },
-      endProcessedWindowExport(stageSignal?: AbortSignal) {
-        return dispatch(
-          core,
-          'endProcessedWindowExportFromSession',
-          { sessionId: sessionInfo.sessionId },
-          counter,
-          stageSignal,
-        ) as Promise<{ ended: true }>
-      },
       readRawWindow(rect: LumaRawWindowRect, stageSignal?: AbortSignal) {
         return dispatch(
           core,

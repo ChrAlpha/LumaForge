@@ -322,12 +322,7 @@ async function withExportSession(runtime, input, run) {
     const capability = await session.probeExportCapability()
     assertProcessedCapability(capability)
     const frame = { width: capability.width, height: capability.height }
-    await session.beginProcessedWindowExport()
-    try {
-      return await run(session, frame)
-    } finally {
-      await session.endProcessedWindowExport()
-    }
+    return await run(session, frame)
   } finally {
     session.dispose()
   }

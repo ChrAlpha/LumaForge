@@ -23,6 +23,10 @@ follows Keep a Changelog; versions follow semver.
   `EXIT_CODES`, `listSchemas`, or `showSchema`. Hosts read errors, exit codes,
   and schemas through the CLI protocol (`lmfg.error.v1`, `lmfg schema list`,
   `lmfg schema show`).
+- The `end_processed_window_export` cleanup step is removed from
+  `details.cleanup_failures` and from the exported `CLEANUP_STEPS`. The export
+  no longer brackets its processed-window reads with begin and end calls,
+  which no native RAW build implemented, so that step can no longer fail.
 
 ### Changed
 

@@ -13,7 +13,6 @@ import {
   INVALID_EXPORT_GEOMETRY,
   planExportGeometry,
   runFullResolutionJpegExport,
-  runProcessedWindowExportLifecycle,
 } from '@lumaforge/render-engine/export'
 import type {
   PolicyChoice,
@@ -25,7 +24,6 @@ import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 import type { CleanupFailure } from '../protocol/errors'
 import {
   attemptCleanup,
-  cleanupFailure,
   cleanupFailureFields,
   LmfgError,
   withCleanupFailures,
@@ -67,7 +65,7 @@ export function exposureFromManifest(
 }
 
 /**
- * Refuses a source before the processed-window export begins, using the same
+ * Refuses a source before any processed window is read, using the same
  * assessment the executor applies as its own final gate, so this early check
  * can never admit a capability the executor would refuse.
  */
@@ -224,40 +222,21 @@ export async function runFullResolutionExport(
       path: input.outputPath,
       metadata: session.probe,
     })
-    // The lifecycle rethrows a failed end only when the export itself
-    // succeeded; remember it so it is reported beside an earlier failure.
-    const endFailures: unknown[] = []
-    const endProcessedWindowExport = session.endProcessedWindowExport
     try {
-      await runProcessedWindowExportLifecycle({
-        beginProcessedWindowExport: session.beginProcessedWindowExport,
-        endProcessedWindowExport: endProcessedWindowExport
-          ? async (signal) => {
-              try {
-                return await endProcessedWindowExport(signal)
-              } catch (error) {
-                endFailures.push(error)
-                throw error
-              }
-            }
-          : undefined,
+      await runFullResolutionJpegExport({
+        capability,
+        graph,
+        readProcessedWindow: session.readProcessedWindow,
+        quality: percentToQuality(input.quality),
+        preferredRows: policy.row_slice,
+        concurrency: policy.concurrency,
+        ...(input.geometry ? { geometry: input.geometry } : {}),
+        jpegSink: sink,
         signal: input.signal,
-        runExport: () =>
-          runFullResolutionJpegExport({
-            capability,
-            graph,
-            readProcessedWindow: session.readProcessedWindow,
-            quality: percentToQuality(input.quality),
-            preferredRows: policy.row_slice,
-            concurrency: policy.concurrency,
-            ...(input.geometry ? { geometry: input.geometry } : {}),
-            jpegSink: sink,
-            signal: input.signal,
-            onProgress: (progress) => {
-              strips = progress.totalStrips
-              input.onProgress?.(progress)
-            },
-          }),
+        onProgress: (progress) => {
+          strips = progress.totalStrips
+          input.onProgress?.(progress)
+        },
       })
       timings.export_ms = performance.now() - exportStart
       const streamed = sink.result()
@@ -288,11 +267,6 @@ export async function runFullResolutionExport(
       // A rejected export drops its encoded temp file; the export's own
       // failure stays primary and every cleanup that failed is listed with it.
       const failures: CleanupFailure[] = [...sink.cleanupFailures()]
-      for (const endError of endFailures) {
-        if (endError !== error) {
-          failures.push(cleanupFailure('end_processed_window_export', endError))
-        }
-      }
       const streamed = sink.result()
       if (streamed) {
         await attemptCleanup(failures, 'remove_temp_file', streamed.discard)

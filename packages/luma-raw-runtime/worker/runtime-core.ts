@@ -257,10 +257,8 @@ export const rawRequestFailureFallbackCodes = {
   decodeBoundedHq: 'RAW_HQ_DECODE_FAILED',
   decodeBoundedHqFromSession: 'RAW_HQ_DECODE_FAILED',
   probeExportCapabilityFromSession: 'RAW_METADATA_FAILED',
-  beginProcessedWindowExportFromSession: 'RAW_WINDOW_READ_FAILED',
   readRawWindowFromSession: 'RAW_WINDOW_READ_FAILED',
   readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
-  endProcessedWindowExportFromSession: 'RAW_WINDOW_READ_FAILED',
   applyCalibrationToSession: 'RAW_CALIBRATION_FAILED',
 } as const satisfies Record<LumaRawWorkerRequestType, LumaRawErrorCode>
 
@@ -875,15 +873,6 @@ export function createRuntimeCore(
     })
   }
 
-  function handleBeginProcessedWindowExportFromSession(
-    request: LumaRawWorkerRequest<'beginProcessedWindowExportFromSession'>,
-  ): LumaRawWorkerResponse {
-    return runSessionJob(sessionJobs, request, {
-      run: (session) =>
-        session.processor.beginProcessedWindowExport?.() ?? { active: true },
-    })
-  }
-
   function handleReadRawWindowFromSession(
     request: LumaRawWorkerRequest<'readRawWindowFromSession'>,
   ): LumaRawWorkerResponse {
@@ -914,17 +903,6 @@ export function createRuntimeCore(
         }
 
         return session.processor.readProcessedWindow(request.payload.request)
-      },
-    })
-  }
-
-  function handleEndProcessedWindowExportFromSession(
-    request: LumaRawWorkerRequest<'endProcessedWindowExportFromSession'>,
-  ): LumaRawWorkerResponse {
-    return runSessionJob(sessionJobs, request, {
-      run(session) {
-        session.processor.endProcessedWindowExport?.()
-        return { ended: true }
       },
     })
   }
@@ -981,14 +959,10 @@ export function createRuntimeCore(
             return handleExtractEmbeddedPreviewFromSession(request)
           case 'probeExportCapabilityFromSession':
             return handleProbeExportCapabilityFromSession(request)
-          case 'beginProcessedWindowExportFromSession':
-            return handleBeginProcessedWindowExportFromSession(request)
           case 'readRawWindowFromSession':
             return handleReadRawWindowFromSession(request)
           case 'readProcessedWindowFromSession':
             return handleReadProcessedWindowFromSession(request)
-          case 'endProcessedWindowExportFromSession':
-            return handleEndProcessedWindowExportFromSession(request)
           case 'applyCalibrationToSession':
             return handleApplyCalibrationToSession(request)
           case 'decodeQuickFromSession':

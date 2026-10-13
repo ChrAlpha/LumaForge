@@ -13,7 +13,6 @@ import {
   planJpegMetadataInjection,
   preserveJpegMetadata,
   runFullResolutionJpegExport,
-  runProcessedWindowExportLifecycle,
   sha256OfJpegWithMetadata,
 } from '@lumaforge/render-engine/export'
 
@@ -408,52 +407,44 @@ async function handleStart(
             takeOpenedWritable: takeOpenedOpfsOutput,
           })
         : undefined
-      const output = await runProcessedWindowExportLifecycle({
-        beginProcessedWindowExport: exportSession.beginProcessedWindowExport,
-        endProcessedWindowExport: exportSession.endProcessedWindowExport,
+      const output = await runFullResolutionJpegExport({
+        capability,
+        graph: message.graph,
+        ...(message.geometry ? { geometry: message.geometry } : {}),
+        preferredRows:
+          message.executionPlan?.preferredRows ?? message.preferredRows,
+        concurrency: message.executionPlan?.concurrency ?? message.concurrency,
+        quality: message.quality,
+        jpegSink,
         signal: controller.signal,
-        runExport() {
-          return runFullResolutionJpegExport({
-            capability,
-            graph: message.graph,
-            ...(message.geometry ? { geometry: message.geometry } : {}),
-            preferredRows:
-              message.executionPlan?.preferredRows ?? message.preferredRows,
-            concurrency:
-              message.executionPlan?.concurrency ?? message.concurrency,
-            quality: message.quality,
-            jpegSink,
-            signal: controller.signal,
-            readProcessedWindow: exportSession.readProcessedWindow,
-            retryPolicy:
-              message.executionPlan?.checkpointMode === 'safe-retry'
-                ? 'surface-resource-failure'
-                : 'in-process',
-            onProgress(progress) {
-              self.postMessage({
-                kind: 'progress',
-                requestId: message.requestId,
-                progress,
-              } satisfies FullResExportWorkerResponse)
-            },
-            ...(message.collectMetrics
-              ? {
-                  metricContext: {
-                    requestId: message.requestId,
-                    fileName: message.file.name,
-                    browser: globalThis.navigator?.userAgent,
-                  },
-                  onMetric(metric) {
-                    self.postMessage({
-                      kind: 'metric',
-                      requestId: message.requestId,
-                      metric,
-                    } satisfies FullResExportWorkerResponse)
-                  },
-                }
-              : {}),
-          })
+        readProcessedWindow: exportSession.readProcessedWindow,
+        retryPolicy:
+          message.executionPlan?.checkpointMode === 'safe-retry'
+            ? 'surface-resource-failure'
+            : 'in-process',
+        onProgress(progress) {
+          self.postMessage({
+            kind: 'progress',
+            requestId: message.requestId,
+            progress,
+          } satisfies FullResExportWorkerResponse)
         },
+        ...(message.collectMetrics
+          ? {
+              metricContext: {
+                requestId: message.requestId,
+                fileName: message.file.name,
+                browser: globalThis.navigator?.userAgent,
+              },
+              onMetric(metric) {
+                self.postMessage({
+                  kind: 'metric',
+                  requestId: message.requestId,
+                  metric,
+                } satisfies FullResExportWorkerResponse)
+              },
+            }
+          : {}),
       })
 
       await discardUnclaimedOpfsOutput()

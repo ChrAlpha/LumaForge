@@ -347,11 +347,9 @@ function makeProcessedWindow(
 
 type FakeSessionOptions = {
   capability?: LumaRawExportCapability
-  begin?: () => Promise<unknown>
   read?: (
     request: LumaRawProcessedWindowRequest,
   ) => Promise<LumaRawProcessedWindow>
-  end?: () => Promise<{ ended: true }>
 }
 
 function makeFakeSession(options: FakeSessionOptions = {}) {
@@ -360,14 +358,8 @@ function makeFakeSession(options: FakeSessionOptions = {}) {
     probeExportCapability: vi.fn(
       async () => options.capability ?? makeCapability(),
     ),
-    beginProcessedWindowExport: vi.fn(
-      options.begin ?? (async () => ({ active: true })),
-    ),
     readProcessedWindow: vi.fn(
       options.read ?? (async (request) => makeProcessedWindow(request)),
-    ),
-    endProcessedWindowExport: vi.fn(
-      options.end ?? (async () => ({ ended: true as const })),
     ),
     dispose: vi.fn(),
   }
@@ -412,14 +404,12 @@ function runWithSession(
   })
 }
 
-describe('runFullResolutionExport processed-window lifecycle', () => {
-  it('returns an unpublished JPEG and ends the processed-window export once', async () => {
+describe('runFullResolutionExport publication', () => {
+  it('returns an unpublished JPEG', async () => {
     const session = makeFakeSession()
     const outputPath = join(dir, 'exports', 'final.jpg')
     const result = await runWithSession(session, outputPath)
 
-    expect(session.beginProcessedWindowExport).toHaveBeenCalledTimes(1)
-    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(result.width).toBe(4)
     expect(result.height).toBe(4)
@@ -433,102 +423,15 @@ describe('runFullResolutionExport processed-window lifecycle', () => {
     expect(createHash('sha256').update(jpeg).digest('hex')).toBe(result.sha256)
   })
 
-  it('rejects with the begin failure without ending or writing anything', async () => {
-    const beginError = new Error('BEGIN_FAILED')
-    const session = makeFakeSession({ begin: () => Promise.reject(beginError) })
-
-    await expect(
-      runWithSession(session, join(dir, 'exports', 'final.jpg')),
-    ).rejects.toBe(beginError)
-    expect(session.readProcessedWindow).not.toHaveBeenCalled()
-    expect(session.endProcessedWindowExport).not.toHaveBeenCalled()
-    expect(session.dispose).toHaveBeenCalledTimes(1)
-    expect(await listFiles(dir)).toEqual([])
-  })
-
-  it('rejects with the render failure and still ends the processed-window export', async () => {
+  it('rejects with the render failure and writes nothing', async () => {
     const renderError = new Error('WINDOW_READ_FAILED')
     const session = makeFakeSession({ read: () => Promise.reject(renderError) })
 
     await expect(
       runWithSession(session, join(dir, 'exports', 'final.jpg')),
     ).rejects.toBe(renderError)
-    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(await listFiles(dir)).toEqual([])
-  })
-
-  it('rejects with the cleanup failure and discards the encoded JPEG', async () => {
-    const cleanupError = new Error('END_FAILED')
-    const session = makeFakeSession({ end: () => Promise.reject(cleanupError) })
-
-    await expect(
-      runWithSession(session, join(dir, 'exports', 'final.jpg')),
-    ).rejects.toBe(cleanupError)
-    expect(session.readProcessedWindow).toHaveBeenCalled()
-    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
-    expect(session.dispose).toHaveBeenCalledTimes(1)
-    expect(await listFiles(dir)).toEqual([])
-  })
-
-  it('keeps the render failure and reports the cleanup that also failed', async () => {
-    const renderError = new Error('WINDOW_READ_FAILED')
-    const session = makeFakeSession({
-      read: () => Promise.reject(renderError),
-      end: () => Promise.reject(new Error('END_FAILED')),
-    })
-
-    const error = await runWithSession(
-      session,
-      join(dir, 'exports', 'final.jpg'),
-    ).catch((caught: unknown) => caught)
-
-    expect(error).toBeInstanceOf(LmfgError)
-    expect((error as LmfgError).cause).toBe(renderError)
-    expect(toLmfgError(error).toEnvelope().error).toMatchObject({
-      code: 'internal',
-      message: 'WINDOW_READ_FAILED',
-      details: {
-        cleanup_failures: [
-          { step: 'end_processed_window_export', code: 'internal' },
-        ],
-      },
-    })
-    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
-    expect(session.dispose).toHaveBeenCalledTimes(1)
-    expect(await listFiles(dir)).toEqual([])
-  })
-
-  it('keeps the end failure and lists the encoded JPEG it could not discard', async () => {
-    const endError = new Error('END_FAILED')
-    const session = makeFakeSession({ end: () => Promise.reject(endError) })
-    failTempRemoval()
-
-    const error = await runWithSession(
-      session,
-      join(dir, 'exports', 'final.jpg'),
-    ).catch((caught: unknown) => caught)
-
-    expect((error as LmfgError).cause).toBe(endError)
-    const envelope = toLmfgError(error).toEnvelope().error
-    expect(envelope).toMatchObject({
-      code: 'internal',
-      message: 'END_FAILED',
-      details: {
-        cleanup_failures: [
-          {
-            step: 'remove_temp_file',
-            code: 'permission.denied',
-            errno: 'EACCES',
-          },
-        ],
-      },
-    })
-    expect(JSON.stringify(envelope.details)).not.toContain(dir)
-    expect(session.dispose).toHaveBeenCalledTimes(1)
-    const files = await listFiles(dir)
-    expect(files).toHaveLength(1)
-    expect(files[0]).toMatch(/^exports\/final\.jpg\.\d+\.[0-9a-f]{8}\.tmp$/)
   })
 })
 
@@ -803,7 +706,6 @@ describe('runFullResolutionExport with a failing native encoder abort', () => {
         cleanup_failures: [{ step: 'abort_jpeg_encoder', code: 'internal' }],
       },
     })
-    expect(session.endProcessedWindowExport).toHaveBeenCalledTimes(1)
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(await listFiles(dir)).toEqual([])
   })
@@ -840,7 +742,7 @@ describe('runFullResolutionExport source assessment', () => {
       ['white-balance-not-applied-by-runtime'],
     ],
   ] as Array<[string, Partial<LumaRawExportCapability>, string[]]>)(
-    'refuses %s before the processed-window export begins',
+    'refuses %s before any window is read',
     async (_name, overrides, refusals) => {
       const capability = makeCapability(overrides)
       const session = makeFakeSession({ capability })
@@ -859,9 +761,7 @@ describe('runFullResolutionExport source assessment', () => {
           strategy: capability.strategy ?? null,
         },
       })
-      expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
       expect(session.readProcessedWindow).not.toHaveBeenCalled()
-      expect(session.endProcessedWindowExport).not.toHaveBeenCalled()
       expect(session.dispose).toHaveBeenCalledTimes(1)
       expect(await listFiles(dir)).toEqual([])
     },
@@ -912,7 +812,7 @@ describe('runFullResolutionExport with a geometry', () => {
       geometry: rotated,
       verifyFrame: (frame) => {
         frames.push(frame)
-        expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
+        expect(session.readProcessedWindow).not.toHaveBeenCalled()
       },
     })
 
@@ -954,7 +854,7 @@ describe('runFullResolutionExport with a geometry', () => {
     })
   })
 
-  it('refuses a folding geometry before the processed-window export begins', async () => {
+  it('refuses a folding geometry before any window is read', async () => {
     const session = makeFakeSession({ capability })
     const verifyFrame = vi.fn()
 
@@ -968,7 +868,6 @@ describe('runFullResolutionExport with a geometry', () => {
       details: { stage: 'geometry', source },
     })
     expect(verifyFrame).not.toHaveBeenCalled()
-    expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
     expect(session.readProcessedWindow).not.toHaveBeenCalled()
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(await listFiles(dir)).toEqual([])
@@ -986,7 +885,6 @@ describe('runFullResolutionExport with a geometry', () => {
         },
       }),
     ).rejects.toBe(refusal)
-    expect(session.beginProcessedWindowExport).not.toHaveBeenCalled()
     expect(session.readProcessedWindow).not.toHaveBeenCalled()
     expect(session.dispose).toHaveBeenCalledTimes(1)
     expect(await listFiles(dir)).toEqual([])

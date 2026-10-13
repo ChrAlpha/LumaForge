@@ -375,8 +375,6 @@ function retryingRawSession() {
       },
       reasons: [],
     }),
-    beginProcessedWindowExport: async () => ({ active: true }),
-    endProcessedWindowExport: async () => ({ ended: true }),
     readProcessedWindow: async (request: {
       outputRect: { x: number; y: number; width: number; height: number }
     }) => {

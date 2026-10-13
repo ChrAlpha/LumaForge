@@ -20,10 +20,6 @@ export {
 } from './geometry/export-geometry'
 export { normalizeExportConcurrency } from './pipeline-concurrency'
 export {
-  type ProcessedWindowExportLifecycleInput,
-  runProcessedWindowExportLifecycle,
-} from './processed-window-export'
-export {
   type ProcessedRgb16Rows,
   processedWindowToRgb16Rows,
 } from './processed-window-transform'

@@ -236,8 +236,7 @@ image-editor assumptions.
     strip scheduling, JPEG row writers, sinks and metadata, and export
     geometry. `assessProcessedExport` decides whether a probed source can
     feed the processed-window export (the app, `lmfg` export, and
-    `lmfg inspect` apply it), and `runProcessedWindowExportLifecycle` is the
-    begin/end bracket the app's export worker and `lmfg` export share.
+    `lmfg inspect` apply it).
   - `packages/render-engine/src/geometry`: the
     `@lumaforge/render-engine/geometry` subpath, the pure 3x3 projective
     kernel export geometry runs (`applyMatrix`, `invertMatrix`, `isMatrix3`,

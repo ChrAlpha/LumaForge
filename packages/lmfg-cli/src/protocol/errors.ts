@@ -225,7 +225,6 @@ export const CLEANUP_STEPS = [
   'dispose_jpeg_runtime',
   'close_temp_file',
   'remove_temp_file',
-  'end_processed_window_export',
 ] as const
 
 export type CleanupStep = (typeof CLEANUP_STEPS)[number]

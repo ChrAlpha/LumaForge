@@ -11,13 +11,11 @@ import type {
   ExportGeometry,
   JpegExportMetadata,
   JpegRowSink,
-  ProcessedWindowExportLifecycleInput,
 } from '@lumaforge/render-engine/export'
 import {
   createBytesOutputResult,
   preserveJpegMetadataBytes,
   runFullResolutionJpegExport,
-  runProcessedWindowExportLifecycle,
 } from '@lumaforge/render-engine/export'
 
 type Dimensions = { width: number; height: number }
@@ -174,11 +172,6 @@ export type EngineExportReferenceInput = {
   geometry?: ExportGeometry
   /** EXIF source inserted with the engine's own metadata helper. */
   metadata?: JpegExportMetadata | null
-  /** A real RAW session's processed-window export bracket. */
-  lifecycle?: Pick<
-    ProcessedWindowExportLifecycleInput<unknown>,
-    'beginProcessedWindowExport' | 'endProcessedWindowExport'
-  >
 }
 
 export type EngineExportReference = {
@@ -200,24 +193,16 @@ export type EngineExportReference = {
 export async function renderEngineExportReference(
   input: EngineExportReferenceInput,
 ): Promise<EngineExportReference> {
-  const runExport = () =>
-    runFullResolutionJpegExport({
-      capability: input.capability,
-      graph: input.graph,
-      readProcessedWindow: input.readProcessedWindow,
-      quality: input.quality,
-      preferredRows: input.preferredRows,
-      concurrency: 1,
-      ...(input.geometry ? { geometry: input.geometry } : {}),
-      jpegSink: createInMemoryJpegSink(),
-    })
-  const output = input.lifecycle
-    ? await runProcessedWindowExportLifecycle({
-        beginProcessedWindowExport: input.lifecycle.beginProcessedWindowExport,
-        endProcessedWindowExport: input.lifecycle.endProcessedWindowExport,
-        runExport,
-      })
-    : await runExport()
+  const output = await runFullResolutionJpegExport({
+    capability: input.capability,
+    graph: input.graph,
+    readProcessedWindow: input.readProcessedWindow,
+    quality: input.quality,
+    preferredRows: input.preferredRows,
+    concurrency: 1,
+    ...(input.geometry ? { geometry: input.geometry } : {}),
+    jpegSink: createInMemoryJpegSink(),
+  })
   if (output.kind !== 'bytes')
     throw new Error(`unexpected ${output.kind} output`)
   const encoded = jpegFrameDimensions(output.bytes)

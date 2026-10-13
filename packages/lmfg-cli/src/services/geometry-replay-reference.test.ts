@@ -177,9 +177,7 @@ describe('geometry replay against a synthetic engine reference', () => {
     const session = {
       probe: null,
       probeExportCapability: vi.fn(async () => capability),
-      beginProcessedWindowExport: vi.fn(async () => ({ active: true })),
       readProcessedWindow: vi.fn(readWindow),
-      endProcessedWindowExport: vi.fn(async () => ({ ended: true as const })),
       dispose: vi.fn(),
     }
     return {
@@ -360,10 +358,6 @@ describeWithFixture(
           preferredRows: ROW_SLICE,
           geometry: ROTATED,
           metadata: session.probe,
-          lifecycle: {
-            beginProcessedWindowExport: session.beginProcessedWindowExport,
-            endProcessedWindowExport: session.endProcessedWindowExport,
-          },
         })
       } finally {
         session.dispose()

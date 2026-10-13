@@ -50,7 +50,6 @@ Primary implementation sources:
 - `src/modules/raw-processor/services/export/export-interruption.ts`
 - `src/lib/raw/luma-runtime-adapter.ts`
 - `src/lib/raw/raw-runtime-host.ts`
-- `packages/render-engine/src/export/processed-window-export.ts`
 - `src/modules/raw-processor/state/session.atoms.ts`
 - `src/modules/raw-processor/hooks/stages/ingest/useRawProcessorLifecycle.ts`
 - `src/modules/raw-processor/services/workflow/raw-workflow-resources.ts`
@@ -532,12 +531,6 @@ user starts full-resolution export
 The export keeps its own abort controller, so neither the lease cancel nor the
 decode worker shutdown can cancel the export itself.
 
-Inside the export worker (and in `lmfg` export), the engine's
-`runProcessedWindowExportLifecycle` brackets the processed-window export with
-the RAW session's begin and end hooks. End runs only after a successful begin;
-an end failure rejects an otherwise successful export, and never replaces the
-export's own failure.
-
 On resource-looking export failure, retry uses a fresh worker/runtime context and
 a lower policy. WebAssembly memory is effectively grow-only for this product, so
 retrying in the same grown worker after memory pressure is not accepted as a
@@ -922,7 +915,6 @@ Export lifecycle and resource tests:
 - `src/modules/raw-processor/services/export/export-interruption.test.ts`
 - `src/modules/raw-processor/services/export/export-recovery.test.ts`
 - `src/lib/raw/raw-runtime-host.test.ts`
-- `packages/render-engine/src/export/processed-window-export.test.ts`
 - `tests/browser/raw-mobile-workflow.spec.ts`
 - `tests/browser/raw-export-storage.spec.ts`
 - `tests/browser/raw-export-acceptance.spec.ts`

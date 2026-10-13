@@ -71,7 +71,6 @@ export type LumaRawNativeDecodeOptions = {
 }
 
 export type LumaRawNativeExportCapability = LumaRawExportCapability
-export type LumaRawNativeProcessedWindowExportSessionInfo = { active: true }
 
 // Subset of the LumaRawCameraCalibrationProfile carried into the native
 // wrapper. The runtime adapter strips identity fields (profileId,
@@ -94,12 +93,10 @@ export type LumaRawNativeProcessor = {
   readMetadata: () => LumaRawNativeMetadata
   extractThumbnail: () => LumaRawNativeThumbnail | undefined
   probeExportCapability?: () => LumaRawNativeExportCapability
-  beginProcessedWindowExport?: () => LumaRawNativeProcessedWindowExportSessionInfo
   readRawWindow?: (rect: LumaRawWindowRect) => LumaRawWindow
   readProcessedWindow?: (
     request: LumaRawProcessedWindowRequest,
   ) => LumaRawProcessedWindow
-  endProcessedWindowExport?: () => void
   applyCalibration?: (payload: LumaRawNativeCalibrationPayload) => void
   decodePreview: (options?: LumaRawNativeDecodeOptions) => LumaRawNativeImage
   decodeHq: (options?: LumaRawNativeDecodeOptions) => LumaRawNativeImage

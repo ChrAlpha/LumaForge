@@ -4,6 +4,16 @@ All notable changes to `@lumaforge/luma-raw-runtime` are documented here. The
 format follows Keep a Changelog; versions follow semver. Releases up to 0.1.1
 predate this file.
 
+## Unreleased
+
+### Breaking
+
+- `LumaRawDecodeSession.beginProcessedWindowExport` and
+  `endProcessedWindowExport`, and the `beginProcessedWindowExportFromSession`
+  and `endProcessedWindowExportFromSession` worker requests, are removed. No
+  native build bound them, so the worker answered begin without native work
+  and end did nothing; read processed windows from the session directly.
+
 ## 0.2.0 - 2026-10-12
 
 This release removes public exports and changes error codes and capability

@@ -100,29 +100,6 @@ describe('createRawExportSession', () => {
     expect(session.readRawWindow).toHaveBeenCalledWith(rect, signal)
     expect(session.readProcessedWindow).toHaveBeenCalledWith(request, signal)
   })
-
-  it('passes through optional processed-window export lifecycle methods', async () => {
-    const session = {
-      probeExportCapability: vi.fn(),
-      readRawWindow: vi.fn(),
-      readProcessedWindow: vi.fn(),
-      beginProcessedWindowExport: vi.fn(async () => ({ active: true })),
-      endProcessedWindowExport: vi.fn(async () => ({ ended: true })),
-    }
-
-    const exportSession = createRawExportSession(
-      session as unknown as LumaRawDecodeSession,
-    )
-
-    await expect(exportSession.beginProcessedWindowExport?.()).resolves.toEqual(
-      {
-        active: true,
-      },
-    )
-    await expect(exportSession.endProcessedWindowExport?.()).resolves.toEqual({
-      ended: true,
-    })
-  })
 })
 
 describe('isRawExportSession', () => {

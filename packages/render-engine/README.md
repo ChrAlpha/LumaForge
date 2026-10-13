@@ -12,9 +12,7 @@ It holds the render pipeline shared by the `/raw` app and the `lmfg` CLI:
 - Full-resolution row-band JPEG export, including strip scheduling and export
   geometry planning and resampling (`@lumaforge/render-engine/export`).
   `assessProcessedExport` reports whether a probed RAW source can feed the
-  processed-window export, with every typed refusal;
-  `runProcessedWindowExportLifecycle` brackets one such export with the
-  session's begin and end hooks.
+  processed-window export, with every typed refusal.
 - The pure 3x3 projective geometry kernel export geometry runs
   (`@lumaforge/render-engine/geometry`).
 - CPU preview render and JPEG encode, the preview plan and preview color

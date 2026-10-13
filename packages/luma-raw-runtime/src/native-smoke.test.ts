@@ -436,20 +436,6 @@ describe('native RAW runtime smoke test', () => {
             expect(window.data.length).toBe(width * height * 3)
             expect(window.timings?.total).toBeGreaterThanOrEqual(0)
             expect(window.timings?.process).toBeGreaterThanOrEqual(0)
-
-            if (capability.supported && capability.windows.librawProcessed) {
-              await session.beginProcessedWindowExport?.()
-              try {
-                const timedWindow = await session.readProcessedWindow({
-                  outputRect: { x: 0, y: 0, width: 16, height: 16 },
-                  halo: { left: 0, top: 0, right: 0, bottom: 0 },
-                })
-                expect(timedWindow.timings?.total).toBeGreaterThanOrEqual(0)
-                expect(timedWindow.timings?.process).toBeGreaterThanOrEqual(0)
-              } finally {
-                await session.endProcessedWindowExport?.()
-              }
-            }
           } finally {
             session.dispose()
           }

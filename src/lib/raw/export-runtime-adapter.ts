@@ -9,16 +9,11 @@ export type RawExportSession = {
   ) => Promise<LumaRawExportCapability>
   readRawWindow: LumaRawDecodeSession['readRawWindow']
   readProcessedWindow: LumaRawDecodeSession['readProcessedWindow']
-  beginProcessedWindowExport?: LumaRawDecodeSession['beginProcessedWindowExport']
-  endProcessedWindowExport?: LumaRawDecodeSession['endProcessedWindowExport']
 }
 
 export function createRawExportSession(
   session: LumaRawDecodeSession,
 ): RawExportSession {
-  const beginProcessedWindowExport = session.beginProcessedWindowExport
-  const endProcessedWindowExport = session.endProcessedWindowExport
-
   return {
     probeExportCapability(signal) {
       return session.probeExportCapability(signal)
@@ -29,12 +24,6 @@ export function createRawExportSession(
     readProcessedWindow(request, signal) {
       return session.readProcessedWindow(request, signal)
     },
-    beginProcessedWindowExport: beginProcessedWindowExport
-      ? (signal) => beginProcessedWindowExport(signal)
-      : undefined,
-    endProcessedWindowExport: endProcessedWindowExport
-      ? (signal) => endProcessedWindowExport(signal)
-      : undefined,
   }
 }
 

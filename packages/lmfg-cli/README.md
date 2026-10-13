@@ -55,9 +55,9 @@ Failures use `lmfg.error.v1` with a stable `code`, `retryable`, and
 message, `retryable`, and exit code stay the first failure's and
 `details.cleanup_failures` lists each step that did not finish as
 `{ step, code, errno? }` (`errno` for filesystem errors). The steps are
-`abort_jpeg_encoder`, `dispose_jpeg_runtime`, `close_temp_file`,
-`remove_temp_file`, and `end_processed_window_export`; at most 8 are listed
-and `details.cleanup_failures_omitted` counts the rest. Cleanup error messages
+`abort_jpeg_encoder`, `dispose_jpeg_runtime`, `close_temp_file`, and
+`remove_temp_file`; at most 8 are listed and `details.cleanup_failures_omitted`
+counts the rest. Cleanup error messages
 are not copied, because they can carry local paths. A listed
 `remove_temp_file` means a `.tmp` file may remain next to the output. An
 export or replay that succeeds after the engine retried a failed attempt lists

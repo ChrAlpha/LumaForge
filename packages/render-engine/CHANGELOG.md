@@ -44,6 +44,11 @@ predates this file.
 - `@lumaforge/render-engine/export` no longer re-exports `applyMatrix`,
   `invertMatrix`, `isMatrix3` and `Matrix3`; import them from
   `@lumaforge/render-engine/geometry`.
+- `runProcessedWindowExportLifecycle` and its input type
+  `ProcessedWindowExportLifecycleInput` are removed from
+  `@lumaforge/render-engine/export`. No native RAW build ever bound the
+  session's begin and end hooks, so the bracket cost two worker round trips
+  per export and did nothing; call `runFullResolutionJpegExport` directly.
 
 ### Changed
 

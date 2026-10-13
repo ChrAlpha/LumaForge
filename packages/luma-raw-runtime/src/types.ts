@@ -326,10 +326,6 @@ export type LumaRawDecodeSession = LumaRawSessionInfo & {
   probeExportCapability: (
     signal?: AbortSignal,
   ) => Promise<LumaRawExportCapability>
-  beginProcessedWindowExport?: (
-    signal?: AbortSignal,
-  ) => Promise<{ active: true }>
-  endProcessedWindowExport?: (signal?: AbortSignal) => Promise<{ ended: true }>
   readRawWindow: (
     rect: LumaRawWindowRect,
     signal?: AbortSignal,

@@ -34,10 +34,8 @@ type EmbindProcessor = {
   readMetadata: () => unknown
   extractThumbnail: () => unknown
   probeExportCapability?: () => unknown
-  beginProcessedWindowExport?: () => unknown
   readRawWindow?: (rect: LumaRawWindowRect) => unknown
   readProcessedWindow?: (request: LumaRawProcessedWindowRequest) => unknown
-  endProcessedWindowExport?: () => void
   applyCalibration?: (params: EmbindCalibrationParams) => unknown
   decodePreview: (options?: LumaRawNativeDecodeOptions) => unknown
   decodeHq: (options?: LumaRawNativeDecodeOptions) => unknown
@@ -1003,29 +1001,6 @@ export function createNativeFactory(
           return normalizeProcessedWindow(
             processor.readProcessedWindow(request),
           )
-        }
-      }
-      if (processor.beginProcessedWindowExport) {
-        adapted.beginProcessedWindowExport = () => {
-          if (!processor.beginProcessedWindowExport) {
-            throw new TypeError(
-              'Native RAW processed-window export session is unavailable.',
-            )
-          }
-
-          const raw = asRecord(processor.beginProcessedWindowExport())
-          if (raw.active !== true) {
-            throw new TypeError(
-              'Native RAW processed-window export session returned invalid state.',
-            )
-          }
-
-          return { active: true }
-        }
-      }
-      if (processor.endProcessedWindowExport) {
-        adapted.endProcessedWindowExport = () => {
-          processor.endProcessedWindowExport?.()
         }
       }
       if (processor.applyCalibration) {
