@@ -28,8 +28,8 @@ export default defineConfig({
   plugins: [
     {
       name: 'luma-jpeg-preserve-native-assets',
-      // Build only: the test server must never clear dist, since the bundle
-      // tests load `dist/node.js` and the native assets beside it.
+      // Build only: the test server must never clear dist, since the native
+      // smoke tests load the native assets in `dist/native`.
       apply: 'build',
       buildStart() {
         cleanDistExceptNative()
