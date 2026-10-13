@@ -213,7 +213,6 @@ function createRuntimeSession(
     decodeBoundedHqRaw: vi
       .fn()
       .mockResolvedValue(createDecodedImage(4243, 2828)),
-    applyCalibration: vi.fn().mockResolvedValue({ applied: true } as const),
     dispose: vi.fn(),
     ...overrides,
   }
@@ -448,7 +447,6 @@ describe('orchestrateRawLoad ack-before-work contract', () => {
       extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
       decodeQuickRaw: vi.fn().mockResolvedValue(quick),
       decodeBoundedHqRaw,
-      applyCalibration: vi.fn().mockResolvedValue({ applied: true } as const),
       dispose: vi.fn(),
     })
 

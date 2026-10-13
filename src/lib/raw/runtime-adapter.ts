@@ -1,6 +1,5 @@
 import type {
   LumaEmbeddedPreview,
-  LumaRawCameraCalibrationProfile,
   LumaRawExportCapability,
 } from '@lumaforge/luma-raw-runtime'
 
@@ -39,10 +38,6 @@ export type RawRuntimeSession = {
     onProgress?: ProgressCallback,
     signal?: AbortSignal,
   ) => Promise<DecodedImage>
-  applyCalibration: (
-    profile: LumaRawCameraCalibrationProfile,
-    signal?: AbortSignal,
-  ) => Promise<{ applied: true }>
   dispose: () => void
 }
 

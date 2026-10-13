@@ -1,5 +1,4 @@
 import type {
-  LumaRawCameraCalibrationProfile,
   LumaRawErrorCode,
   LumaRawExportCapability,
   LumaRawExportUnsupportedReason,
@@ -275,16 +274,6 @@ export async function openRawSessionOnBridge(
         return frameToDecodedImage(frame, { pinnedExposure })
       } catch (error) {
         throw normalizeRawAdapterError(error, 'RAW_HQ_DECODE_FAILED', signal)
-      }
-    },
-    async applyCalibration(
-      profile: LumaRawCameraCalibrationProfile,
-      signal?: AbortSignal,
-    ) {
-      try {
-        return await session.applyCalibration(profile, signal)
-      } catch (error) {
-        throw normalizeRawAdapterError(error, 'RAW_RUNTIME_UNAVAILABLE', signal)
       }
     },
     dispose() {
