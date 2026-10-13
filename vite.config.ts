@@ -13,6 +13,7 @@ import { defineConfig } from 'vite'
 import { checker } from 'vite-plugin-checker'
 import { routeBuilderPlugin } from 'vite-plugin-route-builder'
 
+import deployConfig from './deploy.config.mjs'
 import PKG from './package.json'
 import { preserveIsolationHeaders } from './plugins/isolation-headers'
 import { resolveAppAliases } from './scripts/build/app-aliases.mjs'
@@ -57,10 +58,7 @@ const LUMAFORGE_OG_IMAGE_HERO_SOURCE = resolve(
   './public/landing-raw-finish.webp',
 )
 const LUMAFORGE_OG_IMAGE_LOGO_SOURCE = resolve(ROOT, './public/favicon.png')
-const CROSS_ORIGIN_ISOLATION_HEADERS = {
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
-}
+const CROSS_ORIGIN_ISOLATION_HEADERS = deployConfig.crossOriginIsolationHeaders
 
 function selectManualChunk(moduleId: string) {
   const id = moduleId.replaceAll('\\', '/')
