@@ -40,4 +40,3 @@ Keep the included copyright and permission notice with redistributed source or b
 - Keep `native/sources.lock.json` so recipients can identify exact native source archives and hashes.
 - Keep the native wrapper and build scripts available from this package source tree.
 - Run `pnpm --filter @lumaforge/luma-raw-runtime native:verify` before shipping generated native artifacts.
-- Run `pnpm --filter @lumaforge/luma-raw-runtime native:verify-baseline` to confirm no `libraw-wasm` or local baseline artifacts are active build inputs.

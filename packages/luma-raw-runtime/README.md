@@ -32,12 +32,9 @@ Run:
 pnpm --filter @lumaforge/luma-raw-runtime native:fetch
 pnpm --filter @lumaforge/luma-raw-runtime build:native
 pnpm --filter @lumaforge/luma-raw-runtime native:verify
-pnpm --filter @lumaforge/luma-raw-runtime native:verify-baseline
 ```
 
-`native:fetch` downloads the locked archives and checks their SHA-256. `build:native` builds both memory profiles (`build:native:desktop` and `build:native:low-memory` build one) and writes each profile's `provenance.json`. `native:verify` checks each profile's artifacts and the current source lock against that provenance and then runs `native:verify-baseline`.
-
-`native:verify-baseline` is the active guard that prevents reintroducing `libraw-wasm`, `LibRaw-Wasm`, `BASELINE_ROOT`, or local `/workspaces/LumaForge` build inputs into the package build.
+`native:fetch` downloads the locked archives and checks their SHA-256. `build:native` builds both memory profiles (`build:native:desktop` and `build:native:low-memory` build one) and writes each profile's `provenance.json`. `native:verify` checks each profile's artifacts and the current source lock against that provenance.
 
 ## Licensing
 
