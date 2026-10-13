@@ -200,16 +200,3 @@ export async function downloadManifest(page: Page) {
   expect(manifest.kind).toBe('export')
   return { manifest, path, sha256: sha256(text) }
 }
-
-/** The pixel size of a JPEG as this browser decodes it. */
-export async function decodedJpegSize(page: Page, jpeg: Buffer) {
-  return page.evaluate(async (base64) => {
-    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
-    const bitmap = await createImageBitmap(
-      new Blob([bytes], { type: 'image/jpeg' }),
-    )
-    const size = { width: bitmap.width, height: bitmap.height }
-    bitmap.close()
-    return size
-  }, jpeg.toString('base64'))
-}
