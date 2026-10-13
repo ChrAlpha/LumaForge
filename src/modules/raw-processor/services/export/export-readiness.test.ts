@@ -481,7 +481,7 @@ describe('export readiness helpers', () => {
         { kind: 'confirmed', confidence: 'metadata', profile: linear },
         {
           code: 'lut-output-refused',
-          detail: resolveUnsupportedLUTOutputReason(linear)!,
+          detail: resolveUnsupportedLUTOutputReason(linear)!.message,
         },
       ],
     ] as const satisfies ReadonlyArray<

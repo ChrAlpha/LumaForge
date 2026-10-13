@@ -267,14 +267,14 @@ export function resolveLutContract(
       })
     }
   }
-  const unsupportedReason = resolveUnsupportedLUTOutputReason(profile)
-  if (unsupportedReason) {
+  const unsupported = resolveUnsupportedLUTOutputReason(profile)
+  if (unsupported) {
     throw new LmfgError(
-      /transfer is not supported/i.test(unsupportedReason)
+      unsupported.code === 'unsupported-output'
         ? 'lut.contract.unsupported_output'
         : 'lut.contract.incomplete',
       {
-        message: unsupportedReason,
+        message: unsupported.message,
         retryable: true,
         suggestedNextActions: [VALIDATE_ACTION(loaded.absolutePath)],
       },
@@ -387,7 +387,7 @@ export function validateContract(
     }
   }
   let exportReason: string | null =
-    resolveUnsupportedLUTOutputReason(applied.profile) ?? null
+    resolveUnsupportedLUTOutputReason(applied.profile)?.message ?? null
   if (!exportReason) {
     try {
       toLutIdentity(loaded, applied.profile)

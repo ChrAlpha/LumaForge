@@ -92,24 +92,24 @@ export function buildColorGraph(
   })
 }
 
+/**
+ * A LUT reaches the graph only through `resolveLutContract`, which refuses an
+ * unsupported output under its own code first; a pipeline the graph still
+ * refuses is reported as an incomplete contract, as an export that refuses
+ * its pipeline is.
+ */
 export function requireSupportedGraph(
   graph: ExportColorGraphDescriptor,
 ): SupportedExportColorGraphDescriptor {
   if (graph.supported) return graph
-  const unsupportedOutput = /output (?:transfer|range)/i.test(graph.message)
-  throw new LmfgError(
-    unsupportedOutput
-      ? 'lut.contract.unsupported_output'
-      : 'lut.contract.incomplete',
-    {
-      message: graph.message,
-      retryable: true,
-      suggestedNextActions: [
-        'lmfg lut contract infer --lut <file.cube>',
-        'lmfg lut contract validate --lut <file.cube> --contract <contract.json>',
-      ],
-    },
-  )
+  throw new LmfgError('lut.contract.incomplete', {
+    message: graph.message,
+    retryable: true,
+    suggestedNextActions: [
+      'lmfg lut contract infer --lut <file.cube>',
+      'lmfg lut contract validate --lut <file.cube> --contract <contract.json>',
+    ],
+  })
 }
 
 export function toColorGraphIdentity(

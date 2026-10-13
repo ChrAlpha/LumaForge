@@ -12,6 +12,11 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   `LUTContractResult<StoredLUTContractSelection>`: `{ ok: true, value }`, or
   `{ ok: false, issues }` listing every reason the selection cannot be
   stored, instead of `undefined`.
+- `resolveUnsupportedLUTOutputReason` returns an
+  `UnsupportedLUTOutputReason` (`{ code, message }`) instead of the message
+  alone. `code` is `incomplete-output` while the output still has to be
+  stated and `unsupported-output` when the stated output cannot be encoded,
+  so callers no longer read the cause from the message text.
 
 ## 0.2.1 - 2026-10-12
 

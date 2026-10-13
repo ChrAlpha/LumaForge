@@ -49,7 +49,9 @@ export function deriveLutContractExportRefusal(
   }
 
   if (profileResolution.kind === 'confirmed') {
-    const detail = resolveUnsupportedLUTOutputReason(profileResolution.profile)
+    const detail = resolveUnsupportedLUTOutputReason(
+      profileResolution.profile,
+    )?.message
     return detail ? { code: 'lut-output-refused', detail } : undefined
   }
 

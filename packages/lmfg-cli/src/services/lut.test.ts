@@ -260,6 +260,32 @@ describe('lut service', () => {
     })
   })
 
+  it('refuses an unencodable output transfer apart from an unstated output range', async () => {
+    await writeFile(join(dir, 'x.cube'), cube(['TITLE "x"']))
+    const loaded = await loadLutFile('x.cube', dir)
+    const contract = {
+      role: 'combined-look-output',
+      input_profile: 'sony-sgamut3cine-slog3',
+      output_gamut: 'srgb-rec709',
+    } as const
+    expect(() =>
+      resolveLutContract(loaded, {
+        ...contract,
+        output_transfer: 'linear',
+        output_range: 'full',
+      }),
+    ).toThrow(
+      expect.objectContaining({ code: 'lut.contract.unsupported_output' }),
+    )
+    expect(() =>
+      resolveLutContract(loaded, {
+        ...contract,
+        output_transfer: 'bt709',
+        output_range: 'unknown',
+      }),
+    ).toThrow(expect.objectContaining({ code: 'lut.contract.incomplete' }))
+  })
+
   it('never records an unspecified range and replays unknown ranges from the descriptor', async () => {
     await writeFile(join(dir, 'vlog.cube'), cube(['TITLE "V-Log to Rec709"']))
     const loaded = await loadLutFile('vlog.cube', dir)

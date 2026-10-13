@@ -145,27 +145,51 @@ function resolveEffectiveLUTOutputTransfer(
   return undefined
 }
 
+/**
+ * Why a confirmed LUT profile cannot feed full-resolution JPEG export:
+ * `incomplete-output` while its output still has to be stated, and
+ * `unsupported-output` when the output it states cannot be encoded.
+ */
+export interface UnsupportedLUTOutputReason {
+  code: 'incomplete-output' | 'unsupported-output'
+  message: string
+}
+
 export function resolveUnsupportedLUTOutputReason(
   profile: LUTColorProfile,
-): string | undefined {
+): UnsupportedLUTOutputReason | undefined {
   if (profile.outputRange === 'unknown') {
-    return 'This LUT output range must be explicit before full-resolution JPEG export.'
+    return {
+      code: 'incomplete-output',
+      message:
+        'This LUT output range must be explicit before full-resolution JPEG export.',
+    }
   }
 
   if (
     profile.role !== 'display-look' &&
     (!profile.outputGamut || !profile.outputTransfer || !profile.outputRange)
   ) {
-    return 'Choose a LUT output profile before full-resolution export.'
+    return {
+      code: 'incomplete-output',
+      message: 'Choose a LUT output profile before full-resolution export.',
+    }
   }
 
   const effectiveOutputTransfer = resolveEffectiveLUTOutputTransfer(profile)
   if (!effectiveOutputTransfer) {
-    return 'Choose a LUT output profile before full-resolution export.'
+    return {
+      code: 'incomplete-output',
+      message: 'Choose a LUT output profile before full-resolution export.',
+    }
   }
 
   if (effectiveOutputTransfer === 'linear') {
-    return 'This LUT output transfer is not supported by full-resolution JPEG export.'
+    return {
+      code: 'unsupported-output',
+      message:
+        'This LUT output transfer is not supported by full-resolution JPEG export.',
+    }
   }
 
   return undefined
@@ -319,7 +343,7 @@ export function resolveExportColorGraph(
     return {
       supported: false,
       reason: 'unsupported-pipeline',
-      message: unsupportedOutputReason,
+      message: unsupportedOutputReason.message,
       steps: [],
     }
   }
