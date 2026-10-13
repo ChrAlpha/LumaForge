@@ -5,10 +5,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
 
-import {
-  resolveGpuPreviewLook,
-  resolveLUTPipelineProfileUniforms,
-} from './lut-profile'
+import { resolveGpuPreviewLook } from './lut-profile'
 
 export interface ShaderSpecialization {
   readonly styleKind: 0 | 1 | 2
@@ -87,10 +84,11 @@ export function getShaderSpecialization(
     selectiveColor: params.selectiveColor,
   })
   // Key the variant on the look the shader draws, as the uniforms do.
-  const { look, lut: drawnLut } = resolveGpuPreviewLook(params, lut)
-  const resolved = resolveLUTPipelineProfileUniforms(
-    drawnLut?.profileResolution,
-  )
+  const {
+    look,
+    lut: drawnLut,
+    uniforms: resolved,
+  } = resolveGpuPreviewLook(params, lut)
   return normalizeShaderSpecialization({
     styleKind:
       look.styleKind === 'builtin' ? 1 : look.styleKind === 'custom' ? 2 : 0,

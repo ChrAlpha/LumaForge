@@ -16,10 +16,7 @@ import {
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 
 import type { GpuPreviewInput } from './contract'
-import {
-  resolveGpuPreviewLook,
-  resolveLUTPipelineProfileUniforms,
-} from './lut-profile'
+import { resolveGpuPreviewLook } from './lut-profile'
 import {
   writeUniformF32,
   writeUniformI32,
@@ -148,9 +145,7 @@ export function packUniforms(
   // raw selection: a LUT export refuses is left out, user color kept.
   const drawn = resolveGpuPreviewLook(p, lut)
   const drawnLut = drawn.lut
-  const lutProfileUniforms = resolveLUTPipelineProfileUniforms(
-    drawnLut?.profileResolution,
-  )
+  const lutProfileUniforms = drawn.uniforms
 
   writeUniformMat3x3f(v, 'inputToLutGamut', lutProfileUniforms.inputToLutGamut)
   writeUniformMat3x3f(
