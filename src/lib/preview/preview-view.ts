@@ -8,12 +8,6 @@
 
 export type PreviewViewMode = 'processed' | 'original' | 'compare'
 
-export const PREVIEW_VIEW_MODES: readonly PreviewViewMode[] = Object.freeze([
-  'processed',
-  'original',
-  'compare',
-])
-
 export interface PreviewView {
   readonly mode: PreviewViewMode
   /** Frame-anchored split position in 0..1, read only in `compare`. */

@@ -2,40 +2,38 @@ import { describe, expect, it } from 'vitest'
 
 import type { ProfileSourceResource } from './source-url'
 import {
-  classifyProfileSourceUrl,
   createLUTResourceShareUrl,
   isProfileTransportUrl,
   parseLUTResourceQuery,
 } from './source-url'
 
+function classify(url: string) {
+  return parseLUTResourceQuery(new URLSearchParams({ luts: url }).toString())
+    .resources[0]?.type
+}
+
 describe('profile source URLs', () => {
   it('classifies online profile source resources', () => {
     expect(
-      classifyProfileSourceUrl(
-        'https://profiles.example.com/channels/stable/catalog.json',
-      ),
+      classify('https://profiles.example.com/channels/stable/catalog.json'),
     ).toBe('catalog')
     expect(
-      classifyProfileSourceUrl(
+      classify(
         'https://profiles.example.com/releases/v2026.05.01/catalog.json',
       ),
     ).toBe('catalog')
+    expect(classify('https://example.com/lumaforge-profiles.json')).toBe(
+      'catalog',
+    )
     expect(
-      classifyProfileSourceUrl('https://example.com/lumaforge-profiles.json'),
-    ).toBe('catalog')
-    expect(
-      classifyProfileSourceUrl(
+      classify(
         'https://profiles.example.com/releases/v2026.05.01/entries/org.example.lut.look.json',
       ),
     ).toBe('entry')
     expect(
-      classifyProfileSourceUrl(
-        'https://example.com/profiles/kodak-2383/manifest.json',
-      ),
+      classify('https://example.com/profiles/kodak-2383/manifest.json'),
     ).toBe('entry')
-    expect(
-      classifyProfileSourceUrl('https://example.com/kodak-2383.cube'),
-    ).toBe('cube')
+    expect(classify('https://example.com/kodak-2383.cube')).toBe('cube')
   })
 
   it.each([

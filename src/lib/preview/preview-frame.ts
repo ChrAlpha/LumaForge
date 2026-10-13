@@ -67,14 +67,6 @@ export function isSameDecodedPreviewFrame(
   )
 }
 
-/** Both frames were decoded for one source. A missing descriptor has none. */
-export function isSameDecodedPreviewSource(
-  a: DecodedPreviewFrame | null,
-  b: DecodedPreviewFrame | null,
-): boolean {
-  return a !== null && b !== null && a.sessionId === b.sessionId
-}
-
 /**
  * The quick frame's output may bridge to the successor only when the
  * successor is a bounded-HQ frame of the same source that names this quick

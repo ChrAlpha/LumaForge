@@ -2,7 +2,6 @@ import type { DecodedPreviewFrame } from './preview-frame'
 import {
   isEligibleQuickPredecessor,
   isSameDecodedPreviewFrame,
-  isSameDecodedPreviewSource,
 } from './preview-frame'
 
 const pinnedExposure = {
@@ -38,9 +37,7 @@ const quickB: DecodedPreviewFrame = Object.freeze({
 })
 
 describe('decoded preview frame', () => {
-  it('tells sources apart by session, never by equal dimensions or exposure', () => {
-    expect(isSameDecodedPreviewSource(quickA, hqA)).toBe(true)
-    expect(isSameDecodedPreviewSource(quickA, quickB)).toBe(false)
+  it('tells frames of two sources apart, never by equal dimensions or exposure', () => {
     expect(isSameDecodedPreviewFrame(quickA, quickB)).toBe(false)
   })
 
@@ -54,10 +51,9 @@ describe('decoded preview frame', () => {
     ).toBe(false)
   })
 
-  it('treats a missing descriptor as no frame and no source', () => {
+  it('treats a missing descriptor as no frame', () => {
     expect(isSameDecodedPreviewFrame(null, null)).toBe(false)
     expect(isSameDecodedPreviewFrame(quickA, null)).toBe(false)
-    expect(isSameDecodedPreviewSource(null, quickA)).toBe(false)
     expect(isEligibleQuickPredecessor(null, hqA)).toBe(false)
     expect(isEligibleQuickPredecessor(quickA, null)).toBe(false)
   })
@@ -123,18 +119,5 @@ describe('decoded preview frame', () => {
         quickPredecessorFrameId: quickA.frameId,
       }),
     ).toBe(false)
-  })
-
-  it('keeps an absent exposure pin explicit', () => {
-    const unpinned: DecodedPreviewFrame = {
-      ...hqA,
-      exposure: {
-        kind: 'unpinned',
-        value: { ev: 0.2, multiplier: 2 ** 0.2, source: 'image-statistics' },
-      },
-      quickPredecessorFrameId: null,
-    }
-    expect(unpinned.exposure.kind).toBe('unpinned')
-    expect(isSameDecodedPreviewSource(unpinned, quickA)).toBe(true)
   })
 })

@@ -46,10 +46,6 @@ export function normalizeProfileSourceUrl(value: string): string {
   return parseProfileSourceUrl(value).normalizedUrl
 }
 
-export function classifyProfileSourceUrl(value: string): ProfileSourceType {
-  return parseProfileSourceUrl(value).type
-}
-
 // Transport rule shared by every online profile URL (query sources, catalog
 // roots, entries, CUBE and preview assets): absolute HTTPS, or HTTP on a
 // loopback host, never with credentials. It says nothing about resource

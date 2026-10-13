@@ -5,16 +5,19 @@ import type { PreviewView, PreviewViewMode } from './preview-view'
 import {
   cpuPreviewVariantForViewMode,
   DEFAULT_PREVIEW_VIEW,
-  PREVIEW_VIEW_MODES,
   previewSurfaceOutputForViewMode,
 } from './preview-view'
 
+const VIEW_MODES: readonly PreviewViewMode[] = [
+  'processed',
+  'original',
+  'compare',
+]
+
 describe('preview view', () => {
   it('names the three view modes', () => {
-    expect(PREVIEW_VIEW_MODES).toEqual(['processed', 'original', 'compare'])
-    expect(Object.isFrozen(PREVIEW_VIEW_MODES)).toBe(true)
     expectTypeOf<PreviewViewMode>().toEqualTypeOf<
-      (typeof PREVIEW_VIEW_MODES)[number]
+      'processed' | 'original' | 'compare'
     >()
   })
 
@@ -29,10 +32,7 @@ describe('preview view', () => {
 
   it('draws compare as a processed surface; the stage layers the original', () => {
     expect(
-      PREVIEW_VIEW_MODES.map((mode) => [
-        mode,
-        previewSurfaceOutputForViewMode(mode),
-      ]),
+      VIEW_MODES.map((mode) => [mode, previewSurfaceOutputForViewMode(mode)]),
     ).toEqual([
       ['processed', 'processed'],
       ['original', 'technical-original'],
@@ -42,10 +42,7 @@ describe('preview view', () => {
 
   it('maps original to the neutral CPU frame and everything else to processed', () => {
     expect(
-      PREVIEW_VIEW_MODES.map((mode) => [
-        mode,
-        cpuPreviewVariantForViewMode(mode),
-      ]),
+      VIEW_MODES.map((mode) => [mode, cpuPreviewVariantForViewMode(mode)]),
     ).toEqual([
       ['processed', 'processed'],
       ['original', 'neutral'],
