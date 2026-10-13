@@ -188,10 +188,6 @@ describe('rawProcessorView', () => {
       runtimeFactory: () =>
         ({
           init: () => new Promise(() => {}),
-          probe: vi.fn(),
-          extractEmbeddedPreview: vi.fn(),
-          decodeQuick: vi.fn(),
-          decodeBoundedHq: vi.fn(),
           openSession: vi.fn(),
           dispose: vi.fn(),
         }) satisfies LumaRawRuntime,
