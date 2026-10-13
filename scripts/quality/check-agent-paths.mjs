@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
  * Git tracks it (or would track it), so a mistyped or moved path fails. A
  * word is a path when it contains `/` or ends in a file extension; `~/x`
  * resolves under `src/`, and a package specifier must name a workspace
- * package export or a declared dependency. Spans that start with a command
+ * package, one of its export subpaths, or a declared dependency. Spans that start with a command
  * and words that are URLs, routes, flags, placeholders, or globs are skipped.
  */
 
@@ -43,7 +43,9 @@ export function checkAgentPaths(markdown, { files, packages, dependencies }) {
       return MODULE_SUFFIXES.some((end) => exists(`src/${word.slice(2)}${end}`))
     }
     const [, name, subpath = ''] = /^((?:@[^/]+\/)?[^/]+)(\/.*)?$/.exec(word)
-    if (packages.has(name)) return packages.get(name).includes(`.${subpath}`)
+    if (packages.has(name)) {
+      return subpath === '' || packages.get(name).includes(`.${subpath}`)
+    }
     return exists(word) || dependencies.has(name)
   }
   const unfenced = markdown.replace(/^```[\s\S]*?\n```/gm, (fence) =>

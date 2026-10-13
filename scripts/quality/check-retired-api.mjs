@@ -168,7 +168,6 @@ const PACKAGE_ENTRIES = Object.freeze({
     './node': 'packages/luma-raw-runtime/src/runtime-node.ts',
   },
   '@lumaforge/render-engine': {
-    '.': 'packages/render-engine/src/index.ts',
     './export': 'packages/render-engine/src/export/index.ts',
     './geometry': 'packages/render-engine/src/geometry/index.ts',
     './manifest': 'packages/render-engine/src/manifest/index.ts',
