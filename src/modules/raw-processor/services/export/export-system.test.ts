@@ -4,15 +4,22 @@ import type {
   CapabilityVector,
   ExportRuntimeResources,
 } from '@lumaforge/render-engine/policy'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type { ExportExecutionPlan } from '~/lib/export/export-plan'
 import { selectExportPlan } from '~/lib/export/export-plan'
 import type { RunFullResolutionJpegExportInWorkerInput } from '~/lib/export/full-res-export-client'
+import { resetCapabilityVectorForTest } from '~/lib/runtime/capability-vector'
 
 import {
+  buildExportFilename,
+  buildPreviewExportFilename,
   EXPORT_JPEG_QUALITY,
+  HQ_PREVIEW_EXPORT_MAX_PIXELS,
+  planExportWithSampledFacts,
+  recommendRetryLevel,
+  resolveHqPreviewExportSize,
   runFullResolutionExportJob,
 } from './export-system'
 
@@ -122,11 +129,42 @@ const RESOURCE_FAILURE = {
 }
 const SUCCESS = { output: OUTPUT }
 
+describe('export naming and sizing', () => {
+  it('names full-resolution and HQ preview files apart', () => {
+    expect(buildExportFilename('frame.ARW', 'Neutral')).toBe(
+      'frame_Neutral_fullres.jpg',
+    )
+    expect(buildPreviewExportFilename('frame.ARW', 'Neutral')).toBe(
+      'frame_Neutral_hq-preview.jpg',
+    )
+  })
+
+  it('caps an HQ preview export at 12MP, keeping its aspect ratio', () => {
+    const size = resolveHqPreviewExportSize({ width: 6000, height: 4000 })
+    expect(size.width * size.height).toBeLessThanOrEqual(
+      HQ_PREVIEW_EXPORT_MAX_PIXELS,
+    )
+    expect(size.width * size.height).toBeGreaterThanOrEqual(11_900_000)
+    expect(size.width / size.height).toBeCloseTo(1.5, 2)
+    expect(resolveHqPreviewExportSize({ width: 3840, height: 2160 })).toEqual({
+      width: 3840,
+      height: 2160,
+    })
+  })
+
+  it('recommends the next lower fidelity level on failure', () => {
+    expect(recommendRetryLevel('max')).toBe('balanced')
+    expect(recommendRetryLevel('balanced')).toBe('safe')
+    expect(recommendRetryLevel('safe')).toBe(null)
+  })
+})
+
 describe('runFullResolutionExportJob output location', () => {
   it('hands the reserved OPFS location to an opfs-file attempt', async () => {
     const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
     expect(executionPlan.outputSink).toBe('opfs-file')
     const script = scriptClients(SUCCESS)
+    const { signal } = new AbortController()
 
     const result = await runFullResolutionExportJob({
       file: FILE,
@@ -134,17 +172,32 @@ describe('runFullResolutionExportJob output location', () => {
       graph: GRAPH,
       executionPlan,
       outputLocation: OUTPUT_LOCATION,
+      signal,
+      beforeStart: async () => {
+        script.order.push('before-start')
+      },
       clientFactory: script.clientFactory,
     })
 
     expect(result).toEqual({ filename: FILENAME, output: OUTPUT, attempts: 1 })
+    expect(script.order).toEqual(['before-start', 'run:opfs-file'])
     expect(script.runs).toEqual([
       expect.objectContaining({
-        executionPlan: expect.objectContaining({ outputSink: 'opfs-file' }),
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        signal,
+        executionPlan: expect.objectContaining({
+          outputSink: 'opfs-file',
+          preferredRows: executionPlan.preferredRows,
+          concurrency: executionPlan.concurrency,
+          runtimeMemoryProfile: executionPlan.runtimeMemoryProfile,
+        }),
         outputLocation: OUTPUT_LOCATION,
       }),
     ])
     expect(script.runs[0]).not.toHaveProperty('checkpoint')
+    expect(script.clients[0]!.dispose).toHaveBeenCalledTimes(1)
   })
 
   it('refuses an opfs-file plan without a reserved location before starting a worker', async () => {
@@ -335,6 +388,7 @@ describe('runFullResolutionExportJob plan safety', () => {
     const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
     const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
     const onPlan = vi.fn()
+    const onAttempt = vi.fn()
 
     await runFullResolutionExportJob({
       file: FILE,
@@ -343,9 +397,25 @@ describe('runFullResolutionExportJob plan safety', () => {
       executionPlan,
       outputLocation: OUTPUT_LOCATION,
       onPlan,
+      onAttempt,
       sampleFacts: facts(DESKTOP, OPFS_RUNTIME),
       clientFactory: script.clientFactory,
     })
+
+    // The retry is scheduled before the failed worker is let go, the next
+    // attempt starts on a fresh one, and each worker is let go once.
+    expect(
+      onAttempt.mock.calls.map(([event]) => [event.attempt, event.phase]),
+    ).toEqual([
+      [1, 'started'],
+      [1, 'retry-scheduled'],
+      [1, 'disposed'],
+      [2, 'started'],
+      [2, 'disposed'],
+    ])
+    expect(
+      script.clients.map((client) => client.dispose.mock.calls.length),
+    ).toEqual([1, 1])
 
     expect(script.runs[1]).toMatchObject({
       executionPlan: { outputSink: 'opfs-file', concurrency: 1 },
@@ -480,7 +550,155 @@ describe('runFullResolutionExportJob plan safety', () => {
   })
 })
 
+describe('runFullResolutionExportJob attempt diagnostics', () => {
+  it('keeps a throwing attempt observer out of the export outcome', async () => {
+    const onAttempt = vi.fn(() => {
+      throw new Error('DIAGNOSTICS_FAILED')
+    })
+    const executionPlan = plan(DESKTOP, BLOB_RUNTIME, NORMAL)
+    const done = scriptClients(SUCCESS)
+    await expect(
+      runFullResolutionExportJob({
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        executionPlan,
+        onAttempt,
+        clientFactory: done.clientFactory,
+      }),
+    ).resolves.toEqual({ filename: FILENAME, output: OUTPUT, attempts: 1 })
+    expect(done.clients[0]!.dispose).toHaveBeenCalledTimes(1)
+
+    const fatal = new Error('FULL_RES_EXPORT_FATAL_FAILURE')
+    const failed = scriptClients({ error: fatal })
+    await expect(
+      runFullResolutionExportJob({
+        file: FILE,
+        filename: FILENAME,
+        graph: GRAPH,
+        executionPlan,
+        onAttempt,
+        clientFactory: failed.clientFactory,
+      }),
+    ).rejects.toBe(fatal)
+    expect(failed.clientFactory).toHaveBeenCalledTimes(1)
+    expect(failed.clients[0]!.dispose).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('runFullResolutionExportJob retry facts', () => {
+  afterEach(() => {
+    resetCapabilityVectorForTest()
+    vi.unstubAllGlobals()
+  })
+
+  it('samples real storage when the export plans and again for its retry', async () => {
+    // Room for the output at plan time; almost none by the retry.
+    const estimate = vi
+      .fn()
+      .mockResolvedValueOnce({ quota: 1_000_000_000, usage: 0 })
+      .mockResolvedValueOnce({ quota: 100_000_000, usage: 0 })
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+      maxTouchPoints: 0,
+      hardwareConcurrency: 8,
+      storage: { getDirectory: vi.fn(), estimate },
+    })
+    vi.stubGlobal('SharedArrayBuffer', class SharedArrayBuffer {})
+    vi.stubGlobal('crossOriginIsolated', true)
+    const executionPlan = await planExportWithSampledFacts({
+      preference: 'balanced',
+      source: NORMAL,
+    })
+    expect(executionPlan.outputSink).toBe('opfs-file')
+    expect(estimate).toHaveBeenCalledTimes(1)
+    const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
+
+    await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      outputLocation: OUTPUT_LOCATION,
+      clientFactory: script.clientFactory,
+    })
+
+    expect(estimate).toHaveBeenCalledTimes(2)
+    expect(script.order).toEqual(['run:opfs-file', 'run:blob-handoff'])
+    expect(script.runs[1]!.outputLocation).toBeUndefined()
+  })
+
+  it('keeps a retry on blob handoff when the job reserved no OPFS location', async () => {
+    const executionPlan = plan(DESKTOP, BLOB_RUNTIME, NORMAL)
+    expect(executionPlan.outputSink).toBe('blob-handoff')
+    const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
+
+    // The storage recovers by the retry; the job still has no OPFS address.
+    const result = await runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan,
+      sampleFacts: facts(DESKTOP, OPFS_RUNTIME),
+      clientFactory: script.clientFactory,
+    })
+
+    expect(result.attempts).toBe(2)
+    expect(script.order).toEqual(['run:blob-handoff', 'run:blob-handoff'])
+    expect(script.runs[1]!.outputLocation).toBeUndefined()
+  })
+
+  it('starts no further attempt when the job is aborted while retry facts are sampled', async () => {
+    const controller = new AbortController()
+    let resolveFacts!: (value: {
+      capability: CapabilityVector
+      runtime: ExportRuntimeResources
+    }) => void
+    let samplingStarted!: () => void
+    const sampling = new Promise<void>((resolve) => {
+      samplingStarted = resolve
+    })
+    const sampleFacts = vi.fn(
+      () =>
+        new Promise<{
+          capability: CapabilityVector
+          runtime: ExportRuntimeResources
+        }>((resolve) => {
+          resolveFacts = resolve
+          samplingStarted()
+        }),
+    )
+    const script = scriptClients(RESOURCE_FAILURE, SUCCESS)
+    const beforeStart = vi.fn()
+    const onPlan = vi.fn()
+    const onAttempt = vi.fn()
+
+    const job = runFullResolutionExportJob({
+      file: FILE,
+      filename: FILENAME,
+      graph: GRAPH,
+      executionPlan: plan(DESKTOP, BLOB_RUNTIME, NORMAL),
+      signal: controller.signal,
+      beforeStart,
+      onPlan,
+      onAttempt,
+      sampleFacts,
+      clientFactory: script.clientFactory,
+    })
+    await sampling
+    controller.abort()
+    resolveFacts({ capability: DESKTOP, runtime: BLOB_RUNTIME })
+
+    await expect(job).rejects.toMatchObject({ name: 'AbortError' })
+    expect(beforeStart).toHaveBeenCalledTimes(1)
+    expect(script.clientFactory).toHaveBeenCalledTimes(1)
+    expect(onPlan).not.toHaveBeenCalled()
+    expect(onAttempt).not.toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'retry-scheduled' }),
+    )
+  })
+
   it('samples the device again for a resource retry instead of reusing the first plan facts', async () => {
     const executionPlan = plan(DESKTOP, OPFS_RUNTIME, NORMAL)
     expect(executionPlan.outputSink).toBe('opfs-file')
