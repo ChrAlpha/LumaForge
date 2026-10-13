@@ -12,11 +12,11 @@ import {
   resolveExportColorGraph,
 } from '@lumaforge/luma-color-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
-import { processedWindowToRgb16Rows } from '@lumaforge/render-engine'
 import {
   createBlobOutputResult,
   createWasmJpegRowSink,
   materializeOutputBlob,
+  processedWindowToRgb16Rows,
   runFullResolutionJpegExport,
 } from '@lumaforge/render-engine/export'
 import type { TestContext } from 'vitest'

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 
-import type { RenderManifest } from '@lumaforge/render-engine'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 
 import { LmfgError, toLmfgError } from '../protocol/errors'
 import type { LoadedSource } from '../runtime/source-loader'

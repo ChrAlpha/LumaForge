@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 
 import { createLumaJpegRuntimeForNode } from '@lumaforge/luma-jpeg-runtime/node'
 import { createLumaRawRuntimeForNode } from '@lumaforge/luma-raw-runtime/node'
-import type { RenderManifest } from '@lumaforge/render-engine'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import {
   colorGraphIdentity,
   sealRenderManifest,

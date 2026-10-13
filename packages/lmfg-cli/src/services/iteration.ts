@@ -1,5 +1,5 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
-import type { RenderEnvironment } from '@lumaforge/render-engine'
+import type { RenderEnvironment } from '@lumaforge/render-engine/manifest'
 import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
 import type { Output } from '../protocol/output'

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { RenderEnvironment } from '@lumaforge/render-engine'
+import type { RenderEnvironment } from '@lumaforge/render-engine/manifest'
 
 import type { RuntimeVersions } from '../schemas/results'
 

@@ -13,8 +13,8 @@ import {
   resolveExportColorGraph,
   resolveRawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
-import type { RenderParams as ManifestRenderParams } from '@lumaforge/render-engine'
-import { projectManifestRenderParams } from '@lumaforge/render-engine'
+import type { RenderParams as ManifestRenderParams } from '@lumaforge/render-engine/manifest'
+import { projectManifestRenderParams } from '@lumaforge/render-engine/manifest'
 
 import { LmfgError } from '../protocol/errors'
 import type { RenderParams, UserColorParamKey } from '../schemas/params'

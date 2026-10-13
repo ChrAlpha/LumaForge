@@ -1,8 +1,4 @@
 import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
-import {
-  normalizeExportConcurrency,
-  normalizePreferredStripRows,
-} from '@lumaforge/render-engine'
 import type {
   BlobOutputResult,
   ExportGeometry,
@@ -10,6 +6,10 @@ import type {
   ExportPerfMetric,
   FullResolutionExportProgress,
   JpegExportMetadata,
+} from '@lumaforge/render-engine/export'
+import {
+  normalizeExportConcurrency,
+  normalizePreferredStripRows,
 } from '@lumaforge/render-engine/export'
 
 import type {

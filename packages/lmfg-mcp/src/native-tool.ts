@@ -4,7 +4,7 @@ import { lstat, open, realpath } from 'node:fs/promises'
 
 import type { SessionRecord } from '@lumaforge/lmfg-cli'
 import { SessionRecordSchema, workspacePaths } from '@lumaforge/lmfg-cli'
-import type { RenderManifest } from '@lumaforge/render-engine'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 

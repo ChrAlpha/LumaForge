@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 
 import type { LumaRawNodeSourceInput } from '@lumaforge/luma-raw-runtime/node'
-import { sourceContentIdFromBytes } from '@lumaforge/render-engine'
+import { sourceContentIdFromBytes } from '@lumaforge/render-engine/manifest'
 
 import { LmfgError } from '../protocol/errors'
 import type { SessionRecord } from '../schemas/results'

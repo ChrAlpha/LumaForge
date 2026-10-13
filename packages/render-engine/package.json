@@ -9,10 +9,6 @@
   "license": "SEE LICENSE IN LICENSE",
   "sideEffects": false,
   "exports": {
-    ".": {
-      "types": "./dist/src/index.d.ts",
-      "import": "./dist/index.js"
-    },
     "./export": {
       "types": "./dist/src/export/index.d.ts",
       "import": "./dist/export.js"
@@ -34,8 +30,6 @@
       "import": "./dist/preview.js"
     }
   },
-  "main": "./dist/index.js",
-  "types": "./dist/src/index.d.ts",
   "files": [
     "LICENSE",
     "README.md",

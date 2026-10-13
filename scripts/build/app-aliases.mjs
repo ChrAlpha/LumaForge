@@ -47,10 +47,6 @@ export const APP_ALIASES = Object.freeze([
     find: '@lumaforge/render-engine/preview',
     path: 'packages/render-engine/src/preview/index.ts',
   },
-  {
-    find: '@lumaforge/render-engine',
-    path: 'packages/render-engine/src/index.ts',
-  },
 ])
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))

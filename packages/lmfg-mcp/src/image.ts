@@ -11,7 +11,7 @@ import {
   toFileUri,
   workspacePaths,
 } from '@lumaforge/lmfg-cli'
-import type { RenderManifest } from '@lumaforge/render-engine'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'

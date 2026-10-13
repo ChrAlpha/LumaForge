@@ -12,12 +12,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const DIST_INDEX = join(packageDir, 'dist', 'index.js')
 const DIST_MANIFEST = join(packageDir, 'dist', 'manifest.js')
 const DIST_POLICY = join(packageDir, 'dist', 'policy.js')
 
-const DIST_AVAILABLE =
-  existsSync(DIST_INDEX) && existsSync(DIST_MANIFEST) && existsSync(DIST_POLICY)
+const DIST_AVAILABLE = existsSync(DIST_MANIFEST) && existsSync(DIST_POLICY)
 
 const describeWithDist = DIST_AVAILABLE ? describe : describe.skip
 
@@ -25,7 +23,7 @@ describeWithDist(
   'dist bundle smoke — guards against vite externalization or subpath regressions',
   () => {
     it('imports + uses sealRenderManifest from the published bundle', async () => {
-      const mod = (await import(DIST_INDEX)) as {
+      const mod = (await import(DIST_MANIFEST)) as {
         sealRenderManifest: (m: unknown) => { manifest_sha256: string }
         verifyManifestSha256: (m: unknown) => boolean
       }

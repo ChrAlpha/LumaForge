@@ -31,7 +31,6 @@ reruns from the start: the engine keeps no export journal or checkpoint.
 
 ## Subpath exports
 
-- `@lumaforge/render-engine` — public types and entry points
 - `@lumaforge/render-engine/manifest` — manifest types, hash utilities,
   manifest construction, `parseRenderManifest`, and
   `checkRecordedExportGeometry`

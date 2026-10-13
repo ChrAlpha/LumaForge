@@ -3,10 +3,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { computeManifestSha256 } from '@lumaforge/render-engine'
 import type { ColorGraphDescriptor } from '@lumaforge/render-engine/manifest'
 import {
   COLOR_GRAPH_DESCRIPTOR_VERSION,
+  computeManifestSha256,
   fingerprintColorGraph,
 } from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'

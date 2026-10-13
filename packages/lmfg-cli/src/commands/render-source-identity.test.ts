@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { LumaRawDecodeSession } from '@lumaforge/luma-raw-runtime'
-import type { RenderManifest } from '@lumaforge/render-engine'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {

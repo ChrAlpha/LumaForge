@@ -20,9 +20,11 @@ import {
   toLUTData,
   validateLUT,
 } from '@lumaforge/luma-color-runtime'
-import type { LutLocalFileIdentity } from '@lumaforge/render-engine'
-import { sha256Hex } from '@lumaforge/render-engine'
-import { lutIdentityFromProfile } from '@lumaforge/render-engine/manifest'
+import type { LutLocalFileIdentity } from '@lumaforge/render-engine/manifest'
+import {
+  lutIdentityFromProfile,
+  sha256Hex,
+} from '@lumaforge/render-engine/manifest'
 
 import { LmfgError } from '../protocol/errors'
 import type { LutContractInput, LutReference } from '../schemas/params'

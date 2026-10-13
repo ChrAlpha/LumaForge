@@ -9,9 +9,11 @@ import {
   toFileUri,
   workspacePaths,
 } from '@lumaforge/lmfg-cli'
-import type { RenderManifest } from '@lumaforge/render-engine'
-import { canonicalizeJson } from '@lumaforge/render-engine'
-import { checkRecordedExportGeometry } from '@lumaforge/render-engine/manifest'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
+import {
+  canonicalizeJson,
+  checkRecordedExportGeometry,
+} from '@lumaforge/render-engine/manifest'
 import { z } from 'zod'
 
 import {

@@ -1,4 +1,4 @@
-import type { RenderEnvironment } from '@lumaforge/render-engine'
+import type { RenderEnvironment } from '@lumaforge/render-engine/manifest'
 import { InvalidArgumentError } from 'commander'
 
 import { LmfgError } from '../protocol/errors'

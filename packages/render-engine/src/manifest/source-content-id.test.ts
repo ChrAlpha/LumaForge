@@ -5,8 +5,6 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import { describe, expect, it } from 'vitest'
 
-import * as rootEntry from '../index'
-import * as manifestEntry from './index'
 import { sourceContentIdFromBytes } from './source-content-id'
 import { createStreamingSha256 } from './streaming-sha256'
 
@@ -57,14 +55,5 @@ describe('sourceContentIdFromBytes', () => {
     const whole = await sourceContentIdFromBytes(bytes)
     expect(streamed).toBe(whole.sha256)
     expect(whole.byteSize).toBe(blob.size)
-  })
-
-  it('is exported with the same identity from the root and manifest entries', () => {
-    expect(rootEntry.sourceContentIdFromBytes).toBe(sourceContentIdFromBytes)
-    expect(manifestEntry.sourceContentIdFromBytes).toBe(
-      sourceContentIdFromBytes,
-    )
-    expect(rootEntry.createStreamingSha256).toBe(createStreamingSha256)
-    expect(manifestEntry.createStreamingSha256).toBe(createStreamingSha256)
   })
 })

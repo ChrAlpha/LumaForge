@@ -2,7 +2,7 @@ import { availableParallelism } from 'node:os'
 import { Worker } from 'node:worker_threads'
 
 import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
-import { sha256Hex } from '@lumaforge/render-engine'
+import { sha256Hex } from '@lumaforge/render-engine/manifest'
 import type { PreviewJpegEncoderFactory } from '@lumaforge/render-engine/preview'
 import {
   encodePreviewFrameToJpeg,

@@ -7,15 +7,15 @@ import type {
 import type {
   LutIdentity,
   PolicyChoice,
+  RecordedGeometryRefusal,
   RenderEnvironment,
   RenderManifest,
   RenderManifestKind,
   SourceRawIdentity,
-} from '@lumaforge/render-engine'
-import { createRenderManifest } from '@lumaforge/render-engine'
-import type { RecordedGeometryRefusal } from '@lumaforge/render-engine/manifest'
+} from '@lumaforge/render-engine/manifest'
 import {
   checkRecordedExportGeometry,
+  createRenderManifest,
   parseRenderManifest,
 } from '@lumaforge/render-engine/manifest'
 

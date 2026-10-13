@@ -13,23 +13,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { LumaRawProcessedWindowRequest } from '@lumaforge/luma-raw-runtime'
-import type {
-  RenderEnvironment,
-  RenderManifest,
-  RenderManifestKind,
-} from '@lumaforge/render-engine'
-import {
-  computeManifestSha256,
-  createRenderManifest,
-  sealRenderManifest,
-  verifyManifestSha256,
-} from '@lumaforge/render-engine'
 import {
   INVALID_EXPORT_GEOMETRY,
   planExportGeometry,
 } from '@lumaforge/render-engine/export'
-import type { ColorGraphDescriptor } from '@lumaforge/render-engine/manifest'
-import { COLOR_GRAPH_DESCRIPTOR_VERSION } from '@lumaforge/render-engine/manifest'
+import type {
+  ColorGraphDescriptor,
+  RenderEnvironment,
+  RenderManifest,
+  RenderManifestKind,
+} from '@lumaforge/render-engine/manifest'
+import {
+  COLOR_GRAPH_DESCRIPTOR_VERSION,
+  computeManifestSha256,
+  createRenderManifest,
+  sealRenderManifest,
+  verifyManifestSha256,
+} from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { toLmfgError } from '../protocol/errors'

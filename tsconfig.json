@@ -20,7 +20,6 @@
       "@lumaforge/luma-raw-runtime": [
         "./packages/luma-raw-runtime/src/index.ts"
       ],
-      "@lumaforge/render-engine": ["./packages/render-engine/src/index.ts"],
       "@lumaforge/render-engine/export": [
         "./packages/render-engine/src/export/index.ts"
       ],

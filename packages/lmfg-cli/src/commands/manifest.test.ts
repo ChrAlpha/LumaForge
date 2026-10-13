@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { computeManifestSha256 } from '@lumaforge/render-engine'
+import { computeManifestSha256 } from '@lumaforge/render-engine/manifest'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { createCliHarness } from '../e2e/fixture'

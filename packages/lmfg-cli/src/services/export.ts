@@ -5,11 +5,6 @@ import type {
 import { exposureMultiplierFromEv } from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import type {
-  PolicyChoice,
-  RenderEnvironment,
-  RenderManifest,
-} from '@lumaforge/render-engine'
-import type {
   ExportGeometry,
   FullResolutionExportProgress,
 } from '@lumaforge/render-engine/export'
@@ -20,6 +15,11 @@ import {
   runFullResolutionJpegExport,
   runProcessedWindowExportLifecycle,
 } from '@lumaforge/render-engine/export'
+import type {
+  PolicyChoice,
+  RenderEnvironment,
+  RenderManifest,
+} from '@lumaforge/render-engine/manifest'
 import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
 
 import type { CleanupFailure } from '../protocol/errors'

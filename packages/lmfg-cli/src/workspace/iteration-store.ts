@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 
-import type { RenderManifest } from '@lumaforge/render-engine'
+import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { parseRenderManifest } from '@lumaforge/render-engine/manifest'
 import { z } from 'zod'
 

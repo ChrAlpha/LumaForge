@@ -4,8 +4,8 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import type { LumaJpegNodeRuntime } from '@lumaforge/luma-jpeg-runtime/node'
 import type { LumaRawDecodeSession } from '@lumaforge/luma-raw-runtime'
-import type { RenderEnvironment } from '@lumaforge/render-engine'
-import { sha256Hex } from '@lumaforge/render-engine'
+import type { RenderEnvironment } from '@lumaforge/render-engine/manifest'
+import { sha256Hex } from '@lumaforge/render-engine/manifest'
 import {
   BOUNDED_HQ_PREVIEW_MAX_PIXELS,
   encodePreviewFrameToJpeg,

@@ -5,13 +5,13 @@ import type {
 import type {
   ColorGraphDescriptor,
   GeometryParams,
+  RecordedExportFrame,
   RenderEnvironment,
   RenderManifest,
-} from '@lumaforge/render-engine'
-import { createRenderManifest } from '@lumaforge/render-engine'
-import type { RecordedExportFrame } from '@lumaforge/render-engine/manifest'
+} from '@lumaforge/render-engine/manifest'
 import {
   checkRecordedExportGeometry,
+  createRenderManifest,
   describeColorGraph,
   fingerprintColorGraph,
 } from '@lumaforge/render-engine/manifest'

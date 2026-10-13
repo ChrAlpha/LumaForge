@@ -8,6 +8,15 @@ predates this file.
 
 ### Breaking
 
+- The package root entry `@lumaforge/render-engine` is removed, with the
+  package `main` and `types` fields. Every name it exported is exported by a
+  subpath: import manifest types, hashing, `createRenderManifest`,
+  `projectManifestRenderParams`, the color-graph descriptor, `sha256Hex`,
+  `createStreamingSha256` and `sourceContentIdFromBytes` from
+  `@lumaforge/render-engine/manifest`; `normalizeExportConcurrency`,
+  `normalizePreferredStripRows`, `processedWindowToRgb16Rows` and
+  `ProcessedRgb16Rows` from `@lumaforge/render-engine/export`; and
+  `CapabilityVector` from `@lumaforge/render-engine/policy`.
 - Removed `TypedBufferPool`, `processedWindowToLinearProPhotoTile`,
   `LinearProPhotoTile`, `runOrderedConcurrent`, `planExportStrips`,
   `reduceStripRows`, `expandRectWithHalo`, `MAX_EXPORT_STRIP_ROWS` and
