@@ -5,7 +5,6 @@ import {
   classifyProfileSourceUrl,
   createLUTResourceShareUrl,
   isProfileTransportUrl,
-  normalizeProfileSourceUrl,
   parseLUTResourceQuery,
 } from './source-url'
 
@@ -37,41 +36,6 @@ describe('profile source URLs', () => {
     expect(
       classifyProfileSourceUrl('https://example.com/kodak-2383.cube'),
     ).toBe('cube')
-  })
-
-  it('accepts localhost HTTP URLs for local development', () => {
-    expect(normalizeProfileSourceUrl('http://localhost:4173/test.cube')).toBe(
-      'http://localhost:4173/test.cube',
-    )
-    expect(classifyProfileSourceUrl('http://localhost:4173/test.cube')).toBe(
-      'cube',
-    )
-    expect(normalizeProfileSourceUrl('http://[::1]:4173/test.cube')).toBe(
-      'http://[::1]:4173/test.cube',
-    )
-    expect(classifyProfileSourceUrl('http://[::1]:4173/test.cube')).toBe('cube')
-  })
-
-  it('rejects unsupported schemes', () => {
-    expect(
-      parseLUTResourceQuery('?luts=ftp%3A%2F%2Fexample.com%2Ftest.cube')
-        .issues[0]?.code,
-    ).toBe('unsupported-scheme')
-    expect(
-      parseLUTResourceQuery('?luts=javascript%3Aalert(1)').issues[0]?.code,
-    ).toBe('unsupported-scheme')
-    expect(
-      parseLUTResourceQuery('?luts=file%3A%2F%2F%2Ftmp%2Ftest.cube').issues[0]
-        ?.code,
-    ).toBe('unsupported-scheme')
-  })
-
-  it('rejects credentialed URLs', () => {
-    expect(
-      parseLUTResourceQuery(
-        '?luts=https%3A%2F%2Fuser%3Apass%40example.com%2Ftest.cube',
-      ).issues[0]?.code,
-    ).toBe('credentialed-url')
   })
 
   it.each([

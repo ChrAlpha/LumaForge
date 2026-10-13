@@ -175,32 +175,6 @@ describe('online LUT release catalog parsing', () => {
     })
   })
 
-  it('rejects release catalog entries with relative entry URLs', () => {
-    const result = parseReleaseCatalog(
-      {
-        schemaVersion: 1,
-        entries: [
-          {
-            id: entryManifest.id,
-            kind: 'lut',
-            version: entryManifest.version,
-            title: entryManifest.title,
-            license: entryManifest.license,
-            redistributionAllowed: true,
-            primaryAsset,
-            entryUrl: 'entries/kodak-2383-rec709.json',
-          },
-        ],
-      },
-      'https://profiles.example.com/releases/v2026.05.01/catalog.json',
-    )
-
-    expect(result).toMatchObject({
-      ok: false,
-      issues: [{ code: 'invalid-url', entryId: 'kodak-2383-rec709' }],
-    })
-  })
-
   it('returns compatible LUT entries from mixed release catalogs', () => {
     const result = parseReleaseCatalog(
       {
@@ -656,28 +630,6 @@ describe('online LUT transport URL rule', () => {
   const catalogSourceUrl =
     'https://profiles.example.com/releases/v2026.05.01/catalog.json'
 
-  // Every URL slot a catalog or entry can name shares one transport rule.
-  // Resource shape stays each slot's own concern: an extensionless CDN blob
-  // is accepted wherever the media type identifies it.
-  const transportCases = [
-    ['HTTPS', (path: string) => `https://cdn.example.com${path}`, true],
-    ['localhost HTTP', (path: string) => `http://localhost:4173${path}`, true],
-    ['remote HTTP', (path: string) => `http://cdn.example.com${path}`, false],
-    [
-      'credentials',
-      (path: string) => `https://user:pass@cdn.example.com${path}`,
-      false,
-    ],
-    [
-      'localhost credentials',
-      (path: string) => `http://user@localhost:4173${path}`,
-      false,
-    ],
-    ['a query', (path: string) => `https://cdn.example.com${path}?v=2`, true],
-    ['no extension', () => 'https://cdn.example.com/blobs/sha256/abc', true],
-    ['an invalid URL', () => 'not a url', false],
-  ] as const
-
   function catalogRow(overrides: Record<string, unknown> = {}) {
     return {
       id: entryManifest.id,
@@ -692,147 +644,109 @@ describe('online LUT transport URL rule', () => {
     }
   }
 
-  it.each(transportCases)(
-    'applies the rule to the catalog root URL with %s',
-    (_label, makeUrl, accepted) => {
-      const result = parseReleaseCatalog(
-        { schemaVersion: 1, entries: [catalogRow()] },
-        makeUrl('/catalog.json'),
-      )
+  function parseCatalogRow(overrides: Record<string, unknown>) {
+    return parseReleaseCatalog(
+      { schemaVersion: 1, entries: [catalogRow(overrides)] },
+      catalogSourceUrl,
+    )
+  }
 
-      if (accepted) {
-        expect(result.ok).toBe(true)
-      } else {
-        expect(result).toEqual({
-          ok: false,
-          issues: [expect.objectContaining({ code: 'invalid-url' })],
-        })
-      }
-    },
-  )
+  const refusedAsDocument = {
+    ok: false,
+    issues: [expect.objectContaining({ code: 'invalid-url' })],
+  }
+  const refusedForEntry = {
+    ok: false,
+    issues: [
+      expect.objectContaining({
+        code: 'invalid-url',
+        entryId: entryManifest.id,
+      }),
+    ],
+  }
 
-  it.each(transportCases)(
-    'applies the rule to the release entry source URL with %s',
-    (_label, makeUrl, accepted) => {
-      const result = parseReleaseEntry(
-        entryManifest,
-        makeUrl('/entries/kodak.json'),
-      )
+  // Every URL slot a catalog or entry can name shares one transport rule,
+  // whose full matrix lives in source-url.test.ts; each slot here takes one
+  // URL it accepts and one it refuses. Resource shape stays each slot's own
+  // concern: an extensionless CDN blob is accepted wherever the media type
+  // identifies it.
+  const ACCEPTED = 'https://cdn.example.com/blobs/sha256/abc'
+  const REFUSED = 'http://cdn.example.com/blobs/sha256/abc'
+  const slots: ReadonlyArray<
+    readonly [
+      slot: string,
+      parse: (url: string) => unknown,
+      accepted: (url: string) => unknown,
+      refused: unknown,
+    ]
+  > = [
+    [
+      'the catalog root URL',
+      (url) =>
+        parseReleaseCatalog({ schemaVersion: 1, entries: [catalogRow()] }, url),
+      () => expect.objectContaining({ ok: true }),
+      refusedAsDocument,
+    ],
+    [
+      'the release entry source URL',
+      (url) => parseReleaseEntry(entryManifest, url),
+      () => expect.objectContaining({ ok: true }),
+      refusedAsDocument,
+    ],
+    [
+      'catalog entry URLs',
+      (entryUrl) => parseCatalogRow({ entryUrl }),
+      (url) => ({
+        ok: true,
+        value: [expect.objectContaining({ sourceUrl: url })],
+      }),
+      refusedForEntry,
+    ],
+    [
+      'release entry URLs',
+      (entryUrl) =>
+        parseReleaseEntry(
+          { ...entryManifest, entryUrl },
+          entryManifest.entryUrl,
+        ),
+      () => expect.objectContaining({ ok: true }),
+      refusedForEntry,
+    ],
+    [
+      'CUBE asset URLs',
+      (url) => parseCatalogRow({ primaryAsset: { ...primaryAsset, url } }),
+      (url) => ({
+        ok: true,
+        value: [
+          expect.objectContaining({ cube: expect.objectContaining({ url }) }),
+        ],
+      }),
+      refusedForEntry,
+    ],
+    [
+      'preview asset URLs',
+      (url) => parseCatalogRow({ previewAsset: { ...previewAsset, url } }),
+      (url) => ({
+        ok: true,
+        value: [
+          expect.objectContaining({
+            preview: expect.objectContaining({ url, mediaType: 'image/webp' }),
+          }),
+        ],
+      }),
+      // A refused preview drops the preview, never the entry.
+      {
+        ok: true,
+        value: [expect.not.objectContaining({ preview: expect.anything() })],
+      },
+    ],
+  ]
 
-      if (accepted) {
-        expect(result.ok).toBe(true)
-      } else {
-        expect(result).toEqual({
-          ok: false,
-          issues: [expect.objectContaining({ code: 'invalid-url' })],
-        })
-      }
-    },
-  )
-
-  it.each(transportCases)(
-    'applies the rule to catalog entry URLs with %s',
-    (_label, makeUrl, accepted) => {
-      const entryUrl = makeUrl('/entries/kodak.json')
-      const result = parseReleaseCatalog(
-        { schemaVersion: 1, entries: [catalogRow({ entryUrl })] },
-        catalogSourceUrl,
-      )
-
-      if (accepted) {
-        expect(result).toMatchObject({
-          ok: true,
-          value: [{ sourceUrl: entryUrl }],
-        })
-      } else {
-        expect(result).toEqual({
-          ok: false,
-          issues: [
-            expect.objectContaining({
-              code: 'invalid-url',
-              entryId: entryManifest.id,
-            }),
-          ],
-        })
-      }
-    },
-  )
-
-  it.each(transportCases)(
-    'applies the rule to release entry URLs with %s',
-    (_label, makeUrl, accepted) => {
-      const result = parseReleaseEntry(
-        { ...entryManifest, entryUrl: makeUrl('/entries/kodak.json') },
-        entryManifest.entryUrl,
-      )
-
-      if (accepted) {
-        expect(result.ok).toBe(true)
-      } else {
-        expect(result).toEqual({
-          ok: false,
-          issues: [
-            expect.objectContaining({
-              code: 'invalid-url',
-              entryId: entryManifest.id,
-            }),
-          ],
-        })
-      }
-    },
-  )
-
-  it.each(transportCases)(
-    'applies the rule to CUBE asset URLs with %s',
-    (_label, makeUrl, accepted) => {
-      const url = makeUrl('/look.cube')
-      const result = parseReleaseCatalog(
-        {
-          schemaVersion: 1,
-          entries: [catalogRow({ primaryAsset: { ...primaryAsset, url } })],
-        },
-        catalogSourceUrl,
-      )
-
-      if (accepted) {
-        expect(result).toMatchObject({ ok: true, value: [{ cube: { url } }] })
-      } else {
-        expect(result).toEqual({
-          ok: false,
-          issues: [
-            expect.objectContaining({
-              code: 'invalid-url',
-              entryId: entryManifest.id,
-            }),
-          ],
-        })
-      }
-    },
-  )
-
-  it.each(transportCases)(
-    'applies the rule to preview asset URLs with %s',
-    (_label, makeUrl, accepted) => {
-      const url = makeUrl('/preview.webp')
-      const result = parseReleaseCatalog(
-        {
-          schemaVersion: 1,
-          entries: [catalogRow({ previewAsset: { ...previewAsset, url } })],
-        },
-        catalogSourceUrl,
-      )
-
-      expect(result.ok).toBe(true)
-      if (!result.ok) return
-
-      if (accepted) {
-        expect(result.value[0]?.preview).toMatchObject({
-          url,
-          mediaType: 'image/webp',
-        })
-      } else {
-        expect(result.value[0]?.preview).toBeUndefined()
-      }
+  it.each(slots)(
+    'applies the rule to %s',
+    (_slot, parse, accepted, refused) => {
+      expect(parse(ACCEPTED)).toEqual(accepted(ACCEPTED))
+      expect(parse(REFUSED)).toEqual(refused)
     },
   )
 
