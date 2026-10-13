@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { pathToFileURL } from 'node:url'
 
 const VALID_KINDS = new Set(['raw', 'jpeg'])
 const VALID_RAW_PROFILES = new Set(['desktop', 'low-memory'])
@@ -10,14 +11,38 @@ function isPlainObject(value) {
 function resolveArtifactPaths(kind, memoryProfile) {
   if (kind === 'jpeg') {
     return {
-      gluePath: './native/luma_jpeg.js',
-      wasmPath: './native/luma_jpeg.wasm',
+      gluePath: 'luma_jpeg.js',
+      wasmPath: 'luma_jpeg.wasm',
     }
   }
   return {
-    gluePath: `./native/${memoryProfile}/luma_raw.js`,
-    wasmPath: `./native/${memoryProfile}/luma_raw.wasm`,
+    gluePath: `${memoryProfile}/luma_raw.js`,
+    wasmPath: `${memoryProfile}/luma_raw.wasm`,
   }
+}
+
+// Held in a variable: bundlers rewrite `new URL(<literal>, import.meta.url)`
+// into an asset URL, which node:fs cannot read.
+const PACKAGED_NATIVE_DIR = './native/'
+
+// Returns the directory as an href string: URL objects from another realm
+// (a test DOM's URL, for one) are not accepted by node:fs.
+function resolveNativeDirHref(nativeDir) {
+  if (nativeDir === undefined) {
+    return new URL(PACKAGED_NATIVE_DIR, import.meta.url).href
+  }
+  const href =
+    nativeDir instanceof URL
+      ? nativeDir.href
+      : typeof nativeDir === 'string' && nativeDir.length > 0
+        ? pathToFileURL(nativeDir).href
+        : null
+  if (href === null) {
+    throw new TypeError(
+      'loadNativeModuleForNode: nativeDir must be a non-empty path or a URL',
+    )
+  }
+  return href.endsWith('/') ? href : `${href}/`
 }
 
 /**
@@ -29,7 +54,10 @@ function resolveArtifactPaths(kind, memoryProfile) {
  * passing them as `Module.wasmBinary`, which short-circuits the glue's
  * `fetch()` / `readAsync` paths.
  *
- * @param {{ kind: 'raw' | 'jpeg', memoryProfile?: 'desktop' | 'low-memory' }} options
+ * `nativeDir` points at another artifact directory with the same layout as
+ * this package's `native/` (for example a fresh native build).
+ *
+ * @param {{ kind: 'raw' | 'jpeg', memoryProfile?: 'desktop' | 'low-memory', nativeDir?: string | URL }} options
  * @returns {Promise<unknown>} the populated Emscripten Module instance
  */
 export async function loadNativeModuleForNode(options) {
@@ -38,7 +66,7 @@ export async function loadNativeModuleForNode(options) {
       'loadNativeModuleForNode: options must be an object with { kind }',
     )
   }
-  const { kind, memoryProfile = 'desktop' } = options
+  const { kind, memoryProfile = 'desktop', nativeDir } = options
   if (!VALID_KINDS.has(kind)) {
     throw new TypeError(
       `loadNativeModuleForNode: kind must be "raw" or "jpeg", got ${JSON.stringify(kind)}`,
@@ -50,9 +78,10 @@ export async function loadNativeModuleForNode(options) {
     )
   }
 
+  const baseHref = resolveNativeDirHref(nativeDir)
   const { gluePath, wasmPath } = resolveArtifactPaths(kind, memoryProfile)
-  const glueUrl = new URL(gluePath, import.meta.url)
-  const wasmUrl = new URL(wasmPath, import.meta.url)
+  const glueUrl = new URL(gluePath, baseHref)
+  const wasmUrl = new URL(wasmPath, baseHref)
 
   const wasmBinary = await readFile(wasmUrl)
   const glueModule = await import(glueUrl.href)

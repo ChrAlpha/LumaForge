@@ -5,6 +5,12 @@ export interface LoadNativeModuleForNodeOptions {
   kind: LumaNativeKind
   /** Defaults to 'desktop'. Ignored when kind === 'jpeg'. */
   memoryProfile?: LumaRawMemoryProfile
+  /**
+   * An artifact directory with the same layout as this package's `native/`
+   * (`luma_jpeg.*`, `<memoryProfile>/luma_raw.*`). Defaults to the packaged
+   * artifacts.
+   */
+  nativeDir?: string | URL
 }
 
 /**

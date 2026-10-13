@@ -4,42 +4,23 @@ import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { loadNativeModuleForNode } from '@lumaforge/luma-native-artifacts/load-for-node'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-import type { EmbindModule } from '../worker/native-adapter'
-import { createNativeFactory } from '../worker/native-adapter'
-import { createRuntimeCore } from '../worker/runtime-core'
-import type { LumaRawErrorCode } from './errors'
-import { normalizeRawRuntimeError } from './errors'
-import { createLumaRawRuntime } from './index'
-import type { LumaEmbeddedPreview } from './types'
+import { createLumaRawRuntimeForNode } from './runtime-node'
 import type {
-  LumaRawWorkerRequest,
-  LumaRawWorkerResponse,
-} from './worker-protocol'
-
-type NativeModuleFactory = (options?: {
-  locateFile?: (path: string) => string
-}) => Promise<unknown>
+  LumaEmbeddedPreview,
+  LumaRawProcessedWindow,
+  LumaRawRuntimeMemoryProfile,
+} from './types'
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const nativeProfile = 'desktop'
-const nativeJsPath = join(
-  packageDir,
-  'dist',
-  'native',
-  nativeProfile,
-  'luma_raw.js',
-)
-const nativeWasmPath = join(
-  packageDir,
-  'dist',
-  'native',
-  nativeProfile,
-  'luma_raw.wasm',
-)
+// The CI native job builds into dist/native; the smoke runs those artifacts.
+const nativeDir = join(packageDir, 'dist', 'native')
+const nativeJsPath = join(nativeDir, 'desktop', 'luma_raw.js')
+const nativeWasmPath = join(nativeDir, 'desktop', 'luma_raw.wasm')
 const publicRawFixturePath = join(
   packageDir,
   'fixtures',
@@ -59,6 +40,9 @@ const localCompatibilityFixtures = [
   { label: 'Nikon NEF', envName: 'LUMAFORGE_NIKON_NEF' },
   { label: 'Fujifilm GFX RAF', envName: 'LUMAFORGE_100MP_RAF' },
 ] as const
+const localSonyArw = resolveLocalCompatibilityFixture(
+  localCompatibilityFixtures[0],
+)
 const artifactHint =
   'Run `pnpm --filter @lumaforge/luma-raw-runtime build:native` before `pnpm --filter @lumaforge/luma-raw-runtime test:native-smoke`.'
 const fixtureHint =
@@ -136,139 +120,28 @@ async function requireFile(absolutePath: string, label: string, hint: string) {
   }
 }
 
-function installFileUrlFetchFallback() {
-  const originalFetch = globalThis.fetch
-
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url
-
-    if (url.startsWith('file:')) {
-      const bytes = await readFile(fileURLToPath(url))
-      return new Response(new Uint8Array(bytes), {
-        status: 200,
-        statusText: 'OK',
-      })
-    }
-
-    return originalFetch(input, init)
-  }) as typeof fetch
-
-  return () => {
-    globalThis.fetch = originalFetch
-  }
-}
-
-function markCrossOriginIsolated() {
-  Object.defineProperty(globalThis, 'crossOriginIsolated', {
-    configurable: true,
-    value: true,
+function createNodeRuntime(
+  memoryProfile: LumaRawRuntimeMemoryProfile = 'desktop',
+) {
+  return createLumaRawRuntimeForNode({
+    memoryProfile,
+    nativeLoader: (options) =>
+      loadNativeModuleForNode({ kind: 'raw', nativeDir, ...options }),
   })
 }
 
-function failureResponse(
-  request: LumaRawWorkerRequest,
-  error: unknown,
-  fallbackCode: LumaRawErrorCode,
-): LumaRawWorkerResponse {
-  const runtimeError = normalizeRawRuntimeError(error, fallbackCode)
-
-  return {
-    id: request.id,
-    ok: false,
-    type: request.type,
-    error: {
-      code: runtimeError.code,
-      message: runtimeError.message,
-    },
-  } as LumaRawWorkerResponse
-}
-
-async function loadSmokeNativeFactory() {
-  const moduleImport = (await import(
-    /* @vite-ignore */ pathToFileURL(nativeJsPath).href
-  )) as {
-    default: NativeModuleFactory
-  }
-
-  const module = await moduleImport.default({
-    locateFile(path) {
-      if (path.endsWith('.wasm')) {
-        return pathToFileURL(nativeWasmPath).href
-      }
-
-      return path
-    },
-  })
-
-  return createNativeFactory(module as EmbindModule)
-}
-
-async function createNativeCore() {
-  const nativeFactory = await loadSmokeNativeFactory()
-  return createRuntimeCore(nativeFactory)
-}
-
-let nativeCorePromise: ReturnType<typeof createNativeCore> | undefined
-
-function getNativeCore() {
-  nativeCorePromise ??= createNativeCore()
-  return nativeCorePromise
-}
-
-// Worker-compatible bridge for Vitest/jsdom; it still executes the real native
-// loader and runtime core, so no native behavior is mocked.
-class NativeSmokeWorker {
-  onmessage: ((event: MessageEvent<LumaRawWorkerResponse>) => void) | null =
-    null
-  onerror: ((event: ErrorEvent) => void) | null = null
-  private terminated = false
-
-  postMessage(request: LumaRawWorkerRequest) {
-    queueMicrotask(() => {
-      void this.handleRequest(request)
-    })
-  }
-
-  terminate() {
-    this.terminated = true
-  }
-
-  private async handleRequest(request: LumaRawWorkerRequest) {
-    if (this.terminated) return
-
-    let response: LumaRawWorkerResponse
-    try {
-      const core = await getNativeCore()
-      response = await core.handleRequest(request)
-    } catch (error) {
-      response = failureResponse(request, error, 'RAW_RUNTIME_UNAVAILABLE')
-    }
-
-    if (this.terminated) return
-
-    this.onmessage?.({
-      data: response,
-    } as MessageEvent<LumaRawWorkerResponse>)
-  }
-}
-
-async function createRawFixtureFile() {
-  const bytes = await readFile(publicRawFixturePath)
-  return new File([new Uint8Array(bytes)], 'raw-pixls-iphone-se.dng', {
-    type: 'image/x-adobe-dng',
-  })
-}
-
-async function createLocalRawFixtureFile(absolutePath: string) {
+async function readRawSource(absolutePath: string) {
   const bytes = await readFile(absolutePath)
-  return new File([new Uint8Array(bytes)], basename(absolutePath), {
-    type: 'image/x-raw',
-  })
+  return {
+    data: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    name: basename(absolutePath),
+  }
+}
+
+/** The RGB16 samples of `window` row `index`, without its stride padding. */
+function windowRow(window: LumaRawProcessedWindow, index: number) {
+  const start = index * window.stride
+  return window.data.subarray(start, start + window.width * 3)
 }
 
 function expectPositiveDimension(value: unknown, label: string) {
@@ -289,8 +162,6 @@ function expectValidEmbeddedPreview(preview: LumaEmbeddedPreview) {
 }
 
 describe('native RAW runtime smoke test', () => {
-  let restoreFetch: (() => void) | undefined
-
   beforeAll(async () => {
     await Promise.all([
       requireFile(
@@ -309,32 +180,18 @@ describe('native RAW runtime smoke test', () => {
         fixtureHint,
       ),
     ])
-
-    markCrossOriginIsolated()
-    restoreFetch = installFileUrlFetchFallback()
-  })
-
-  afterAll(() => {
-    restoreFetch?.()
   })
 
   it(
     'opens the public DNG fixture with CI-built native artifacts',
     async () => {
-      const runtime = createLumaRawRuntime({
-        workerFactory: () => new NativeSmokeWorker() as unknown as Worker,
-      })
+      const runtime = await createNodeRuntime()
 
       try {
-        const runtimeInfo = await runtime.init()
-        expect(runtimeInfo).toMatchObject({
-          crossOriginIsolated: true,
-          runtime: 'luma',
-          pthreads: true,
-        })
+        expect(await runtime.init()).toMatchObject({ runtime: 'luma' })
 
         const session = await runtime.openSession(
-          await createRawFixtureFile(),
+          await readRawSource(publicRawFixturePath),
           {
             maxOutputPixels: quickDecodeMaxOutputPixels,
           },
@@ -378,14 +235,12 @@ describe('native RAW runtime smoke test', () => {
       `processes a bounded LibRaw cropbox window for ${fixture.label}`,
       async (context) => {
         const rawPath = localFixturePath(context, local)
-        const runtime = createLumaRawRuntime({
-          workerFactory: () => new NativeSmokeWorker() as unknown as Worker,
-        })
+        const runtime = await createNodeRuntime()
 
         try {
           await runtime.init()
           const session = await runtime.openSession(
-            await createLocalRawFixtureFile(rawPath),
+            await readRawSource(rawPath),
             {
               maxOutputPixels: quickDecodeMaxOutputPixels,
             },
@@ -435,6 +290,75 @@ describe('native RAW runtime smoke test', () => {
       smokeTimeoutMs,
     )
   }
+
+  it(
+    'reads continuous bottom-edge processed windows for the Sony ARW low-memory profile',
+    async (context) => {
+      const rawPath = localFixturePath(context, localSonyArw)
+      const runtime = await createNodeRuntime('low-memory')
+
+      try {
+        await runtime.init()
+        const session = await runtime.openSession(
+          await readRawSource(rawPath),
+          {
+            maxOutputPixels: quickDecodeMaxOutputPixels,
+          },
+        )
+
+        try {
+          const capability = await session.probeExportCapability()
+          expect(capability.supported, JSON.stringify(capability)).toBe(true)
+          expect(capability.width).toBe(9566)
+          expect(capability.height).toBe(6374)
+
+          // The last strip, read alone and as the lower half of a taller
+          // window, must agree sample for sample.
+          const stripRows = 128
+          const halo = { left: 2, top: 2, right: 2, bottom: 2 }
+          const bottom = await session.readProcessedWindow({
+            outputRect: {
+              x: 0,
+              y: capability.height - stripRows,
+              width: capability.width,
+              height: stripRows,
+            },
+            halo,
+          })
+          const overlap = await session.readProcessedWindow({
+            outputRect: {
+              x: 0,
+              y: capability.height - stripRows * 2,
+              width: capability.width,
+              height: stripRows * 2,
+            },
+            halo,
+          })
+
+          let mismatchedSamples = 0
+          let maxDelta = 0
+          for (let row = 0; row < stripRows; row += 1) {
+            const alone = windowRow(bottom, row)
+            const within = windowRow(overlap, row + stripRows)
+            for (let index = 0; index < alone.length; index += 1) {
+              const delta = Math.abs((alone[index] ?? 0) - (within[index] ?? 0))
+              if (delta > 0) mismatchedSamples += 1
+              maxDelta = Math.max(maxDelta, delta)
+            }
+          }
+          expect({ mismatchedSamples, maxDelta }).toEqual({
+            mismatchedSamples: 0,
+            maxDelta: 0,
+          })
+        } finally {
+          session.dispose()
+        }
+      } finally {
+        runtime.dispose()
+      }
+    },
+    smokeTimeoutMs,
+  )
 })
 
 describe('native RAW smoke fixture inputs', () => {

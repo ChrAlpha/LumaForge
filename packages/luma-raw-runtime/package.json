@@ -52,7 +52,7 @@
     "native:check-window-normalization": "node native/scripts/check-window-normalization.mjs --profile desktop && node native/scripts/check-window-normalization.mjs --profile low-memory",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src worker fixtures/scripts native/scripts --exclude src/native-smoke.test.ts",
-    "test:native-smoke": "vitest run src/native-smoke.test.ts --environment jsdom",
+    "test:native-smoke": "vitest run src/native-smoke.test.ts",
     "bench:serve": "vite --host 0.0.0.0 --port 4174 --config vite.config.ts"
   },
   "dependencies": {

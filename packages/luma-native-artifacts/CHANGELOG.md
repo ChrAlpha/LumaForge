@@ -4,6 +4,13 @@ All notable changes to `@lumaforge/luma-native-artifacts` are documented here.
 The format follows Keep a Changelog; versions follow semver. Releases up to
 0.0.3 predate this file.
 
+## Unreleased
+
+### Added
+
+- `loadNativeModuleForNode` takes an optional `nativeDir`: an artifact
+  directory with the packaged `native/` layout, such as a fresh native build.
+
 ## 0.0.5 - 2026-10-12
 
 The loader API (`./load-for-node`) is unchanged; only the artifacts change.

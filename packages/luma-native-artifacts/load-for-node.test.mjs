@@ -40,6 +40,14 @@ describe('loadNativeModuleForNode (input validation)', () => {
     )
   })
 
+  it('rejects an empty or non-path nativeDir', async () => {
+    for (const nativeDir of ['', 42]) {
+      await expect(
+        loadNativeModuleForNode({ kind: 'jpeg', nativeDir }),
+      ).rejects.toThrow(/nativeDir/)
+    }
+  })
+
   it('rejects unknown memoryProfile for raw', async () => {
     await expect(
       loadNativeModuleForNode({ kind: 'raw', memoryProfile: 'huge' }),
@@ -79,6 +87,18 @@ describeWithArtifacts('loadNativeModuleForNode (live)', () => {
     'defaults memoryProfile to desktop when kind=raw',
     async () => {
       const m = await loadNativeModuleForNode({ kind: 'raw' })
+      expect(typeof m.LumaRawProcessor).toBe('function')
+    },
+    20_000,
+  )
+
+  it(
+    'loads from an explicit nativeDir with the packaged layout',
+    async () => {
+      const m = await loadNativeModuleForNode({
+        kind: 'raw',
+        nativeDir: fileURLToPath(new URL('./native', import.meta.url)),
+      })
       expect(typeof m.LumaRawProcessor).toBe('function')
     },
     20_000,

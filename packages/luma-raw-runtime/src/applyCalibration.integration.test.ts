@@ -3,13 +3,10 @@
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
+import { loadNativeModuleForNode } from '@lumaforge/luma-native-artifacts/load-for-node'
 import { beforeAll, describe, expect, it } from 'vitest'
-
-type NativeModuleFactory = (options?: {
-  locateFile?: (path: string) => string
-}) => Promise<unknown>
 
 interface NativeImage {
   data: Uint16Array
@@ -19,7 +16,7 @@ interface NativeImage {
 
 interface NativeProcessor {
   loadBuffer: (data: Uint8Array) => unknown
-  openBuffer: (data: Uint8Array, settings: unknown) => unknown
+  openWithSettings: (settings: unknown) => unknown
   applyCalibration: (params: {
     xyzToCamera: number[]
     toneCurveLut?: number[]
@@ -34,21 +31,10 @@ interface NativeModule {
 }
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const nativeProfile = 'desktop'
-const nativeJsPath = join(
-  packageDir,
-  'dist',
-  'native',
-  nativeProfile,
-  'luma_raw.js',
-)
-const nativeWasmPath = join(
-  packageDir,
-  'dist',
-  'native',
-  nativeProfile,
-  'luma_raw.wasm',
-)
+// The CI native job builds into dist/native; the test runs those artifacts.
+const nativeDir = join(packageDir, 'dist', 'native')
+const nativeJsPath = join(nativeDir, 'desktop', 'luma_raw.js')
+const nativeWasmPath = join(nativeDir, 'desktop', 'luma_raw.wasm')
 const publicRawFixturePath = join(
   packageDir,
   'fixtures',
@@ -91,43 +77,10 @@ const MATRIX_A = [0.7, 0.2, 0.1, 0.3, 0.85, -0.15, -0.05, 0.1, 0.95]
 const MATRIX_B = [0.4, 0.5, 0.1, 0.1, 0.6, 0.3, 0.05, 0.25, 0.7]
 
 async function loadNativeModule(): Promise<NativeModule> {
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url
-    if (url.startsWith('file:')) {
-      const bytes = await readFile(fileURLToPath(url))
-      return new Response(new Uint8Array(bytes), {
-        status: 200,
-        statusText: 'OK',
-      })
-    }
-    return originalFetch(input, init)
-  }) as typeof fetch
-
-  Object.defineProperty(globalThis, 'crossOriginIsolated', {
-    configurable: true,
-    value: true,
-  })
-
-  const moduleImport = (await import(
-    /* @vite-ignore */ pathToFileURL(nativeJsPath).href
-  )) as { default: NativeModuleFactory }
-
-  const module = (await moduleImport.default({
-    locateFile(path) {
-      if (path.endsWith('.wasm')) {
-        return pathToFileURL(nativeWasmPath).href
-      }
-      return path
-    },
-  })) as NativeModule
-
-  return module
+  return (await loadNativeModuleForNode({
+    kind: 'raw',
+    nativeDir,
+  })) as unknown as NativeModule
 }
 
 function l2Distance(a: Uint16Array, b: Uint16Array): number {
@@ -180,9 +133,10 @@ function decodeWithMatrix(
   // metadata-derived state and the result is deterministic — matches the
   // spike harness so the L2 numbers are directly comparable.
   try {
-    processor.openBuffer(rawBytes, strictExportSettings)
+    processor.loadBuffer(rawBytes)
+    processor.openWithSettings(strictExportSettings)
   } catch (error) {
-    rethrowEmscriptenException(error, 'openBuffer')
+    rethrowEmscriptenException(error, 'open')
   }
   try {
     processor.applyCalibration(
