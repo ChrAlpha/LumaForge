@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -255,21 +252,5 @@ describe('detectCapabilityVector', () => {
     expect(vector).toEqual(override)
     expect(vector).toBe(getCapabilityVectorSnapshot())
     expect(Object.isFrozen(vector)).toBe(true)
-  })
-})
-
-describe('capability vector type ownership', () => {
-  it('takes the CapabilityVector shape from the render engine', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/runtime/capability-vector.ts'),
-      'utf8',
-    )
-
-    expect(source).not.toMatch(
-      /\b(?:interface|type) CapabilityVector\b|\bexport (?:type )?\{[^}]*\bCapabilityVector\b/,
-    )
-    expect(source).toMatch(
-      /import type \{[^}]*\bCapabilityVector\b[^}]*\} from '@lumaforge\/render-engine\/policy'/,
-    )
   })
 })

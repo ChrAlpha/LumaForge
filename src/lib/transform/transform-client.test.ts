@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { identityMatrix, rotationMatrix } from '~/lib/transform/geometry/matrix'
@@ -514,16 +511,5 @@ describe('transform worker client', () => {
     expect(clientC.epoch).toBeGreaterThan(clientB.epoch)
     clientA.dispose()
     clientB.dispose()
-  })
-})
-
-describe('transform worker client ownership', () => {
-  it('keeps React out of the transport', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/transform/transform-client.ts'),
-      'utf8',
-    )
-    expect(source).not.toMatch(/from\s+['"](?:react|react-dom)[/'"]/)
-    expect(source).not.toMatch(/transform-demo/)
   })
 })

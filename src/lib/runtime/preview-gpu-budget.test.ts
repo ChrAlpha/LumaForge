@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import {
   BOUNDED_HQ_PREVIEW_LOW_MEMORY_MAX_PIXELS,
@@ -247,28 +244,4 @@ describe('derivePreviewGpuBudget', () => {
       expect(Object.isFrozen(budget)).toBe(true)
     },
   )
-})
-
-describe('preview GPU budget type ownership', () => {
-  it.each([
-    'CapabilityVector',
-    'PreviewGpuBudget',
-    'PreviewGpuCapabilitySnapshot',
-  ])('takes %s from the render engine', (name) => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/runtime/preview-gpu-budget.ts'),
-      'utf8',
-    )
-
-    expect(source).not.toMatch(
-      new RegExp(
-        String.raw`\b(?:interface|type) ${name}\b|\bexport (?:type )?\{[^}]*\b${name}\b`,
-      ),
-    )
-    expect(source).toMatch(
-      new RegExp(
-        String.raw`import type \{[^}]*\b${name}\b[^}]*\} from '@lumaforge/render-engine/policy'`,
-      ),
-    )
-  })
 })

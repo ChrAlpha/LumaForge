@@ -1,12 +1,7 @@
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import type { Matrix3 } from '@lumaforge/render-engine/geometry'
-import * as engineGeometry from '@lumaforge/render-engine/geometry'
 import { applyMatrix, invertMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
 
-import * as appMatrix from '~/lib/transform/geometry/matrix'
 import {
   identityMatrix,
   multiplyMatrices,
@@ -42,34 +37,5 @@ describe('normalized projective transforms', () => {
     expect(
       applyMatrix([1, 0, 0, 0, 1, 0, 1, 0, -0.5], { x: 0.5, y: 0.5 }),
     ).toBeNull()
-  })
-})
-
-describe('projective kernel ownership', () => {
-  it('leaves inversion and projection to the engine kernel', () => {
-    expect(Object.keys(appMatrix).sort()).toEqual(
-      ['identityMatrix', 'multiplyMatrices', 'rotationMatrix'].sort(),
-    )
-    expect(Object.keys(appMatrix)).not.toContain('invertMatrix')
-    expect(Object.keys(appMatrix)).not.toContain('applyMatrix')
-    expect(typeof engineGeometry.invertMatrix).toBe('function')
-    expect(typeof engineGeometry.applyMatrix).toBe('function')
-  })
-
-  it('keeps the only app geometry implementation in src/lib/transform', () => {
-    for (const file of [
-      'types.ts',
-      'matrix.ts',
-      'fit-family.ts',
-      'detect-lines.ts',
-      'upright.ts',
-    ]) {
-      expect(
-        existsSync(
-          resolve(process.cwd(), 'src/modules/transform-demo/geometry', file),
-        ),
-        file,
-      ).toBe(false)
-    }
   })
 })

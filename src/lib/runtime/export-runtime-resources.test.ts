@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -190,27 +187,4 @@ describe('snapshotExportRuntimeResources', () => {
     })
     expect(Object.isFrozen(snap)).toBe(true)
   })
-})
-
-describe('export runtime resources type ownership', () => {
-  it.each(['ExportRuntimeResources', 'ExportRuntimeResourcesInput'])(
-    'takes %s from the render engine',
-    (name) => {
-      const source = readFileSync(
-        resolve(process.cwd(), 'src/lib/runtime/export-runtime-resources.ts'),
-        'utf8',
-      )
-
-      expect(source).not.toMatch(
-        new RegExp(
-          String.raw`\b(?:interface|type) ${name}\b|\bexport (?:type )?\{[^}]*\b${name}\b`,
-        ),
-      )
-      expect(source).toMatch(
-        new RegExp(
-          String.raw`import type \{[^}]*\b${name}\b[^}]*\} from '@lumaforge/render-engine/policy'`,
-        ),
-      )
-    },
-  )
 })

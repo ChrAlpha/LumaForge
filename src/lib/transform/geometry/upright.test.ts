@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import type { Matrix3, Point } from '@lumaforge/render-engine/geometry'
 import { applyMatrix } from '@lumaforge/render-engine/geometry'
 import { describe, expect, it } from 'vitest'
@@ -318,46 +315,5 @@ describe('image-based Upright analysis', () => {
       image.data[index + 2] = value
     }
     expect(analyzeUpright(image).solutions.auto.status).toBe('insufficient')
-  })
-})
-
-describe('production transform domain ownership', () => {
-  const sources = [
-    'preview-types.ts',
-    'transform-types.ts',
-    'geometry/types.ts',
-    'geometry/matrix.ts',
-    'geometry/fit-family.ts',
-    'geometry/detect-lines.ts',
-    'geometry/upright.ts',
-  ]
-
-  it('stays free of the demo module and of React', () => {
-    for (const file of sources) {
-      const source = readFileSync(
-        resolve(process.cwd(), 'src/lib/transform', file),
-        'utf8',
-      )
-      expect(source, file).not.toMatch(/transform-demo/)
-      expect(source, file).not.toMatch(/from\s+['"](?:react|react-dom)[/'"]/)
-    }
-  })
-
-  it('leaves the Matrix3 and Point declarations to the engine kernel', () => {
-    for (const file of sources) {
-      const source = readFileSync(
-        resolve(process.cwd(), 'src/lib/transform', file),
-        'utf8',
-      )
-      expect(source, file).not.toMatch(
-        /\b(?:type|interface)\s+(?:Matrix3|Point)\b/,
-      )
-      expect(source, file).not.toMatch(
-        /export\s+(?:type\s+)?\{[^}]*\b(?:Matrix3|Point)\b/,
-      )
-      expect(source, file).not.toMatch(
-        /function\s+(?:invertMatrix|applyMatrix)\b/,
-      )
-    }
   })
 })

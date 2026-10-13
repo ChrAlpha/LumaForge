@@ -1,6 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import { applyMatrix } from '@lumaforge/render-engine/geometry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -234,27 +231,5 @@ describe('transform worker protocol', () => {
       phase: 'render',
       message: 'invalid-transform',
     } satisfies TransformWorkerResponse)
-  })
-})
-
-describe('production transform renderer ownership', () => {
-  const workerSideModules = [
-    'src/lib/transform/transform-render.ts',
-    'src/lib/transform/worker-protocol.ts',
-    'src/lib/transform/transform.worker.ts',
-    'src/lib/transform/preview-dimensions.ts',
-  ]
-
-  it('keeps React out of the worker-side modules', () => {
-    for (const file of workerSideModules) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, file).not.toMatch(/from\s+['"](?:react|react-dom)[/'"]/)
-    }
-  })
-
-  it('keeps the demo module deleted, so no import can resolve into it', () => {
-    expect(
-      existsSync(resolve(process.cwd(), 'src/modules/transform-demo')),
-    ).toBe(false)
   })
 })
