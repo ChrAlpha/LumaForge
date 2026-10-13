@@ -1,6 +1,5 @@
 // `@lumaforge/render-engine/export` subpath entry.
 
-export { TypedBufferPool } from './buffer-pool'
 export {
   assessProcessedExport,
   type ProcessedExportAssessment,
@@ -17,38 +16,18 @@ export {
   planExportGeometry,
   planGeometryTiles,
   type PlannedExportGeometry,
-  preimageRect,
   resampleGeometryTile,
 } from './geometry/export-geometry'
-export {
-  applyMatrix,
-  invertMatrix,
-  isMatrix3,
-  type Matrix3,
-} from './geometry/matrix'
-export {
-  normalizeExportConcurrency,
-  runOrderedConcurrent,
-} from './pipeline-concurrency'
+export { normalizeExportConcurrency } from './pipeline-concurrency'
 export {
   type ProcessedWindowExportLifecycleInput,
   runProcessedWindowExportLifecycle,
 } from './processed-window-export'
 export {
-  type LinearProPhotoTile,
   type ProcessedRgb16Rows,
-  processedWindowToLinearProPhotoTile,
   processedWindowToRgb16Rows,
-  processedWindowToSourceWindow,
 } from './processed-window-transform'
-export {
-  expandRectWithHalo,
-  type ExportStrip,
-  MAX_EXPORT_STRIP_ROWS,
-  normalizePreferredStripRows,
-  planExportStrips,
-  reduceStripRows,
-} from './strip-scheduler'
+export { normalizePreferredStripRows } from './strip-scheduler'
 
 // Full-res export engine + JPEG row writer/sink + perf metrics
 export {
@@ -88,9 +67,4 @@ export {
   isWasmJpegRuntimeAvailable,
   JPEG_RUNTIME_UNAVAILABLE_MESSAGE,
 } from './jpeg/wasm-row-sink'
-export {
-  createExportMetricCollector,
-  type ExportPerfMetric,
-  formatExportMetricJsonl,
-  nowMs,
-} from './perf/export-metrics'
+export type { ExportPerfMetric } from './perf/export-metrics'

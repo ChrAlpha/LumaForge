@@ -5,7 +5,7 @@ export type ExportStrip = {
   input: LumaRawWindowRect
 }
 
-export const MAX_EXPORT_STRIP_ROWS = 4096
+const MAX_EXPORT_STRIP_ROWS = 4096
 
 export function normalizePreferredStripRows(
   preferredRows: number,

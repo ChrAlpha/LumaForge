@@ -6,6 +6,21 @@ predates this file.
 
 ## Unreleased
 
+### Breaking
+
+- Removed `TypedBufferPool`, `processedWindowToLinearProPhotoTile`,
+  `LinearProPhotoTile`, `runOrderedConcurrent`, `planExportStrips`,
+  `reduceStripRows`, `expandRectWithHalo`, `MAX_EXPORT_STRIP_ROWS` and
+  `ExportStrip` from `@lumaforge/render-engine` and
+  `@lumaforge/render-engine/export`, and `processedWindowToSourceWindow`,
+  `preimageRect`, `createExportMetricCollector`, `formatExportMetricJsonl` and
+  `nowMs` from `@lumaforge/render-engine/export`. They were internal steps of
+  the full-resolution export, which no consumer called; export metrics still
+  reach `onMetric` as `ExportPerfMetric` records.
+- `@lumaforge/render-engine/export` no longer re-exports `applyMatrix`,
+  `invertMatrix`, `isMatrix3` and `Matrix3`; import them from
+  `@lumaforge/render-engine/geometry`.
+
 ### Changed
 
 - `createStreamingSha256` and `sha256Hex` hash about three times faster: the

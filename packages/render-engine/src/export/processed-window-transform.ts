@@ -3,15 +3,8 @@ import type {
   LumaRawWindowRect,
 } from '@lumaforge/luma-raw-runtime'
 
-const UINT16_MAX = 65535
 const CHANNELS_PER_PIXEL = 3
 const INVALID_PROCESSED_WINDOW = 'FULL_RES_EXPORT_INVALID_PROCESSED_WINDOW'
-
-export type LinearProPhotoTile = {
-  width: number
-  height: number
-  data: Float32Array
-}
 
 export type ProcessedRgb16Rows = {
   width: number
@@ -35,7 +28,7 @@ function rectsMatch(left: LumaRawWindowRect, right: LumaRawWindowRect) {
 function assertValidProcessedWindow(
   window: LumaRawProcessedWindow,
   expectedRect: LumaRawWindowRect,
-): number {
+): void {
   if (
     window.workingSpace !== 'linear-prophoto-rgb' ||
     window.normalized !== false ||
@@ -59,21 +52,6 @@ function assertValidProcessedWindow(
   ) {
     throw new Error(INVALID_PROCESSED_WINDOW)
   }
-
-  return expectedLength
-}
-
-export function processedWindowToLinearProPhotoTile(
-  window: LumaRawProcessedWindow,
-  expectedRect: LumaRawWindowRect,
-): LinearProPhotoTile {
-  const expectedLength = assertValidProcessedWindow(window, expectedRect)
-  const data = new Float32Array(expectedLength)
-  for (let index = 0; index < expectedLength; index += 1) {
-    data[index] = (window.data[index] ?? 0) / UINT16_MAX
-  }
-
-  return { width: window.width, height: window.height, data }
 }
 
 /**

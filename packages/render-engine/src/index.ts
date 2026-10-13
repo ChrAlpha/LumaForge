@@ -69,22 +69,9 @@ export {
 export type { CapabilityVector } from './policy/capability-input'
 
 // Export (pure-logic primitives)
-export { TypedBufferPool } from './export/buffer-pool'
+export { normalizeExportConcurrency } from './export/pipeline-concurrency'
 export {
-  normalizeExportConcurrency,
-  runOrderedConcurrent,
-} from './export/pipeline-concurrency'
-export {
-  type LinearProPhotoTile,
   type ProcessedRgb16Rows,
-  processedWindowToLinearProPhotoTile,
   processedWindowToRgb16Rows,
 } from './export/processed-window-transform'
-export {
-  expandRectWithHalo,
-  type ExportStrip,
-  MAX_EXPORT_STRIP_ROWS,
-  normalizePreferredStripRows,
-  planExportStrips,
-  reduceStripRows,
-} from './export/strip-scheduler'
+export { normalizePreferredStripRows } from './export/strip-scheduler'

@@ -59,22 +59,12 @@ function createBase(input: ExportPerfCollectorInput): ExportPerfMetricBase {
 
 export function createExportMetricCollector(input: ExportPerfCollectorInput) {
   const base = createBase(input)
-  const entries: ExportPerfMetric[] = []
 
   return {
     record(entry: StripRecordInput | SummaryRecordInput) {
-      const metric = { ...base, ...entry } as ExportPerfMetric
-      entries.push(metric)
-      return metric
-    },
-    records() {
-      return [...entries]
+      return { ...base, ...entry } as ExportPerfMetric
     },
   }
-}
-
-export function formatExportMetricJsonl(records: ExportPerfMetric[]) {
-  return records.map((record) => JSON.stringify(record)).join('\n')
 }
 
 export function nowMs() {

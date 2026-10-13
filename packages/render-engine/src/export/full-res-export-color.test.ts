@@ -19,7 +19,6 @@ import {
   neutralGraph,
   neutralSceneSteps,
 } from './full-res-export-test-fixtures'
-import { processedWindowToLinearProPhotoTile } from './processed-window-transform'
 
 describe('runFullResolutionJpegExport', () => {
   it('writes row bands that match the same LUT graph applied to the full strip', async () => {
@@ -65,15 +64,11 @@ describe('runFullResolutionJpegExport', () => {
       outputRect,
       halo: { left: 2, top: 2, right: 2, bottom: 2 },
     })
-    const expectedTile = processedWindowToLinearProPhotoTile(
-      expectedWindow,
-      outputRect,
-    )
     const expectedRows = createRowBandProcessor({
       width: outputRect.width,
       rowBandRows: outputRect.height,
       graph,
-    }).processFloatRows(expectedTile.data, outputRect.height)
+    }).processUint16Rows(expectedWindow.data, outputRect.height)
     const writtenRows: Array<{ bytes: Uint8Array; rowCount: number }> = []
     const writer = {
       writeRows: vi.fn(async (bytes: Uint8Array, rowCount: number) => {

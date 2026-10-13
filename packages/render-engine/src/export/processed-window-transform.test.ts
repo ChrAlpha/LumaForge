@@ -1,10 +1,7 @@
 import type { LumaRawProcessedWindow } from '@lumaforge/luma-raw-runtime'
 import { describe, expect, it } from 'vitest'
 
-import {
-  processedWindowToLinearProPhotoTile,
-  processedWindowToRgb16Rows,
-} from './processed-window-transform'
+import { processedWindowToRgb16Rows } from './processed-window-transform'
 
 function makeWindow(
   overrides: Partial<LumaRawProcessedWindow> = {},
@@ -27,7 +24,7 @@ function makeWindow(
 const dimensionMismatchCases: Array<[string, Partial<LumaRawProcessedWindow>]> =
   [
     [
-      'width mismatch',
+      'with a width mismatch',
       {
         rect: { x: 0, y: 0, width: 2, height: 1 },
         width: 1,
@@ -36,7 +33,7 @@ const dimensionMismatchCases: Array<[string, Partial<LumaRawProcessedWindow>]> =
       },
     ],
     [
-      'height mismatch',
+      'with a height mismatch',
       {
         rect: { x: 0, y: 0, width: 2, height: 1 },
         height: 2,
@@ -44,67 +41,6 @@ const dimensionMismatchCases: Array<[string, Partial<LumaRawProcessedWindow>]> =
       },
     ],
   ]
-
-describe('processedWindowToLinearProPhotoTile', () => {
-  it('normalizes LibRaw RGB16 windows into linear ProPhoto float tiles', () => {
-    const tile = processedWindowToLinearProPhotoTile(makeWindow(), {
-      x: 0,
-      y: 0,
-      width: 2,
-      height: 1,
-    })
-
-    expect(tile.width).toBe(2)
-    expect(tile.height).toBe(1)
-    expect(Array.from(tile.data)).toEqual([
-      0,
-      Math.fround(32768 / 65535),
-      1,
-      1,
-      0,
-      Math.fround(32768 / 65535),
-    ])
-  })
-
-  it.each([
-    ['not oriented', { orientationApplied: false }],
-    ['not color-applied', { colorApplied: false }],
-    ['wrong working space', { workingSpace: 'display-srgb-preview' }],
-    ['already normalized', { normalized: true }],
-  ])('rejects processed windows that are %s', (_name, overrides) => {
-    expect(() =>
-      processedWindowToLinearProPhotoTile(
-        makeWindow(overrides as Partial<LumaRawProcessedWindow>),
-        { x: 0, y: 0, width: 2, height: 1 },
-      ),
-    ).toThrow('FULL_RES_EXPORT_INVALID_PROCESSED_WINDOW')
-  })
-
-  it.each([
-    ['stride mismatch', { stride: 5 }],
-    ['data length mismatch', { data: new Uint16Array(5) }],
-    ['unsafe dimensions', { width: Number.MAX_SAFE_INTEGER, height: 2 }],
-    ...dimensionMismatchCases,
-  ])('rejects processed windows with %s', (_name, overrides) => {
-    expect(() =>
-      processedWindowToLinearProPhotoTile(
-        makeWindow(overrides as Partial<LumaRawProcessedWindow>),
-        { x: 0, y: 0, width: 2, height: 1 },
-      ),
-    ).toThrow('FULL_RES_EXPORT_INVALID_PROCESSED_WINDOW')
-  })
-
-  it('rejects processed windows whose rect does not match the requested output rect', () => {
-    expect(() =>
-      processedWindowToLinearProPhotoTile(makeWindow(), {
-        x: 0,
-        y: 1,
-        width: 2,
-        height: 1,
-      }),
-    ).toThrow('FULL_RES_EXPORT_INVALID_PROCESSED_WINDOW')
-  })
-})
 
 describe('processedWindowToRgb16Rows', () => {
   it('returns validated processed-window row views without allocating Float32', () => {
@@ -146,19 +82,23 @@ describe('processedWindowToRgb16Rows', () => {
     },
   )
 
-  it.each(dimensionMismatchCases)(
-    'rejects processed windows with %s',
-    (_name, overrides) => {
-      expect(() =>
-        processedWindowToRgb16Rows(makeWindow(overrides), {
-          x: 0,
-          y: 0,
-          width: 2,
-          height: 1,
-        }),
-      ).toThrow('FULL_RES_EXPORT_INVALID_PROCESSED_WINDOW')
-    },
-  )
+  it.each([
+    ['not oriented', { orientationApplied: false }],
+    ['not color-applied', { colorApplied: false }],
+    ['in the wrong working space', { workingSpace: 'display-srgb-preview' }],
+    ['already normalized', { normalized: true }],
+    ['a stride mismatch', { stride: 5 }],
+    ['a data length mismatch', { data: new Uint16Array(5) }],
+    ['unsafe dimensions', { width: Number.MAX_SAFE_INTEGER, height: 2 }],
+    ...dimensionMismatchCases,
+  ])('rejects processed windows %s', (_name, overrides) => {
+    expect(() =>
+      processedWindowToRgb16Rows(
+        makeWindow(overrides as Partial<LumaRawProcessedWindow>),
+        { x: 0, y: 0, width: 2, height: 1 },
+      ),
+    ).toThrow('FULL_RES_EXPORT_INVALID_PROCESSED_WINDOW')
+  })
 
   it('rejects processed windows whose rect does not match the requested output rect', () => {
     expect(() =>

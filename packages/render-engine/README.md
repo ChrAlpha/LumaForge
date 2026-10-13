@@ -38,9 +38,9 @@ reruns from the start: the engine keeps no export journal or checkpoint.
 - `@lumaforge/render-engine/export` — full-resolution export engine, export
   geometry planning, and the processed-export assessment and lifecycle
 - `@lumaforge/render-engine/geometry` — `applyMatrix`, `invertMatrix`,
-  `isMatrix3`, `Matrix3`, and `Point`: the same matrix functions the export
-  subpath exports, from an entry that imports no RAW, JPEG, or color runtime
-  and no browser object, so loading it initializes no renderer. Geometry
+  `isMatrix3`, `Matrix3`, and `Point`: the matrix functions export geometry
+  runs, from an entry that imports no RAW, JPEG, or color runtime and no
+  browser object, so loading it initializes no renderer. Geometry
   authoring (composing upright and manual controls into a matrix) is not
   part of the engine.
 - `@lumaforge/render-engine/preview` — CPU preview, candidates, contact sheets
