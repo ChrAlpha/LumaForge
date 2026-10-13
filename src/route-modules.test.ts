@@ -22,6 +22,7 @@ describe('route modules', () => {
     ])
   })
 
+  // The first import of /raw transforms the whole RAW Lab module graph.
   it('loads /raw lazily from its named exports', async () => {
     const raw = children.find((route) => route.path === 'raw')
     expect(typeof raw?.lazy).toBe('function')
@@ -33,5 +34,5 @@ describe('route modules', () => {
       expect.objectContaining({ seo: expect.anything() }),
     )
     expect(Object.keys(module).sort()).toEqual(['Component', 'handle'])
-  })
+  }, 30_000)
 })
