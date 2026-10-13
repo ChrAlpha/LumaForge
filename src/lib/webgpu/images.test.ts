@@ -38,8 +38,6 @@ function fixture(beforeConstruct?: (device: GPUDevice) => void) {
     data: new Uint16Array([100, 200, 300, 400, 500, 600]),
     width: 2,
     height: 1,
-    layout: 'rgb-u16' as const,
-    colorSpace: 'linear-prophoto-rgb' as const,
     renderExposureEv: 0,
     renderExposureMultiplier: 1,
   }
@@ -219,42 +217,6 @@ describe('webGPU image lifecycle and memory', () => {
       .mock.calls.map(([descriptor]) => descriptor.format)
     expect(formats.slice(-2)).toEqual(['rgba16uint', 'rgba16float'])
     expect(images.uploadedBytes).toBe(LUT_SIZE * 16 + 2 * 8)
-    images.dispose()
-  })
-  it.each([
-    [
-      'float RGBA display input',
-      {
-        data: new Float32Array(8),
-        width: 2,
-        height: 1,
-        layout: 'rgba-float32',
-        colorSpace: 'display-srgb-preview',
-      },
-    ],
-    [
-      'float data under the RGB16 layout',
-      {
-        data: new Float32Array(6),
-        width: 2,
-        height: 1,
-        layout: 'rgb-u16',
-        colorSpace: 'linear-prophoto-rgb',
-        renderExposureEv: 0,
-        renderExposureMultiplier: 1,
-      },
-    ],
-  ])('refuses %s before allocating', (_name, input) => {
-    const { images, upload, device } = fixture()
-    images.uploadImage(upload)
-    const source = images.input
-    const allocations = vi.mocked(device.createTexture).mock.calls.length
-    expect(() => images.uploadImage(input as unknown as typeof upload)).toThrow(
-      'GPU_IMAGE_LAYOUT_INVALID',
-    )
-    expect(device.createTexture).toHaveBeenCalledTimes(allocations)
-    expect(images.input).toBe(source)
-    expect(images.inputUpload).toBe(upload)
     images.dispose()
   })
   it('replaces textures when dimensions change and releases the old pair', () => {

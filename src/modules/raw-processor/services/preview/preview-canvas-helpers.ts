@@ -26,8 +26,6 @@ export function createRawUploadInput(image: DecodedImage): RawUploadInput {
     data: image.data,
     width: image.width,
     height: image.height,
-    layout: 'rgb-u16',
-    colorSpace: 'linear-prophoto-rgb',
     renderExposureEv,
     renderExposureMultiplier: Math.pow(2, renderExposureEv),
   }

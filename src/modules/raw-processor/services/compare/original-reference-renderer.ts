@@ -99,8 +99,6 @@ export async function renderOriginalReferenceSnapshot({
     throwIfAborted(signal)
     pipeline.uploadImage({
       ...target,
-      layout: 'rgb-u16',
-      colorSpace: 'linear-prophoto-rgb',
       renderExposureEv: image.renderExposure.ev,
       renderExposureMultiplier: image.renderExposure.multiplier,
     })

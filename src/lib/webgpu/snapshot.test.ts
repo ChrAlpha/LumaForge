@@ -106,8 +106,6 @@ describe('tiled RGB16 source crops', () => {
     data: Uint16Array.from({ length: 3 * 2 * 3 }, (_, index) => index),
     width: 3,
     height: 2,
-    layout: 'rgb-u16' as const,
-    colorSpace: 'linear-prophoto-rgb' as const,
     renderExposureEv: 1,
     renderExposureMultiplier: 2,
   }

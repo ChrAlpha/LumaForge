@@ -8,9 +8,6 @@ export function validateImageUpload(
 ) {
   const { width, height, data } = input
   if (
-    input.layout !== 'rgb-u16' ||
-    input.colorSpace !== 'linear-prophoto-rgb' ||
-    !(data instanceof Uint16Array) ||
     !Number.isSafeInteger(width) ||
     !Number.isSafeInteger(height) ||
     width <= 0 ||

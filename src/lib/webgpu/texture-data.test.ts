@@ -64,8 +64,6 @@ describe('webGPU texture data contract', () => {
       data: new Uint16Array(6),
       width: 2,
       height: 1,
-      layout: 'rgb-u16' as const,
-      colorSpace: 'linear-prophoto-rgb' as const,
       renderExposureEv: 0,
       renderExposureMultiplier: 1,
     }
@@ -89,8 +87,6 @@ describe('webGPU texture data contract', () => {
       {
         width: 1,
         height: 2,
-        layout: 'rgb-u16',
-        colorSpace: 'linear-prophoto-rgb',
         data: new Uint16Array([1, 2, 3, 65535, 42, 0]),
         renderExposureEv: 0,
         renderExposureMultiplier: 1,

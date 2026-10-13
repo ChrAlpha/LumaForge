@@ -194,8 +194,7 @@ export class WebGPUProcessingPipeline {
 
   private exposure() {
     const source = this.images?.inputUpload
-    return source?.layout === 'rgb-u16' &&
-      Number.isFinite(source.renderExposureMultiplier)
+    return source && Number.isFinite(source.renderExposureMultiplier)
       ? source.renderExposureMultiplier
       : 1
   }

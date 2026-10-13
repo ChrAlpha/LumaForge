@@ -22,8 +22,6 @@ export interface RawUploadInput {
   data: Uint16Array
   width: number
   height: number
-  layout: 'rgb-u16'
-  colorSpace: 'linear-prophoto-rgb'
   renderExposureEv: number
   renderExposureMultiplier: number
 }

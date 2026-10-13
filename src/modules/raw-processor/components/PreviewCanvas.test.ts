@@ -470,8 +470,6 @@ describe('preview canvas upload descriptor', () => {
 
     expect(createRawUploadInput(image)).toEqual({
       data,
-      layout: 'rgb-u16',
-      colorSpace: 'linear-prophoto-rgb',
       width: 1,
       height: 1,
       renderExposureEv: 1.5,
