@@ -3,10 +3,11 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from './color-graph'
 import { resolveExportColorGraph } from './color-graph'
+import type { TransferFunctionId } from './log-encoding'
 import type { Mat3 } from './matrix'
 import { getGamutMatrix, mat3Identity } from './matrix'
 import { linearProPhotoToOklab, oklabToLinearProPhoto } from './oklab'
-import type { LUTColorProfile } from './registry'
+import type { LUTColorProfile, LUTRole } from './registry'
 import { createRowBandProcessor } from './row-band-processor'
 import {
   CHROMA_CLAMP_HIGH,
@@ -82,21 +83,34 @@ const makeRedRampLut = () => makeLut((red) => [red, red, red])
 const makeIdentityLut = () => makeLut((red, green, blue) => [red, green, blue])
 
 /**
- * The neutral scene steps followed by a linear ProPhoto LUT stage, which no
- * catalog contract resolves to, so the LUT steps are written here.
+ * The resolved scene steps followed by a LUT stage written here, so a test
+ * can pick any transfer, range, domain and output matrix, including ones no
+ * catalog contract resolves to. Linear ProPhoto in and out by default.
  */
 function makeLinearLutGraph({
   data,
+  scene = {},
   domainMin = [0, 0, 0],
   domainMax = [1, 1, 1],
+  inputTransfer = 'linear',
+  outputTransfer = 'linear',
+  range = 'full',
+  role = 'scene-creative',
+  intensity = 1,
   outputMatrix = mat3Identity(),
 }: {
   data: Float32Array
+  scene?: Partial<ExportColorGraphInput>
   domainMin?: [number, number, number]
   domainMax?: [number, number, number]
+  inputTransfer?: TransferFunctionId
+  outputTransfer?: TransferFunctionId
+  range?: 'full' | 'legal'
+  role?: LUTRole
+  intensity?: number
   outputMatrix?: Mat3
 }): SupportedExportColorGraphDescriptor {
-  const sceneSteps = structuredClone(noLutGraph.steps.slice(0, -1))
+  const sceneSteps = structuredClone(resolvedGraph(scene).steps.slice(0, -1))
   return {
     supported: true,
     outputGamut: 'srgb-rec709',
@@ -109,19 +123,29 @@ function makeLinearLutGraph({
         matrix: mat3Identity(),
         gamut: 'prophoto-rgb',
       },
-      { kind: 'encode-lut-transfer', transfer: 'linear', range: 'full' },
+      { kind: 'encode-lut-transfer', transfer: inputTransfer, range },
       { kind: 'lut3d', size: 2, data, domainMin, domainMax },
       {
         kind: 'lut-output-to-srgb',
         matrix: outputMatrix,
-        transfer: 'linear',
-        range: 'full',
-        role: 'scene-creative',
-        intensity: 1,
+        transfer: outputTransfer,
+        range,
+        role,
+        intensity,
       },
       { kind: 'output-srgb' },
     ],
   }
+}
+
+/** One pixel of `value` on every channel through `graph`, as RGB8. */
+function processGray(
+  graph: SupportedExportColorGraphDescriptor,
+  value: number,
+) {
+  return createRowBandProcessor({ width: 1, rowBandRows: 1, graph })
+    .processUint16Rows(new Uint16Array([value, value, value]), 1)
+    .slice()
 }
 
 function makePrecisionProbeGraph(domainMin: number, domainMax: number) {
@@ -605,5 +629,97 @@ describe('createRowBandProcessor', () => {
     const rows = processor.processFloatRows(new Float32Array([0.5, 0, 0]), 1)
 
     expect(rows).toEqual(new Uint8Array([toSrgbByte(0.25), 0, 0]))
+  })
+
+  it('applies the RAW render exposure before the final sRGB encode', () => {
+    const rows = processGray(
+      resolvedGraph({
+        rawRenderExposure: { ev: 1, multiplier: 2, source: 'image-statistics' },
+      }),
+      16384,
+    )
+
+    expect(rows[0]).toBe(toSrgbByte((16384 / 65535) * 2))
+    expect(rows[0]).not.toBe(toSrgbByte(16384 / 65535))
+  })
+
+  it('applies the RAW render exposure before scene LUT input and base mixing', () => {
+    const intensity = 0.5
+    const rows = processGray(
+      makeLinearLutGraph({
+        data: makeRedRampLut(),
+        scene: {
+          rawRenderExposure: {
+            ev: 1,
+            multiplier: 2,
+            source: 'image-statistics',
+          },
+        },
+        domainMax: [0.5, 0.5, 0.5],
+        intensity,
+      }),
+      16384,
+    )
+
+    const unexposed = 16384 / 65535
+    const exposed = unexposed * 2
+    expect(rows[0]).toBe(toSrgbByte(exposed + (1 - exposed) * intensity))
+    // Neither the LUT input nor the base it mixes with skips the exposure.
+    expect(rows[0]).not.toBe(toSrgbByte(exposed + (0.5 - exposed) * intensity))
+    expect(rows[0]).not.toBe(
+      toSrgbByte(unexposed + (1 - unexposed) * intensity),
+    )
+  })
+
+  it('decodes a BT.709 LUT output before the final sRGB encode', () => {
+    const bt709EncodedGray = 0.4090077
+    const rows = processGray(
+      makeLinearLutGraph({
+        data: makeLut(() => [
+          bt709EncodedGray,
+          bt709EncodedGray,
+          bt709EncodedGray,
+        ]),
+        inputTransfer: 'v-log',
+        outputTransfer: 'bt709',
+        role: 'combined-look-output',
+      }),
+      32768,
+    )
+
+    const bt709Linear = Math.pow((bt709EncodedGray + 0.099) / 1.099, 1 / 0.45)
+    const expected = toSrgbByte(bt709Linear)
+    expect(Array.from(rows)).toEqual([expected, expected, expected])
+    expect(rows[0]).not.toBe(Math.round(bt709EncodedGray * 255))
+  })
+
+  it('samples a legal-range scene LUT over its domain and mixes at the strength', () => {
+    const legalScale = (940 - 64) / 1023
+    const legalOffset = 64 / 1023
+    const domainMin = 0.25
+    const domainMax = 0.75
+    const intensity = 0.25
+    const rows = processGray(
+      makeLinearLutGraph({
+        data: makeRedRampLut(),
+        domainMin: [domainMin, domainMin, domainMin],
+        domainMax: [domainMax, domainMax, domainMax],
+        inputTransfer: 'gamma24',
+        outputTransfer: 'gamma24',
+        range: 'legal',
+        intensity,
+      }),
+      32768,
+    )
+
+    const base = 32768 / 65535
+    const encoded = clamp01(Math.pow(base, 1 / 2.4)) * legalScale + legalOffset
+    const normalized = clamp01((encoded - domainMin) / (domainMax - domainMin))
+    const lutOutput = Math.max(
+      Math.pow((normalized - legalOffset) / legalScale, 2.4),
+      0,
+    )
+    expect(rows[0]).toBe(toSrgbByte(base + (lutOutput - base) * intensity))
+    expect(rows[0]).not.toBe(toSrgbByte(base))
   })
 })

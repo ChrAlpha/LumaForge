@@ -1,7 +1,7 @@
 // Pure builders for executor tests: a processed-window capability, synthetic
-// processed windows, the resolved neutral color graph, and the sRGB encode math the
-// expected pixels are computed with. Nothing here runs the executor, so
-// expectations stay independent of the code under test.
+// processed windows, JPEG outputs, and the resolved neutral color graph.
+// Nothing here runs the executor, so expectations stay independent of the
+// code under test.
 
 import type {
   ExportColorGraphInput,
@@ -109,17 +109,6 @@ export function makePatternedProcessedWindow(
   }
 
   return window
-}
-
-export function clamp01(value: number) {
-  return Math.min(1, Math.max(0, value))
-}
-
-export function linearToSrgb(value: number) {
-  const clamped = Math.max(0, value)
-  return clamped <= 0.0031308
-    ? clamped * 12.92
-    : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055
 }
 
 export function concatByteRows(rows: Uint8Array[]) {
