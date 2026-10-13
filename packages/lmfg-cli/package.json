@@ -28,8 +28,7 @@
     "build": "vite build --config vite.config.ts && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src",
-    "pack:dry-run": "npm pack --dry-run --json",
-    "validate:large": "node benchmarks/large-file-validation.mjs"
+    "pack:dry-run": "npm pack --dry-run --json"
   },
   "dependencies": {
     "@lumaforge/luma-color-runtime": "workspace:*",
