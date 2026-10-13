@@ -11,6 +11,11 @@ follows Keep a Changelog; versions follow semver.
   that development builds of 0.2.0 sealed with eight neutral bands are no
   longer read as recording no HSL.
 
+### Changed
+
+- `lmfg.objective.v1` declares the default `weight` of 1 that `metrics rank`
+  applies.
+
 ## 0.2.0 - 2026-10-12
 
 This release changes the manifest, error, and `capabilities` protocol of

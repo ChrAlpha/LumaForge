@@ -467,13 +467,14 @@ export const METRIC_KEY_VALUES = [
 ] as const
 
 export const MetricKeySchema = z.enum(METRIC_KEY_VALUES)
+export type MetricKey = z.output<typeof MetricKeySchema>
 
 export const ObjectiveTermSchema = z
   .strictObject({
     target: z.number().optional(),
     min: z.number().optional(),
     max: z.number().optional(),
-    weight: z.number().min(0).optional(),
+    weight: z.number().min(0).default(1),
   })
   .refine(
     (term) =>
@@ -654,3 +655,4 @@ export type MetricsResult = z.output<typeof MetricsResultSchema>
 export type ManifestVerifyResult = z.output<typeof ManifestVerifyResultSchema>
 export type MetricsCompareResult = z.output<typeof MetricsCompareResultSchema>
 export type MetricsRankResult = z.output<typeof MetricsRankResultSchema>
+export type Objective = z.output<typeof ObjectiveSchema>

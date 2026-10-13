@@ -6,14 +6,10 @@ import type {
   MetricsCompareResult,
   MetricsRankResult,
   MetricsResult,
+  Objective,
 } from '../schemas/results'
 import { ObjectiveSchema } from '../schemas/results'
-import type { Objective } from '../services/evaluation'
-import {
-  compareMetrics,
-  rankCandidates,
-  validateObjective,
-} from '../services/evaluation'
+import { compareMetrics, rankCandidates } from '../services/evaluation'
 import { computeImageMetrics } from '../services/metrics'
 import { readJson, writeJsonAtomic } from '../workspace/atomic-fs'
 import type { IterationStore } from '../workspace/iteration-store'
@@ -278,5 +274,5 @@ async function loadObjective(
       suggestedNextActions: ['lmfg schema show lmfg.objective.v1'],
     })
   }
-  return validateObjective(parsed.data)
+  return parsed.data
 }

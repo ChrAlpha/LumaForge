@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Metrics } from '../schemas/results'
+import { ObjectiveSchema } from '../schemas/results'
 import {
   compareMetrics,
   flattenMetrics,
   rankCandidates,
   scoreCandidate,
-  validateObjective,
 } from './evaluation'
 
 function metrics(
@@ -51,10 +51,10 @@ describe('flattenMetrics / compareMetrics', () => {
   })
 })
 
-describe('validateObjective', () => {
+describe('objective schema', () => {
   it('accepts target and range terms with default weights', () => {
     expect(
-      validateObjective({
+      ObjectiveSchema.parse({
         'luma.mean': { target: 0.45 },
         'luma.clipped_highlight_ratio': { max: 0.01, weight: 5 },
       }),
@@ -73,18 +73,18 @@ describe('validateObjective', () => {
       { 'luma.mean': { target: 1, min: 0 } },
       { 'luma.mean': {} },
       { 'luma.mean': { target: 'x' } },
+      { 'luma.mean': { target: Number.POSITIVE_INFINITY } },
+      { 'luma.mean': { target: 1, extra: 1 } },
       { 'luma.mean': { min: 1, max: 0 } },
       { 'luma.mean': { target: 1, weight: -1 } },
     ]) {
-      expect(() => validateObjective(bad)).toThrow(
-        expect.objectContaining({ code: 'args.invalid', exitCode: 2 }),
-      )
+      expect(ObjectiveSchema.safeParse(bad).success).toBe(false)
     }
   })
 })
 
 describe('scoreCandidate / rankCandidates', () => {
-  const objective = validateObjective({
+  const objective = ObjectiveSchema.parse({
     'luma.mean': { target: 0.45, weight: 2 },
     'luma.clipped_highlight_ratio': { max: 0.01 },
     'luma.p1': { min: 0.01 },

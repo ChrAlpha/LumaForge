@@ -1,19 +1,6 @@
-import { LmfgError } from '../protocol/errors'
-import type { Metrics } from '../schemas/results'
+import type { MetricKey, Metrics, Objective } from '../schemas/results'
+import { METRIC_KEY_VALUES } from '../schemas/results'
 
-/** Scalar metric keys an objective or comparison can address. */
-export const METRIC_KEYS = [
-  'luma.mean',
-  'luma.p1',
-  'luma.p50',
-  'luma.p99',
-  'luma.clipped_highlight_ratio',
-  'luma.clipped_shadow_ratio',
-  'chroma.mean_saturation',
-  'chroma.colorfulness',
-] as const
-
-export type MetricKey = (typeof METRIC_KEYS)[number]
 export type FlatMetrics = Record<MetricKey, number>
 
 export function flattenMetrics(metrics: Metrics): FlatMetrics {
@@ -43,7 +30,7 @@ export function compareMetrics(
   const base = flattenMetrics(baseline)
   const flat = flattenMetrics(candidate)
   const comparison = {} as MetricComparison
-  for (const key of METRIC_KEYS) {
+  for (const key of METRIC_KEY_VALUES) {
     comparison[key] = {
       baseline: base[key],
       value: flat[key],
@@ -52,20 +39,6 @@ export function compareMetrics(
   }
   return comparison
 }
-
-/**
- * One objective term: aim for `target`, or stay inside `[min, max]`. The
- * penalty is `weight` times the distance from the target or the distance
- * outside the range; lower total scores rank first.
- */
-export type ObjectiveTerm = {
-  target?: number
-  min?: number
-  max?: number
-  weight?: number
-}
-
-export type Objective = Partial<Record<MetricKey, ObjectiveTerm>>
 
 export type TermScore = {
   key: MetricKey
@@ -80,76 +53,6 @@ export type CandidateScore = {
   terms: TermScore[]
 }
 
-export function validateObjective(input: unknown): Objective {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new LmfgError('args.invalid', {
-      message: 'An objective must be a JSON object keyed by metric name.',
-      suggestedNextActions: ['lmfg schema show lmfg.objective.v1'],
-    })
-  }
-  const objective: Objective = {}
-  const entries = Object.entries(input as Record<string, unknown>)
-  if (entries.length === 0) {
-    throw new LmfgError('args.invalid', {
-      message: 'An objective needs at least one metric term.',
-      suggestedNextActions: ['lmfg schema show lmfg.objective.v1'],
-    })
-  }
-  for (const [key, raw] of entries) {
-    if (!(METRIC_KEYS as readonly string[]).includes(key)) {
-      throw new LmfgError('args.invalid', {
-        message: `Unknown objective metric "${key}". Known metrics: ${METRIC_KEYS.join(', ')}.`,
-      })
-    }
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      throw new LmfgError('args.invalid', {
-        message: `Objective term "${key}" must be an object with target, min, max, or weight.`,
-      })
-    }
-    const term = raw as Record<string, unknown>
-    for (const field of ['target', 'min', 'max', 'weight']) {
-      const value = term[field]
-      if (
-        value !== undefined &&
-        (typeof value !== 'number' || !Number.isFinite(value))
-      ) {
-        throw new LmfgError('args.invalid', {
-          message: `Objective term "${key}.${field}" must be a finite number.`,
-        })
-      }
-    }
-    const weight = (term.weight as number | undefined) ?? 1
-    if (weight < 0) {
-      throw new LmfgError('args.invalid', {
-        message: `Objective term "${key}.weight" must not be negative.`,
-      })
-    }
-    const hasTarget = term.target !== undefined
-    const hasRange = term.min !== undefined || term.max !== undefined
-    if (hasTarget === hasRange) {
-      throw new LmfgError('args.invalid', {
-        message: `Objective term "${key}" needs either a target or a min/max range.`,
-      })
-    }
-    if (
-      term.min !== undefined &&
-      term.max !== undefined &&
-      (term.min as number) > (term.max as number)
-    ) {
-      throw new LmfgError('args.invalid', {
-        message: `Objective term "${key}" has min greater than max.`,
-      })
-    }
-    objective[key as MetricKey] = {
-      ...(hasTarget ? { target: term.target as number } : {}),
-      ...(term.min !== undefined ? { min: term.min as number } : {}),
-      ...(term.max !== undefined ? { max: term.max as number } : {}),
-      weight,
-    }
-  }
-  return objective
-}
-
 export function scoreCandidate(
   metrics: Metrics,
   objective: Objective,
@@ -157,11 +60,11 @@ export function scoreCandidate(
   const flat = flattenMetrics(metrics)
   const terms: TermScore[] = []
   let score = 0
-  for (const key of METRIC_KEYS) {
+  for (const key of METRIC_KEY_VALUES) {
     const term = objective[key]
     if (!term) continue
     const value = flat[key]
-    const weight = term.weight ?? 1
+    const { weight } = term
     let distance = 0
     if (term.target !== undefined) {
       distance = Math.abs(value - term.target)
