@@ -88,11 +88,9 @@ jobs:
 
   quality:
     # Never path-selected, so docs-only changes are checked too. The path
-    # check, the app alias check and both script tests need only Node; the
-    # test-project discovery test, the import-boundary test, lint, the
-    # tooling typecheck, the structure check and the retired API check run
-    # the pinned Vitest, ESLint, TypeScript, knip and madge from the
-    # lockfile.
+    # check needs only Node; the rest run the pinned Vitest, ESLint,
+    # TypeScript, knip and madge from the lockfile. The checkers' own tests
+    # run in the tooling project of `pnpm test:app`.
     runs-on: ubuntu-latest
 
     steps:
@@ -125,8 +123,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test the test-project discovery
-        run: node --test scripts/quality/test-project-discovery.test.mjs
+      # Every test file runs in exactly one Vitest project, the one that owns
+      # its directory.
+      - name: Check test-project discovery
+        run: node scripts/quality/check-test-projects.mjs
 
       # Lint covers the app, every package, script and plugin, and the browser
       # specs, and its import-boundary rule judges an import by the files on

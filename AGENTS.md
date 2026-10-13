@@ -673,20 +673,20 @@ These are owner decisions. They override cleanup advice that says otherwise.
   `pnpm exec vite preview` after `pnpm build`.
 - CI follows the same split (jobs in `.github/workflows/build.yml`, aggregated
   by its `build` job; every job except `quality` is path-selected):
-  - `quality` runs on every change, docs-only ones included. It tests and runs
+  - `quality` runs on every change, docs-only ones included. It runs
     `scripts/quality/check-agent-paths.mjs` against this file, then installs
-    dependencies, tests the test-project discovery, and runs
-    `pnpm lint:check`,
+    dependencies and runs `scripts/quality/check-test-projects.mjs` (every
+    test file runs in exactly one Vitest project), `pnpm lint:check`,
     `pnpm typecheck:tooling`, `pnpm check:structure` (knip with
     `scripts/quality/knip.json`, then madge through
-    `scripts/quality/check-cycles.mjs`), and `pnpm check:retired-api`. Lint
-    covers the app, every package, script and plugin, and the browser specs,
-    and applies the module ownership rule in
-    `plugins/eslint-import-boundaries.mjs` (tested by
-    `scripts/quality/import-boundaries.test.mjs`) to every import form the
-    code uses by the resolved files on both sides, with no exceptions. The structure check
-    fails on any unused file, export, or dependency, any unresolved import,
-    any knip configuration hint, and any import cycle; it takes no baseline.
+    `scripts/quality/check-cycles.mjs`), and `pnpm check:retired-api`. The
+    structure check fails on any unused file, export, or dependency, any
+    unresolved import, any knip configuration hint, and any import cycle; it
+    takes no baseline. Lint covers the app, every package, script and plugin,
+    and the browser specs, and applies the module ownership rule in
+    `plugins/eslint-import-boundaries.mjs` to every import form the code uses
+    by the resolved files on both sides, with no exceptions. The checkers'
+    own tests run in the `tooling` project of `pnpm test:app`.
   - `app` runs `pnpm typecheck:browser` and `pnpm test:app`, builds the app
     with prebuilt native assets, checks the build artifact, and smokes the
     landing page and the empty RAW Lab shell in Chromium.
