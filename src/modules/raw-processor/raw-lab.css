@@ -9,7 +9,7 @@
   /* Palette aliases. The 2026-05-25 desktop visual refresh shifts the
      role of borders from "drawn boundaries" to "structural seams." Most
      surface separation is carried by surface-tone delta + inner highlights
-     (shadow-lf-lift / shadow-lf-card) instead of hairlines. The hairline
+     (shadow-lf-lift) instead of hairlines. The hairline
      tokens below are intentionally soft: 6-10% lightness delta from the
      surface base, well under the ~12% the old lf-hairline/0.62 produced. */
   --color-background: var(--color-lf-surface);
