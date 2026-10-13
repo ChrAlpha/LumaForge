@@ -1,13 +1,13 @@
-import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
-
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-/** Recover a bounded CPU input when a GPU device is lost after the HQ upgrade.
- * Keep the authoritative decoded source intact; the client owns its own copy. */
-export function createCpuRecoverySource(
-  image: DecodedImage,
-  maxPixels = QUICK_PREVIEW_MAX_PIXELS,
-) {
+/**
+ * The linear ProPhoto RGB16 pixels of a decoded frame, sampled to the nearest
+ * pixel so they fit within `maxPixels`. A frame that already fits hands back
+ * its own buffer; a larger one gets a new buffer and the frame is never
+ * mutated. Any other layout, or a buffer that does not match its size, is
+ * refused with null.
+ */
+export function sampleRgb16Frame(image: DecodedImage, maxPixels: number) {
   if (
     image.layout !== 'rgb-u16' ||
     image.colorSpace !== 'linear-prophoto-rgb' ||

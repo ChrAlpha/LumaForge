@@ -151,10 +151,9 @@ describe('renderOriginalReferenceSnapshot', () => {
     })
   })
 
-  it('refuses a legacy float display frame before uploading or encoding', async () => {
-    const uploadImage = vi.fn()
-    const dispose = vi.fn()
-    const toBlob = vi.fn()
+  it('refuses a legacy float display frame before any pipeline or encode', async () => {
+    const createPipeline = vi.fn()
+    const createCanvas = vi.fn()
 
     await expect(
       renderOriginalReferenceSnapshot({
@@ -168,23 +167,14 @@ describe('renderOriginalReferenceSnapshot', () => {
         },
         key: 'float-frame',
         maxPixels: 1_000_000,
-        createPipeline: () =>
-          ({
-            initialize: vi.fn().mockResolvedValue(undefined),
-            uploadImage,
-            setParams: vi.fn(),
-            render: vi.fn(),
-            waitForGpu: vi.fn().mockResolvedValue(undefined),
-            dispose,
-          }) as never,
-        createCanvas: () => ({ width: 0, height: 0, toBlob }) as never,
+        createPipeline,
+        createCanvas,
         createObjectURL,
       }),
     ).rejects.toThrow('ORIGINAL_REFERENCE_SNAPSHOT_UNSUPPORTED_INPUT')
-    expect(uploadImage).not.toHaveBeenCalled()
-    expect(toBlob).not.toHaveBeenCalled()
+    expect(createPipeline).not.toHaveBeenCalled()
+    expect(createCanvas).not.toHaveBeenCalled()
     expect(createObjectURL).not.toHaveBeenCalled()
-    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('disposes the pipeline and revokes partial output when encoding fails', async () => {

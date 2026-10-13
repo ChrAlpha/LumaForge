@@ -12,6 +12,7 @@ import type {
 } from '@lumaforge/render-engine/preview'
 import {
   CpuPreviewClient,
+  QUICK_PREVIEW_MAX_PIXELS,
   resolvePreviewColorPlan,
 } from '@lumaforge/render-engine/preview'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -23,7 +24,7 @@ import {
 } from '~/lib/preview/preview-frame'
 import type { DecodedImage } from '~/lib/raw/decoder'
 
-import { createCpuRecoverySource } from '../services/preview/cpu-recovery-source'
+import { sampleRgb16Frame } from '../services/preview/bounded-rgb16-frame'
 
 // ---------------------------------------------------------------------------
 // Public param type
@@ -212,7 +213,8 @@ export function useCpuPreview({
     }
 
     // A quick frame loads as decoded. Any other frame, the bounded HQ a GPU
-    // preview held before it was lost included, loads as a bounded copy.
+    // preview held before it was lost included, loads as a copy bounded to the
+    // quick frame's size; the decoded frame stays intact.
     const source =
       enabled && image && decodedFrame
         ? isQuickU16(image)
@@ -221,7 +223,7 @@ export function useCpuPreview({
               height: image.height,
               data: image.data as Uint16Array,
             }
-          : createCpuRecoverySource(image)
+          : sampleRgb16Frame(image, QUICK_PREVIEW_MAX_PIXELS)
         : null
     if (!decodedFrame || !source) {
       retireSource()

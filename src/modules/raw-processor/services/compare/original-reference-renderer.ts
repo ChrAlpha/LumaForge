@@ -1,10 +1,10 @@
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
-import type { RawUploadInput } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 import type { GpuPreviewParams } from '~/lib/webgpu/uniforms'
 
+import { sampleRgb16Frame } from '../preview/bounded-rgb16-frame'
 import type { OriginalReferenceSnapshot } from './original-reference-snapshot'
 
 type PipelineLike = Pick<
@@ -41,16 +41,6 @@ export const TECHNICAL_ORIGINAL_GPU_INPUT: GpuPreviewParams = Object.freeze({
   output: 'technical-original',
 })
 
-function fitWithinPixelCap(width: number, height: number, maxPixels: number) {
-  const sourcePixels = Math.max(1, width * height)
-  const scale = Math.min(1, Math.sqrt(Math.max(1, maxPixels) / sourcePixels))
-
-  return {
-    width: Math.max(1, Math.floor(width * scale)),
-    height: Math.max(1, Math.floor(height * scale)),
-  }
-}
-
 function canvasToJpegBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -73,71 +63,6 @@ function throwIfAborted(signal?: AbortSignal) {
   }
 }
 
-function resampleUint16(
-  data: Uint16Array,
-  sourceWidth: number,
-  sourceHeight: number,
-  targetWidth: number,
-  targetHeight: number,
-  channels: number,
-) {
-  if (sourceWidth === targetWidth && sourceHeight === targetHeight) {
-    return data
-  }
-
-  const output = new Uint16Array(targetWidth * targetHeight * channels)
-  for (let y = 0; y < targetHeight; y += 1) {
-    const sourceY = Math.min(
-      sourceHeight - 1,
-      Math.floor(((y + 0.5) * sourceHeight) / targetHeight),
-    )
-    for (let x = 0; x < targetWidth; x += 1) {
-      const sourceX = Math.min(
-        sourceWidth - 1,
-        Math.floor(((x + 0.5) * sourceWidth) / targetWidth),
-      )
-      const sourceOffset = (sourceY * sourceWidth + sourceX) * channels
-      const outputOffset = (y * targetWidth + x) * channels
-      for (let channel = 0; channel < channels; channel += 1) {
-        output[outputOffset + channel] = data[sourceOffset + channel] ?? 0
-      }
-    }
-  }
-
-  return output
-}
-
-// Only the RGB16 linear ProPhoto render reaches the GPU; other layouts are refused.
-function createSnapshotUploadInput(
-  image: DecodedImage,
-  target: { width: number; height: number },
-): RawUploadInput {
-  if (
-    image.layout === 'rgb-u16' &&
-    image.colorSpace === 'linear-prophoto-rgb' &&
-    image.data instanceof Uint16Array
-  ) {
-    return {
-      data: resampleUint16(
-        image.data,
-        image.width,
-        image.height,
-        target.width,
-        target.height,
-        3,
-      ),
-      width: target.width,
-      height: target.height,
-      layout: 'rgb-u16',
-      colorSpace: 'linear-prophoto-rgb',
-      renderExposureEv: image.renderExposure.ev,
-      renderExposureMultiplier: image.renderExposure.multiplier,
-    }
-  }
-
-  throw new Error('ORIGINAL_REFERENCE_SNAPSHOT_UNSUPPORTED_INPUT')
-}
-
 export async function renderOriginalReferenceSnapshot({
   image,
   key,
@@ -148,8 +73,11 @@ export async function renderOriginalReferenceSnapshot({
     new RawProcessingPipeline(canvas, { reportFailures: false }),
   createObjectURL = URL.createObjectURL.bind(URL),
 }: RenderOriginalReferenceSnapshotInput): Promise<OriginalReferenceSnapshot> {
+  // Only the RGB16 linear ProPhoto render reaches the GPU; other layouts are
+  // refused before any pipeline exists.
+  const target = sampleRgb16Frame(image, maxPixels)
+  if (!target) throw new Error('ORIGINAL_REFERENCE_SNAPSHOT_UNSUPPORTED_INPUT')
   const canvas = createCanvas()
-  const target = fitWithinPixelCap(image.width, image.height, maxPixels)
   canvas.width = target.width
   canvas.height = target.height
 
@@ -169,7 +97,13 @@ export async function renderOriginalReferenceSnapshot({
     throwIfAborted(signal)
     await pipeline.initialize()
     throwIfAborted(signal)
-    pipeline.uploadImage(createSnapshotUploadInput(image, target))
+    pipeline.uploadImage({
+      ...target,
+      layout: 'rgb-u16',
+      colorSpace: 'linear-prophoto-rgb',
+      renderExposureEv: image.renderExposure.ev,
+      renderExposureMultiplier: image.renderExposure.multiplier,
+    })
     pipeline.setParams(TECHNICAL_ORIGINAL_GPU_INPUT)
     pipeline.render()
     await pipeline.waitForGpu()
