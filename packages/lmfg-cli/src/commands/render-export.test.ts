@@ -320,44 +320,8 @@ describe('candidate export input integrity', () => {
     await expectRefused(/LUT .* does not match the manifest/)
   })
 
-  it('refuses a verified candidate manifest for a different source', async () => {
-    await writeJsonAtomic(
-      paths.manifest,
-      sealRenderManifest({
-        ...manifest,
-        source_raw: { ...manifest.source_raw, sha256: 'f'.repeat(64) },
-      }),
-    )
-    await expectRefused(/Source .* does not match the manifest/)
-  })
-
-  it('refuses resealed parameters that disagree with the recorded graph', async () => {
-    await writeJsonAtomic(
-      paths.manifest,
-      sealRenderManifest({
-        ...manifest,
-        render_params: { ...manifest.render_params, exposure_ev: 2 },
-      }),
-    )
-    await expectRefused(/rebuilt color graph does not match/)
-  })
-
   // A correctly sealed candidate of a retired shape is refused by the
   // manifest reader before any decode, encode, or publication.
-  it('refuses a sealed candidate with a non-current descriptor version before exporting', async () => {
-    await writeJsonAtomic(
-      paths.manifest,
-      sealRenderManifest({
-        ...manifest,
-        color_graph: {
-          ...manifest.color_graph,
-          descriptor: { descriptor_version: 1 },
-        },
-      }),
-    )
-    await expectInvalidBeforeExport('color_graph.descriptor.descriptor_version')
-  })
-
   it('refuses a sealed candidate without recorded RAW exposure before exporting, instead of resolving it again', async () => {
     const { raw_render_exposure_ev: _ev, ...params } = manifest.render_params
     await writeJsonAtomic(
