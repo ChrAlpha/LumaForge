@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest'
 
 import type { TransformState } from '../../model/session'
 import { createTransformState } from '../../model/session-factory'
+import { createTestSession } from '../../test-support/builders'
 import type { TransformEvent } from './transform-state'
 import {
   deriveTransformStatus,
   heldTransformGeometry,
   isNeutralTransformIntent,
   reduceTransformState,
+  transitionSessionTransform,
 } from './transform-state'
 
 const SOURCE = 'session-a'
@@ -213,28 +215,6 @@ describe('reduceTransformState', () => {
     expect(heldTransformGeometry(state)).toEqual(ROTATED)
   })
 
-  it('keeps the requested geometry apart from the rendered one', () => {
-    const asked = run(
-      createTransformState(SOURCE),
-      rotate(3),
-      capture('k1'),
-      request('k1', 1),
-    )
-
-    expect(asked.request?.geometry).toEqual(ROTATED)
-    expect(asked.accepted).toBeNull()
-    expect(deriveTransformStatus(asked)).toBe('pending')
-
-    // A newer ask leaves the earlier answer as the held geometry, but that
-    // answer no longer stands for what the controls ask.
-    const moved = run(accepted(), rotate(6), request('k1', 2, ROTATED_FURTHER))
-
-    expect(moved.request?.geometry).toEqual(ROTATED_FURTHER)
-    expect(moved.accepted?.geometry).toEqual(ROTATED)
-    expect(deriveTransformStatus(moved)).toBe('pending')
-    expect(heldTransformGeometry(moved)).toEqual(ROTATED)
-  })
-
   // Every row starts from a pending request 2 on capture k1 of SOURCE, with
   // request 1's answer accepted, and must leave that acceptance untouched.
   const pending = () =>
@@ -371,12 +351,6 @@ describe('reduceTransformState', () => {
       expect(answered.accepted?.captureKey).toBe('k2')
     })
 
-    it('keeps the same capture idempotent', () => {
-      const state = accepted()
-
-      expect(reduceTransformState(state, capture('k1'))).toBe(state)
-    })
-
     it('reports a failed capture as unavailable until a new capture starts', () => {
       const failed = run(accepted(), capture('k2'), captureFailed('k2'))
 
@@ -422,19 +396,6 @@ describe('reduceTransformState', () => {
       expect(deriveTransformStatus(state)).toBe('neutral')
     })
 
-    it('commits no geometry for a neutral render', () => {
-      const state = run(
-        createTransformState(SOURCE),
-        capture('k1'),
-        request('k1', 1),
-        rendered('k1', 1),
-      )
-
-      expect(state.accepted).toBeNull()
-      expect(heldTransformGeometry(state)).toBeNull()
-      expect(deriveTransformStatus(state)).toBe('neutral')
-    })
-
     it('restores the default crop mode', () => {
       const state = run(
         createTransformState(SOURCE),
@@ -446,44 +407,34 @@ describe('reduceTransformState', () => {
     })
   })
 
-  describe('source replacement', () => {
-    it('gives a replacing source a neutral state of its own', () => {
-      const replaced = createTransformState(OTHER_SOURCE)
+  it.each<[string, () => TransformState, TransformEvent]>([
+    ['the same capture', accepted, capture('k1')],
+    ['a repeated acknowledgement', accepted, rendered('k1', 1)],
+    ['an edit that changes nothing', accepted, rotate(3)],
+    [
+      'a reset of a neutral Transform',
+      () => run(createTransformState(SOURCE), capture('k1')),
+      { type: 'reset', sourceId: SOURCE },
+    ],
+    [
+      'a request without a capture',
+      () => createTransformState(SOURCE),
+      request('k1', 1),
+    ],
+    [
+      'an acknowledgement without a pending request',
+      () => run(createTransformState(SOURCE), capture('k1')),
+      rendered('k1', 1),
+    ],
+    [
+      'an acknowledgement for a neutral intent',
+      () => run(createTransformState(SOURCE), capture('k1'), request('k1', 1)),
+      rendered('k1', 1),
+    ],
+  ])('returns the state it was given for %s', (_label, from, event) => {
+    const state = from()
 
-      expect(replaced.sourceId).toBe(OTHER_SOURCE)
-      expect(deriveTransformStatus(replaced)).toBe('neutral')
-    })
-
-    it.each<[string, TransformEvent]>([
-      ['capture', capture('k1')],
-      ['request', request('k1', 1)],
-      ['acknowledgement', rendered('k1', 1)],
-      ['edit', rotate(3)],
-    ])("ignores the replaced source's late %s", (_label, event) => {
-      const replaced = createTransformState(OTHER_SOURCE)
-
-      expect(reduceTransformState(replaced, event)).toBe(replaced)
-    })
-  })
-
-  it('returns the same state for a repeated acknowledgement', () => {
-    const state = accepted()
-
-    expect(reduceTransformState(state, rendered('k1', 1))).toBe(state)
-  })
-
-  it('returns the same state for a reset of a neutral Transform', () => {
-    const state = run(createTransformState(SOURCE), capture('k1'))
-
-    expect(
-      reduceTransformState(state, { type: 'reset', sourceId: SOURCE }),
-    ).toBe(state)
-  })
-
-  it('returns the same state for an edit that changes nothing', () => {
-    const state = accepted()
-
-    expect(reduceTransformState(state, rotate(3))).toBe(state)
+    expect(reduceTransformState(state, event)).toBe(state)
   })
 
   it('withdraws the newest request when the intent moves on', () => {
@@ -662,36 +613,101 @@ describe('reduceTransformState', () => {
 
     expect(heldTransformGeometry(state)).toEqual(ROTATED)
   })
+})
 
-  describe('complete state contract', () => {
-    it('refuses a pending request without a capture', () => {
-      const state = createTransformState(SOURCE)
-      const withRequest = reduceTransformState(state, request('k1', 1))
-
-      expect(withRequest).toBe(state)
-      expect(state.request).toBeNull()
+describe('transitionSessionTransform', () => {
+  /** A session holding `transform`'s geometry, with an export delivered for it. */
+  function delivered(transform: TransformState) {
+    return createTestSession({
+      id: SOURCE,
+      transform,
+      exportGeometry: heldTransformGeometry(transform),
+      exportState: { status: 'ready' },
     })
+  }
 
-    it('refuses acknowledgement without a pending request', () => {
-      const state = run(createTransformState(SOURCE), capture('k1'))
-      const withAck = reduceTransformState(state, rendered('k1', 1))
+  it.each<[string, TransformEvent]>([
+    ['an edit to the same intent', rotate(3)],
+    ['the same capture', capture('k1')],
+    ['a repeated acknowledgement', rendered('k1', 1)],
+    ['another source', { type: 'reset', sourceId: OTHER_SOURCE }],
+  ])('changes nothing for %s', (_label, event) => {
+    expect(transitionSessionTransform(delivered(accepted()), event)).toBeNull()
+  })
 
-      expect(withAck).toBe(state)
-      expect(state.accepted).toBeNull()
-    })
+  it('discards the export on every new ask, while the held geometry waits for its answer', () => {
+    const away = transitionSessionTransform(delivered(accepted()), rotate(6))!
 
-    it('refuses acknowledgement for a neutral intent', () => {
-      const state = run(
-        createTransformState(SOURCE),
-        capture('k1'),
-        request('k1', 1),
-      )
+    expect(away.invalidated).toBe(true)
+    expect(away.session.exportState.status).toBe('idle')
+    expect(away.session.exportGeometry).toEqual(ROTATED)
+    expect(deriveTransformStatus(away.session.transform)).toBe('pending')
 
-      expect(isNeutralTransformIntent(state.intent)).toBe(true)
-      const withAck = reduceTransformState(state, rendered('k1', 1))
+    // Asking again for what the held geometry answered is a new ask too.
+    const back = transitionSessionTransform(away.session, rotate(3))!
+    expect(back.invalidated).toBe(true)
+    expect(back.session.exportGeometry).toEqual(ROTATED)
+  })
 
-      expect(withAck).toBe(state)
-      expect(state.accepted).toBeNull()
-    })
+  it('moves the export geometry with the answer the session accepts', () => {
+    const asked = run(
+      createTransformState(SOURCE),
+      rotate(3),
+      capture('k1'),
+      request('k1', 1),
+    )
+    const moved = transitionSessionTransform(
+      delivered(asked),
+      rendered('k1', 1),
+    )!
+
+    expect(moved.invalidated).toBe(true)
+    expect(moved.session.exportGeometry).toEqual(ROTATED)
+    expect(moved.session.exportState.status).toBe('idle')
+  })
+
+  it('keeps the export and the intent while a new frame answers the same geometry', () => {
+    const session = delivered(accepted())
+    const reanswered = [
+      capture('k2'),
+      request('k2', 2),
+      rendered('k2', 2),
+    ].reduce((current, event) => {
+      const next = transitionSessionTransform(current, event)!
+      expect(next.invalidated).toBe(false)
+      return next.session
+    }, session)
+
+    expect(deriveTransformStatus(reanswered.transform)).toBe('accepted')
+    expect(reanswered.transform.accepted?.captureKey).toBe('k2')
+    expect(reanswered.transform.intent).toBe(session.transform.intent)
+    expect(reanswered.exportGeometry).toBe(session.exportGeometry)
+    expect(reanswered.exportState.status).toBe('ready')
+  })
+
+  it('clears the export geometry on reset', () => {
+    const reset = transitionSessionTransform(delivered(accepted()), {
+      type: 'reset',
+      sourceId: SOURCE,
+    })!
+
+    expect(reset.invalidated).toBe(true)
+    expect(reset.session.exportGeometry).toBeNull()
+  })
+
+  it('keeps the intent object and the export when a reset only withdraws a neutral request', () => {
+    const session = delivered(
+      run(createTransformState(SOURCE), capture('k1'), request('k1', 1)),
+    )
+    const withdrawn = transitionSessionTransform(session, {
+      type: 'reset',
+      sourceId: SOURCE,
+    })!
+
+    expect(withdrawn.invalidated).toBe(false)
+    expect(withdrawn.session.transform.request).toBeNull()
+    // An export admitted for this intent stays current.
+    expect(withdrawn.session.transform.intent).toBe(session.transform.intent)
+    expect(withdrawn.session.exportState.status).toBe('ready')
   })
 })

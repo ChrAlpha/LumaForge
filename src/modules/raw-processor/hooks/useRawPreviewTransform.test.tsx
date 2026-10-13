@@ -1,710 +1,148 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
-import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import { act, renderHook } from '@testing-library/react'
-import type { SetStateAction } from 'jotai'
 import { atom, createStore, useAtomValue } from 'jotai'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ExportResult } from '../model/export-result'
+import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
+
 import type { ImageSession } from '../model/session'
-import { createImageSession } from '../model/session-factory'
-import { deriveFullResExportReadiness } from '../services/export/export-readiness'
-import { captureExportResultIdentity } from '../services/export/export-result-identity'
-import { deriveTransformStatus } from '../services/transform/transform-state'
-import { useExportGraphInvalidation } from './stages/export/useExportGraphInvalidation'
-import { useExportResultActions } from './stages/export/useExportResultActions'
-import { acceptTransformGeometry } from './transform-session.fixture'
+import { clearExportResultState } from '../services/export/export-state'
+import type { TransformEvent } from '../services/transform/transform-state'
+import { createTestSession } from '../test-support/builders'
 import { useRawPreviewTransform } from './useRawPreviewTransform'
 
-/** The color intent the export result actions read; it draws no look. */
-const COLOR_INTENT: ColorGraphIntent = {
-  styleKind: 'none',
-  builtinPreset: null,
-  intensity: 1,
-  ...NEUTRAL_USER_COLOR_INTENT,
-}
-
-function createReadySession(): ImageSession {
-  const session = createImageSession(new File(['raw'], 'frame.dng'))
-  return {
-    ...session,
-    exportGeometry: null,
-    previewBundle: {
-      ...session.previewBundle,
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
-    },
-    exportState: {
-      ...session.exportState,
-      fullResCapability: { status: 'supported', width: 800, height: 600 },
-    },
-  }
-}
-
-/** A full-resolution result answering `session` under `geometry`. */
-function createExportResult(
-  session: ImageSession,
-  geometry: ExportGeometry | null,
-): ExportResult {
-  return {
-    kind: 'full-resolution',
-    output: {
-      kind: 'blob',
-      filename: 'frame.jpg',
-      blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
-      byteLength: 4,
-      mimeType: 'image/jpeg',
-    },
-    filename: 'frame.jpg',
-    width: 800,
-    height: 600,
-    size: 4,
-    createdAt: 1,
-    copyCapability: {
-      mode: 'full-resolution',
-    },
-    identity: captureExportResultIdentity({
-      resultKind: 'full-resolution',
-      attemptId: 'attempt-1',
-      sessionId: session.id,
-      sourceFile: session.sourceFile.file!,
-      intent: COLOR_INTENT,
-      lut: null,
-      rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-      geometry,
-    }),
-  }
-}
+const rotate = (sourceId: string, degrees: number): TransformEvent => ({
+  type: 'edit',
+  sourceId,
+  intent: { manual: { ...NEUTRAL_TRANSFORM, rotate: degrees } },
+})
 
 /**
- * The workflow around the Transform port: the session lives in a store whose
- * writes the next read sees in the same tick, before any rerender. Graph
- * invalidation and the export result actions both read that store.
+ * The hook over a store whose writes the next read sees in the same tick,
+ * before any rerender, as the workflow's session store does. Invalidation
+ * records the session the store held when it ran, then clears the export
+ * the way the workflow's does.
  */
-function setup(initialSession: ImageSession | null = createReadySession()) {
+function setup(initial: ImageSession | null = createTestSession()) {
   const store = createStore()
-  const sessionAtom = atom<ImageSession | null>(initialSession)
+  const sessionAtom = atom<ImageSession | null>(initial)
   const getSession = () => store.get(sessionAtom)
-  const setSession = (update: SetStateAction<ImageSession | null>) =>
-    store.set(sessionAtom, update)
-  const exportGraphVersionRef = { current: 0 }
-  const controller = new AbortController()
-  const exportAbortControllerRef = { current: controller }
-  const previewCopyCanvasRef = {
-    current: document.createElement('canvas') as HTMLCanvasElement | null,
-  }
-  const isMountedRef = { current: true }
-  const queueExportResultResourceDisposal = vi.fn()
-  const setStatus = vi.fn()
-  const setProgress = vi.fn()
-  const toast = { success: vi.fn(), error: vi.fn() }
-  const hook = renderHook(() => {
-    const session = useAtomValue(sessionAtom, { store })
-    const { invalidateExportGraph } = useExportGraphInvalidation({
-      exportGraphVersionRef,
-      previewCopyCanvasRef,
-      exportAbortControllerRef,
-      getSession,
-      abortExportWork: () => controller.abort(),
-      queueExportResultResourceDisposal,
-      setSession,
-      setStatus,
-      setProgress,
-    })
-    const { transform } = useRawPreviewTransform({
-      session,
+  const setSession = (
+    update: (session: ImageSession | null) => ImageSession | null,
+  ) => store.set(sessionAtom, update)
+  const invalidatedOn: Array<ImageSession | null> = []
+  const invalidateExportGraph = vi.fn(() => {
+    invalidatedOn.push(getSession())
+    setSession(clearExportResultState)
+  })
+  const hook = renderHook(() =>
+    useRawPreviewTransform({
+      session: useAtomValue(sessionAtom, { store }),
       getSession,
       setSession,
       invalidateExportGraph,
-    })
-    const actions = useExportResultActions({
-      getSession,
-      getColorIntent: () => COLOR_INTENT,
-      getLutData: () => null,
-      exportGraphVersionRef,
-      exportAbortControllerRef,
-      isMountedRef,
-      pipelineRef: { current: null },
-      decodedImageRef: { current: null },
-      previewCopyCanvasRef,
-      scheduleToast: (notify) => notify(),
-      toast,
-    })
-    return { transform, session, setSession, actions }
-  })
+    }),
+  )
   return {
     ...hook,
     getSession,
-    exportGraphVersionRef,
-    controller,
-    previewCopyCanvasRef,
-    queueExportResultResourceDisposal,
-    setStatus,
-    setProgress,
-    toast,
+    setSession,
+    invalidateExportGraph,
+    invalidatedOn,
   }
 }
 
-/** A committed geometry: a slight rotation with the crop constrained. */
-const SAMPLE_GEOMETRY = {
-  matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
-  constrainCrop: true,
-}
-
-/** A second geometry, rotated the other way. */
-const OTHER_GEOMETRY = {
-  matrix: [0.999, 0.035, -0.018, -0.035, 0.999, 0.017, 0, 0, 1],
-  constrainCrop: true,
-}
-
 describe('useRawPreviewTransform', () => {
-  it('invalidates cached exports and imperative result actions synchronously', async () => {
-    const session = createReadySession()
-    session.exportState.status = 'ready'
-    session.exportState.result = createExportResult(session, null)
-    const harness = setup(session)
-    const actions = harness.result.current.actions
-
-    await act(async () => {
-      acceptTransformGeometry(harness.result.current.transform, SAMPLE_GEOMETRY)
-      expect(harness.getSession()?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
-      expect(harness.getSession()?.exportState.result).toBeUndefined()
-      expect(harness.previewCopyCanvasRef.current).toBeNull()
-      await actions.downloadExportResult()
-      await actions.shareExportResult()
-      await actions.copyExportResult()
-    })
-
-    expect(harness.result.current.session?.exportGeometry).toEqual(
-      SAMPLE_GEOMETRY,
+  it("publishes the stored session's Transform, and none without a source", () => {
+    const session = createTestSession()
+    expect(setup(session).result.current.transform.state).toBe(
+      session.transform,
     )
-    expect(harness.result.current.session?.exportState.result).toBeUndefined()
-    // The edit invalidates, and so does the geometry its answer moves.
-    expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(2)
-    expect(harness.toast.error).not.toHaveBeenCalled()
-    expect(harness.toast.success).not.toHaveBeenCalled()
-  })
 
-  it('aborts in-flight exports and invalidates each geometry move while already active', () => {
-    const session = createReadySession()
-    session.exportState.status = 'exporting'
-    const harness = setup(session)
-
-    act(() => {
-      acceptTransformGeometry(harness.result.current.transform, SAMPLE_GEOMETRY)
-      expect(harness.controller.signal.aborted).toBe(true)
-      expect(harness.exportGraphVersionRef.current).toBe(2)
-      expect(harness.getSession()?.exportState.status).toBe('idle')
-    })
+    const empty = setup(null)
     act(() =>
-      acceptTransformGeometry(harness.result.current.transform, OTHER_GEOMETRY),
-    )
-
-    // Each accept is an edit and then a geometry move.
-    expect(harness.exportGraphVersionRef.current).toBe(4)
-    expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(4)
-    expect(harness.setStatus).toHaveBeenCalledWith('ready')
-    expect(harness.setProgress).toHaveBeenCalledWith(0)
-    expect(harness.getSession()?.exportGeometry).toEqual(OTHER_GEOMETRY)
-  })
-
-  it('keeps a delivered export when a new frame answers the same geometry', () => {
-    const harness = setup()
-    act(() =>
-      acceptTransformGeometry(
-        harness.result.current.transform,
-        SAMPLE_GEOMETRY,
-      ),
-    )
-    const result = createExportResult(harness.getSession()!, SAMPLE_GEOMETRY)
-    act(() =>
-      harness.result.current.setSession((previous) =>
-        previous
-          ? {
-              ...previous,
-              exportState: { ...previous.exportState, status: 'ready', result },
-            }
-          : previous,
-      ),
-    )
-    const { state, dispatch } = harness.result.current.transform
-    const sourceId = state!.sourceId
-    const issued = state!.accepted!.issued
-    // A new frame, its request and the worker's answer, each on its own.
-    act(() =>
-      dispatch({
-        type: 'capture',
-        sourceId,
-        captureKey: 'frame-2',
-        clientEpoch: 1,
-      }),
-    )
-    act(() =>
-      dispatch({
-        type: 'request',
-        sourceId,
-        captureKey: 'frame-2',
-        clientEpoch: 1,
-        requestId: 500,
-        geometry: SAMPLE_GEOMETRY,
-      }),
-    )
-    act(() =>
-      dispatch({
-        type: 'rendered',
-        sourceId,
-        captureKey: 'frame-2',
-        clientEpoch: 1,
-        requestId: 500,
-        geometry: SAMPLE_GEOMETRY,
-        frame: { width: 800, height: 600 },
-      }),
-    )
-
-    expect(harness.exportGraphVersionRef.current).toBe(2)
-    expect(harness.result.current.session?.exportState.result).toBe(result)
-    const reanswered = harness.result.current.transform.state!
-    expect(deriveTransformStatus(reanswered)).toBe('accepted')
-    expect(reanswered.accepted?.issued).toBeGreaterThan(issued)
-    expect(reanswered.accepted?.geometry).toEqual(SAMPLE_GEOMETRY)
-  })
-
-  it('invalidates on every real edit or reset while the held geometry stays, and on nothing else', () => {
-    const harness = setup()
-    act(() =>
-      acceptTransformGeometry(
-        harness.result.current.transform,
-        SAMPLE_GEOMETRY,
-      ),
-    )
-    const result = createExportResult(harness.getSession()!, SAMPLE_GEOMETRY)
-    act(() =>
-      harness.result.current.setSession((previous) =>
-        previous
-          ? {
-              ...previous,
-              exportState: { ...previous.exportState, status: 'ready', result },
-            }
-          : previous,
-      ),
-    )
-    const { state, dispatch } = harness.result.current.transform
-    const sourceId = state!.sourceId
-    const original = state!.intent.manual
-    const versionAfterAccept = harness.exportGraphVersionRef.current
-
-    // Repeating the current intent asks for nothing new.
-    act(() =>
-      dispatch({ type: 'edit', sourceId, intent: { manual: original } }),
-    )
-    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept)
-    expect(harness.result.current.session?.exportState.result).toBe(result)
-
-    // Away and back again: each is a new ask, and the geometry never moves.
-    act(() =>
-      dispatch({
-        type: 'edit',
-        sourceId,
-        intent: { manual: { ...original, rotate: 30 } },
-      }),
-    )
-    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 1)
-    expect(harness.getSession()?.exportState.result).toBeUndefined()
-    expect(harness.getSession()?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
-    act(() =>
-      dispatch({ type: 'edit', sourceId, intent: { manual: original } }),
-    )
-    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 2)
-    expect(harness.getSession()?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
-
-    // A reset moves the geometry as well, and invalidates once.
-    act(() => dispatch({ type: 'reset', sourceId }))
-    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 3)
-    expect(harness.getSession()?.exportGeometry).toBeNull()
-
-    // A request on a neutral intent asks for nothing, and resetting a neutral
-    // Transform that a request is still out for changes no intent.
-    act(() =>
-      dispatch({
-        type: 'capture',
-        sourceId,
-        captureKey: 'frame-n',
-        clientEpoch: 1,
-      }),
-    )
-    act(() =>
-      dispatch({
-        type: 'request',
-        sourceId,
-        captureKey: 'frame-n',
-        clientEpoch: 1,
-        requestId: 700,
-        geometry: SAMPLE_GEOMETRY,
-      }),
-    )
-    const neutralIntent = harness.getSession()?.transform?.intent
-    act(() => dispatch({ type: 'reset', sourceId }))
-    expect(harness.result.current.transform.state?.request).toBeNull()
-    expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 3)
-    // The same Transform keeps its intent object, so an export admitted for
-    // it stays current.
-    expect(harness.getSession()?.transform?.intent).toBe(neutralIntent)
-  })
-
-  it('holds the accepted geometry as pending, not current, while a newer edit waits', () => {
-    const harness = setup()
-    act(() =>
-      acceptTransformGeometry(
-        harness.result.current.transform,
-        SAMPLE_GEOMETRY,
-      ),
-    )
-    const { state, dispatch } = harness.result.current.transform
-    const sourceId = state!.sourceId
-    const captureKey = state!.capture!.key
-    act(() => {
-      dispatch({
-        type: 'edit',
-        sourceId,
-        intent: { manual: { ...state!.intent.manual, rotate: 9 } },
-      })
-      dispatch({
-        type: 'request',
-        sourceId,
-        captureKey,
-        clientEpoch: 1,
-        requestId: state!.request!.requestId + 1,
-        geometry: OTHER_GEOMETRY,
-      })
-    })
-
-    // The export still names the last accepted geometry, so the status is
-    // what keeps it from running as the Transform asked for now.
-    const pending = harness.result.current.transform.state!
-    expect(deriveTransformStatus(pending)).toBe('pending')
-    expect(harness.getSession()?.exportGeometry).toEqual(SAMPLE_GEOMETRY)
-    // The edit alone invalidated what was made for the accepted geometry.
-    expect(harness.exportGraphVersionRef.current).toBe(3)
-
-    // The answer to a request it replaced is not taken for it.
-    act(() =>
-      dispatch({
-        type: 'rendered',
-        sourceId,
-        captureKey,
-        clientEpoch: 1,
-        requestId: state!.request!.requestId,
-        geometry: SAMPLE_GEOMETRY,
-        frame: { width: 800, height: 600 },
-      }),
-    )
-    expect(deriveTransformStatus(harness.result.current.transform.state!)).toBe(
-      'pending',
-    )
-  })
-
-  it('restores original export readiness after neutral reset', () => {
-    const harness = setup()
-    act(() =>
-      acceptTransformGeometry(
-        harness.result.current.transform,
-        SAMPLE_GEOMETRY,
-      ),
-    )
-    const sourceId = harness.result.current.transform.state!.sourceId
-    act(() =>
-      harness.result.current.transform.dispatch({ type: 'reset', sourceId }),
-    )
-    const session = harness.result.current.session!
-
-    expect(session.exportGeometry).toBeNull()
-    expect(
-      deriveFullResExportReadiness({
-        sourceFile: session.sourceFile.file ?? null,
-        session,
-        rawRenderExposure: { ev: 0, multiplier: 1, source: 'identity' },
-      }).canExport,
-    ).toBe(true)
-  })
-
-  it('starts a replacement source neutral and rejects events for the old source', () => {
-    const harness = setup()
-    const previous = harness.result.current.transform
-    act(() => acceptTransformGeometry(previous, SAMPLE_GEOMETRY))
-    const replacement = createReadySession()
-    act(() => harness.result.current.setSession(replacement))
-    act(() => acceptTransformGeometry(previous, SAMPLE_GEOMETRY))
-
-    expect(harness.result.current.transform.state?.sourceId).toBe(
-      replacement.id,
-    )
-    expect(harness.result.current.transform.state).toBe(replacement.transform)
-    expect(harness.result.current.session?.exportGeometry).toBeNull()
-    // Only the first source's edit and geometry move invalidated anything.
-    expect(harness.exportGraphVersionRef.current).toBe(2)
-  })
-
-  it('starts a new session from its own neutral Transform', () => {
-    const session = createReadySession()
-    const harness = setup(session)
-
-    expect(harness.result.current.transform.state).toBe(session.transform)
-    expect(harness.result.current.transform.state).toMatchObject({
-      sourceId: session.id,
-      accepted: null,
-    })
-    act(() =>
-      acceptTransformGeometry(
-        harness.result.current.transform,
-        SAMPLE_GEOMETRY,
-      ),
-    )
-    expect(harness.result.current.session?.transform?.sourceId).toBe(session.id)
-    expect(harness.result.current.session?.exportGeometry).toEqual(
-      SAMPLE_GEOMETRY,
-    )
-  })
-
-  describe('in one tick, before a rerender', () => {
-    function withDeliveredExport(
-      session: ImageSession,
-      geometry: ExportGeometry | null,
-    ): ImageSession {
-      return {
-        ...session,
-        exportState: {
-          ...session.exportState,
-          status: 'ready',
-          result: createExportResult(session, geometry),
-        },
-      }
-    }
-
-    it('settles an export the store started before the first edit lands', () => {
-      const harness = setup()
-      // The slot is free; only the session says an export runs.
-      harness.controller.abort()
-      const sourceId = harness.result.current.transform.state!.sourceId
-      const manual = harness.result.current.transform.state!.intent.manual
-
-      act(() => {
-        harness.result.current.setSession((previous) =>
-          previous
-            ? {
-                ...previous,
-                exportState: { ...previous.exportState, status: 'exporting' },
-              }
-            : previous,
-        )
-        harness.result.current.transform.dispatch({
-          type: 'edit',
-          sourceId,
-          intent: { manual: { ...manual, rotate: 5 } },
-        })
-        const live = harness.getSession()!
-        expect(deriveTransformStatus(live.transform!)).toBe('pending')
-        expect(live.exportState.status).toBe('idle')
-      })
-
-      expect(harness.exportGraphVersionRef.current).toBe(1)
-      expect(harness.setStatus).toHaveBeenCalledWith('ready')
-      expect(harness.setProgress).toHaveBeenCalledWith(0)
-    })
-
-    it('lets an edit drop the answer to a request issued before it', () => {
-      const harness = setup()
-      act(() =>
-        acceptTransformGeometry(
-          harness.result.current.transform,
-          SAMPLE_GEOMETRY,
-        ),
-      )
-      const { state, dispatch } = harness.result.current.transform
-      const sourceId = state!.sourceId
-      const versionAfterAccept = harness.exportGraphVersionRef.current
-
-      act(() => {
-        dispatch({
-          type: 'capture',
-          sourceId,
-          captureKey: 'frame-2',
-          clientEpoch: 1,
-        })
-        dispatch({
-          type: 'request',
-          sourceId,
-          captureKey: 'frame-2',
-          clientEpoch: 1,
-          requestId: 900,
-          geometry: OTHER_GEOMETRY,
-        })
-        dispatch({
-          type: 'edit',
-          sourceId,
-          intent: { manual: { ...state!.intent.manual, rotate: 9 } },
-        })
-        dispatch({
-          type: 'rendered',
-          sourceId,
-          captureKey: 'frame-2',
-          clientEpoch: 1,
-          requestId: 900,
-          geometry: OTHER_GEOMETRY,
-          frame: { width: 800, height: 600 },
-        })
-
-        const live = harness.getSession()!
-        expect(live.transform?.intent.manual.rotate).toBe(9)
-        expect(deriveTransformStatus(live.transform!)).toBe('pending')
-        expect(live.exportGeometry).toEqual(SAMPLE_GEOMETRY)
-      })
-
-      // Only the edit asked for something new.
-      expect(harness.exportGraphVersionRef.current).toBe(versionAfterAccept + 1)
-    })
-
-    it('keeps session and view writes made before and after a Transform', () => {
-      const harness = setup()
-      const { setSession } = harness.result.current
-
-      act(() => {
-        setSession((previous) =>
-          previous
-            ? {
-                ...previous,
-                viewState: { ...previous.viewState, mode: 'processed' },
-              }
-            : previous,
-        )
-        acceptTransformGeometry(
-          harness.result.current.transform,
-          SAMPLE_GEOMETRY,
-        )
-        setSession((previous) =>
-          previous
-            ? {
-                ...previous,
-                viewState: { ...previous.viewState, compareSplit: 0.25 },
-              }
-            : previous,
-        )
-      })
-
-      expect(harness.getSession()).toMatchObject({
-        exportGeometry: SAMPLE_GEOMETRY,
-        viewState: { mode: 'processed', compareSplit: 0.25 },
-      })
-      expect(harness.result.current.session).toBe(harness.getSession())
-      expect(harness.result.current.session?.exportGeometry).toEqual(
-        SAMPLE_GEOMETRY,
-      )
-    })
-
-    it('keeps the session object when an event asks for the same Transform', () => {
-      const harness = setup()
-      act(() =>
-        acceptTransformGeometry(
-          harness.result.current.transform,
-          SAMPLE_GEOMETRY,
-        ),
-      )
-      const { state, dispatch } = harness.result.current.transform
-      const sourceId = state!.sourceId
-      const version = harness.exportGraphVersionRef.current
-
-      act(() => {
-        // A newer write the rendered session does not have yet.
-        harness.result.current.setSession((previous) =>
-          previous ? withDeliveredExport(previous, SAMPLE_GEOMETRY) : previous,
-        )
-        const delivered = harness.getSession()
-        dispatch({
-          type: 'edit',
-          sourceId,
-          intent: { manual: { ...state!.intent.manual } },
-        })
-        dispatch({
-          type: 'capture',
-          sourceId,
-          captureKey: state!.capture!.key,
-          clientEpoch: 1,
-        })
-        expect(harness.getSession()).toBe(delivered)
-      })
-
-      expect(harness.exportGraphVersionRef.current).toBe(version)
-      expect(harness.result.current.session?.exportState.result).toBeDefined()
-    })
-
-    it('applies an event for a source that replaced the rendered one', () => {
-      const harness = setup()
-      const replacement = createReadySession()
-
-      act(() => {
-        harness.result.current.setSession(replacement)
-        harness.result.current.transform.dispatch({
-          type: 'edit',
-          sourceId: replacement.id,
-          intent: {
-            manual: { ...replacement.transform!.intent.manual, rotate: 4 },
-          },
-        })
-        expect(harness.getSession()?.transform?.intent.manual.rotate).toBe(4)
-      })
-
-      expect(harness.result.current.transform.state?.sourceId).toBe(
-        replacement.id,
-      )
-      expect(harness.exportGraphVersionRef.current).toBe(1)
-    })
-
-    it('ignores the replaced source and leaves the replacement export alone', () => {
-      const harness = setup()
-      act(() =>
-        acceptTransformGeometry(
-          harness.result.current.transform,
-          SAMPLE_GEOMETRY,
-        ),
-      )
-      const { state, dispatch } = harness.result.current.transform
-      const sourceId = state!.sourceId
-      const version = harness.exportGraphVersionRef.current
-      const disposals =
-        harness.queueExportResultResourceDisposal.mock.calls.length
-      const replacement = withDeliveredExport(createReadySession(), null)
-
-      act(() => {
-        harness.result.current.setSession(replacement)
-        // Late acknowledgements and edits still addressed to the old source.
-        dispatch({
-          type: 'capture',
-          sourceId,
-          captureKey: 'late-frame',
-          clientEpoch: 1,
-        })
-        dispatch({ type: 'reset', sourceId })
-        expect(harness.getSession()).toBe(replacement)
-      })
-
-      expect(harness.getSession()).toBe(replacement)
-      expect(harness.exportGraphVersionRef.current).toBe(version)
-      expect(harness.queueExportResultResourceDisposal).toHaveBeenCalledTimes(
-        disposals,
-      )
-    })
-  })
-
-  it('does not create a session or invalidate exports without a source', () => {
-    const harness = setup(null)
-    act(() =>
-      harness.result.current.transform.dispatch({
+      empty.result.current.transform.dispatch({
         type: 'reset',
         sourceId: 'none',
       }),
     )
+    expect(empty.result.current.transform.state).toBeNull()
+    expect(empty.getSession()).toBeNull()
+    expect(empty.invalidateExportGraph).not.toHaveBeenCalled()
+  })
 
-    expect(harness.result.current.transform.state).toBeNull()
-    expect(harness.result.current.session).toBeNull()
-    expect(harness.exportGraphVersionRef.current).toBe(0)
+  it('invalidates the export graph before it writes, and only for an event that discards the export', () => {
+    const harness = setup(
+      createTestSession({ exportState: { status: 'exporting' } }),
+    )
+    const before = harness.getSession()
+
+    act(() => harness.result.current.transform.dispatch(rotate('session-1', 5)))
+
+    // Invalidation still sees the running export, so it can settle it.
+    expect(harness.invalidatedOn).toHaveLength(1)
+    expect(harness.invalidatedOn[0]).toBe(before)
+    const edited = harness.getSession()!
+    expect(edited.exportState.status).toBe('idle')
+    expect(edited.transform.intent.manual.rotate).toBe(5)
+    expect(harness.result.current.transform.state).toBe(edited.transform)
+
+    // The same intent again moves nothing, so nothing is written.
+    act(() => harness.result.current.transform.dispatch(rotate('session-1', 5)))
+    expect(harness.invalidateExportGraph).toHaveBeenCalledOnce()
+    expect(harness.getSession()).toBe(edited)
+  })
+
+  it('applies an event to the session the store holds when it lands, keeping the writes around it', () => {
+    const harness = setup()
+    const replacement = createTestSession({ id: 'session-2' })
+
+    act(() => {
+      // Writes the rendered session does not show yet.
+      harness.setSession(() => replacement)
+      harness.setSession(
+        (previous) =>
+          previous && {
+            ...previous,
+            viewState: { ...previous.viewState, mode: 'processed' },
+          },
+      )
+      harness.result.current.transform.dispatch(rotate('session-2', 4))
+      harness.setSession(
+        (previous) =>
+          previous && {
+            ...previous,
+            viewState: { ...previous.viewState, compareSplit: 0.25 },
+          },
+      )
+      expect(harness.getSession()?.transform.intent.manual.rotate).toBe(4)
+    })
+
+    expect(harness.getSession()).toMatchObject({
+      id: 'session-2',
+      viewState: { mode: 'processed', compareSplit: 0.25 },
+    })
+    expect(harness.result.current.transform.state).toBe(
+      harness.getSession()?.transform,
+    )
+  })
+
+  it('changes nothing for an event addressed to a source the store replaced', () => {
+    const harness = setup()
+    const { dispatch } = harness.result.current.transform
+    const replacement = createTestSession({
+      id: 'session-2',
+      exportState: { status: 'ready' },
+    })
+
+    act(() => {
+      harness.setSession(() => replacement)
+      // Late events still addressed to the first source.
+      dispatch(rotate('session-1', 4))
+      dispatch({ type: 'reset', sourceId: 'session-1' })
+    })
+
+    expect(harness.getSession()).toBe(replacement)
+    expect(harness.result.current.transform.state).toBe(replacement.transform)
+    expect(harness.invalidateExportGraph).not.toHaveBeenCalled()
   })
 })
