@@ -1,4 +1,3 @@
-import type { ExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import type { FullResolutionExportProgress } from '@lumaforge/render-engine/export'
 import type { PerformancePreference } from '@lumaforge/render-engine/policy'
 
@@ -10,13 +9,14 @@ import type {
 } from '~/lib/export/export-plan'
 import { selectExportPlan, toExportAttemptPlan } from '~/lib/export/export-plan'
 import type {
+  FullResExportJob,
   FullResWorkerOutputLocation,
-  RunFullResolutionJpegExportInWorkerInput,
 } from '~/lib/export/full-res-export-client'
-import { FullResolutionExportWorkerClient } from '~/lib/export/full-res-export-client'
+import { runFullResolutionJpegExportInWorker } from '~/lib/export/full-res-export-client'
 import { detectCapabilityVector } from '~/lib/runtime/capability-vector'
 import { snapshotExportRuntimeResources } from '~/lib/runtime/export-runtime-resources'
-import { ExportBridge } from '~/lib/workers/export-bridge'
+
+import { isRetryableFullResExportFailure } from '../ingest/workflow-status'
 
 export const HQ_PREVIEW_EXPORT_MAX_PIXELS = 12_000_000
 /**
@@ -160,18 +160,6 @@ export async function runPreviewExportJob({
   )
 }
 
-export function createFullResolutionExportClient() {
-  return new FullResolutionExportWorkerClient()
-}
-
-function createFullResolutionExportBridge(
-  clientFactory: () => FullResolutionExportWorkerClient,
-) {
-  return new ExportBridge({
-    createClient: clientFactory,
-  })
-}
-
 const MAX_EXPORT_ATTEMPTS = 3
 
 /** The refusal for a plan the policy says cannot safely complete. */
@@ -188,18 +176,18 @@ export function createExportPolicyRefusal() {
  * Refuses a cannot-safely-complete plan. Replacement plans are checked before
  * a retry is announced, so a refusal never follows a scheduled retry.
  */
-function assertPlanCanSafelyComplete(plan: ExportExecutionPlan | undefined) {
-  if (plan?.productCopy === 'cannot-safely-complete') {
+function assertPlanCanSafelyComplete(plan: ExportExecutionPlan) {
+  if (plan.productCopy === 'cannot-safely-complete') {
     throw createExportPolicyRefusal()
   }
 }
 
 /** Only an opfs-file attempt is handed the reserved OPFS location. */
 function resolveAttemptOutputLocation(
-  plan: ExportExecutionPlan | undefined,
+  plan: ExportExecutionPlan,
   outputLocation: FullResWorkerOutputLocation | undefined,
 ) {
-  if (plan?.outputSink !== 'opfs-file') return undefined
+  if (plan.outputSink !== 'opfs-file') return undefined
   if (!outputLocation) {
     throw new Error('FULL_RES_EXPORT_OUTPUT_LOCATION_INVALID')
   }
@@ -268,14 +256,6 @@ function selectPlanAfterResourceFailure(
   )
 }
 
-function errorLooksLikeFreshWorkerRetry(error: unknown) {
-  return (
-    error instanceof Error &&
-    (error.message === 'FULL_RES_EXPORT_RESOURCE_FAILURE' ||
-      error.message === 'FULL_RES_EXPORT_WORKER_FAILED')
-  )
-}
-
 function getFreshWorkerRetryRows(error: unknown) {
   if (typeof error !== 'object' || !error || !('nextRows' in error)) {
     return undefined
@@ -292,32 +272,20 @@ export async function runFullResolutionExportJob({
   filename,
   graph,
   geometry,
-  quality,
-  preferredRows,
-  concurrency,
   executionPlan,
   outputLocation,
   onProgress,
-  onMetric,
   onAttempt,
   onPlan,
   beforeStart,
   signal,
   sampleFacts = sampleExportPlanFacts,
-  clientFactory = createFullResolutionExportClient,
-}: {
-  file: File
-  filename: string
-  graph: ExportColorGraphDescriptor
-  geometry?: RunFullResolutionJpegExportInWorkerInput['geometry']
-  quality?: RunFullResolutionJpegExportInWorkerInput['quality']
-  preferredRows?: RunFullResolutionJpegExportInWorkerInput['preferredRows']
-  concurrency?: RunFullResolutionJpegExportInWorkerInput['concurrency']
-  executionPlan?: ExportExecutionPlan
+  runInWorker = runFullResolutionJpegExportInWorker,
+}: Omit<FullResExportJob, 'executionPlan' | 'outputLocation' | 'quality'> & {
+  executionPlan: ExportExecutionPlan
   /** OPFS address reserved for this job; used by every opfs-file attempt. */
   outputLocation?: FullResWorkerOutputLocation
   onProgress?: (progress: FullResolutionExportProgress) => void
-  onMetric?: RunFullResolutionJpegExportInWorkerInput['onMetric']
   onAttempt?: (event: FullResolutionExportAttemptEvent) => void
   /** Reports each replacement plan before its worker starts. */
   onPlan?: (plan: ExportExecutionPlan) => void
@@ -325,7 +293,8 @@ export async function runFullResolutionExportJob({
   signal?: AbortSignal
   /** Device facts for a replacement plan; sampled again for every retry. */
   sampleFacts?: () => Promise<ExportPlanFacts>
-  clientFactory?: () => FullResolutionExportWorkerClient
+  /** Runs one attempt on a worker of its own. */
+  runInWorker?: typeof runFullResolutionJpegExportInWorker
 }) {
   let plan = executionPlan
   let attempts = 0
@@ -353,43 +322,40 @@ export async function runFullResolutionExportJob({
       attemptPlan,
       outputLocation,
     )
-    if (attemptPlan && attemptPlan !== executionPlan) {
+    if (attemptPlan !== executionPlan) {
       onPlan?.(attemptPlan)
     }
-    const bridge = createFullResolutionExportBridge(clientFactory)
-    const attemptSignal = signal ?? new AbortController().signal
+    const attemptEvent = {
+      attempt: attempts,
+      profile: attemptPlan.profileName,
+      preferredRows: attemptPlan.preferredRows,
+      concurrency: attemptPlan.concurrency,
+    }
 
     try {
       emitFullResolutionExportAttempt(onAttempt, {
-        attempt: attempts,
-        profile: attemptPlan?.profileName,
-        preferredRows: attemptPlan?.preferredRows ?? preferredRows,
-        concurrency: attemptPlan?.concurrency ?? concurrency,
+        ...attemptEvent,
         phase: 'started',
         freshWorker: true,
       })
 
       await beforeStart?.()
 
-      const output = await bridge.runExport(attemptSignal, {
+      const output = await runInWorker({
         file,
         filename,
         graph,
         geometry,
-        quality,
-        preferredRows: attemptPlan?.preferredRows ?? preferredRows,
-        concurrency: attemptPlan?.concurrency ?? concurrency,
-        executionPlan: attemptPlan
-          ? toExportAttemptPlan(attemptPlan)
-          : undefined,
+        quality: EXPORT_JPEG_QUALITY,
+        executionPlan: toExportAttemptPlan(attemptPlan),
         outputLocation: attemptOutputLocation,
+        signal,
         onProgress,
-        onMetric,
       })
 
       return { filename, output, attempts }
     } catch (error) {
-      if (!attemptPlan || attempts >= MAX_EXPORT_ATTEMPTS) {
+      if (attempts >= MAX_EXPORT_ATTEMPTS) {
         throw error
       }
 
@@ -406,10 +372,7 @@ export async function runFullResolutionExportJob({
         assertPlanCanSafelyComplete(fallbackPlan)
 
         emitFullResolutionExportAttempt(onAttempt, {
-          attempt: attempts,
-          profile: attemptPlan.profileName,
-          preferredRows: attemptPlan.preferredRows,
-          concurrency: attemptPlan.concurrency,
+          ...attemptEvent,
           phase: 'retry-scheduled',
           retryReason: error.message,
           previousRows: attemptPlan.preferredRows,
@@ -424,7 +387,10 @@ export async function runFullResolutionExportJob({
         continue
       }
 
-      if (!errorLooksLikeFreshWorkerRetry(error)) {
+      if (
+        !(error instanceof Error) ||
+        !isRetryableFullResExportFailure(error.message)
+      ) {
         throw error
       }
 
@@ -442,15 +408,9 @@ export async function runFullResolutionExportJob({
       assertPlanCanSafelyComplete(retryPlan)
 
       emitFullResolutionExportAttempt(onAttempt, {
-        attempt: attempts,
-        profile: attemptPlan.profileName,
-        preferredRows: attemptPlan.preferredRows,
-        concurrency: attemptPlan.concurrency,
+        ...attemptEvent,
         phase: 'retry-scheduled',
-        retryReason:
-          error instanceof Error
-            ? error.message
-            : 'FULL_RES_EXPORT_WORKER_FAILED',
+        retryReason: error.message,
         previousRows: attemptPlan.preferredRows,
         nextRows,
         previousConcurrency: attemptPlan.concurrency,
@@ -464,12 +424,8 @@ export async function runFullResolutionExportJob({
           ? retryPlan
           : { ...retryPlan, preferredRows: nextRows }
     } finally {
-      await bridge.terminate()
       emitFullResolutionExportAttempt(onAttempt, {
-        attempt: attempts,
-        profile: attemptPlan?.profileName,
-        preferredRows: attemptPlan?.preferredRows ?? preferredRows,
-        concurrency: attemptPlan?.concurrency ?? concurrency,
+        ...attemptEvent,
         phase: 'disposed',
         freshWorker: false,
         priorClientDisposed: true,

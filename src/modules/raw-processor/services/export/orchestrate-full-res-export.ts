@@ -596,7 +596,6 @@ export async function orchestrateFullResExport(
     const result = await runFullResolutionExportJob({
       file: activeSourceFile,
       filename,
-      quality: EXPORT_JPEG_QUALITY,
       executionPlan: jobExecutionPlan,
       outputLocation,
       graph,

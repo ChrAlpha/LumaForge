@@ -71,7 +71,7 @@ function isOpfsEntryName(value: unknown): value is string {
 function resolveOutputLocation(
   message: FullResExportWorkerStartMessage,
 ): FullResWorkerOutputLocation | null {
-  const outputSink = message.executionPlan?.outputSink
+  const outputSink = message.executionPlan.outputSink
   const location: unknown = message.outputLocation
 
   if (outputSink === 'opfs-file') {
@@ -332,14 +332,17 @@ async function prepareSuccessOutput(input: {
   })
 }
 
-const activeRequests = new Map<string, AbortController>()
+function respond(response: FullResExportWorkerResponse) {
+  self.postMessage(response)
+}
 
-async function handleStart(
-  message: Extract<FullResExportWorkerRequest, { kind: 'start' }>,
-) {
+// A worker runs one export; a cancel aborts the export it is running.
+let runningExport: AbortController | null = null
+
+async function handleStart(message: FullResExportWorkerStartMessage) {
   const controller = new AbortController()
-  activeRequests.set(message.requestId, controller)
-  const memoryProfile = message.executionPlan?.runtimeMemoryProfile ?? 'desktop'
+  runningExport = controller
+  const memoryProfile = message.executionPlan.runtimeMemoryProfile
   const runtime = createLumaRawRuntime({
     memoryProfile,
     requireCrossOriginIsolation: memoryProfile === 'desktop',
@@ -398,7 +401,7 @@ async function handleStart(
       const jpegSink = outputLocation
         ? createOpfsJpegRowSink({
             location: outputLocation,
-            filename: message.filename ?? `${outputLocation.exportId}.jpg`,
+            filename: message.filename,
             metadata: exportMetadata,
             takeOpenedWritable: takeOpenedOpfsOutput,
           })
@@ -407,40 +410,18 @@ async function handleStart(
         capability,
         graph: message.graph,
         ...(message.geometry ? { geometry: message.geometry } : {}),
-        preferredRows:
-          message.executionPlan?.preferredRows ?? message.preferredRows,
-        concurrency: message.executionPlan?.concurrency ?? message.concurrency,
+        preferredRows: message.executionPlan.preferredRows,
+        concurrency: message.executionPlan.concurrency,
         quality: message.quality,
         jpegSink,
         signal: controller.signal,
         readProcessedWindow: session.readProcessedWindow,
-        // A planned attempt hands a resource failure back for a fresh worker.
-        retryPolicy: message.executionPlan
-          ? 'surface-resource-failure'
-          : 'in-process',
+        // A resource failure goes back to the page, which plans a fresh
+        // worker for the retry.
+        retryPolicy: 'surface-resource-failure',
         onProgress(progress) {
-          self.postMessage({
-            kind: 'progress',
-            requestId: message.requestId,
-            progress,
-          } satisfies FullResExportWorkerResponse)
+          respond({ kind: 'progress', progress })
         },
-        ...(message.collectMetrics
-          ? {
-              metricContext: {
-                requestId: message.requestId,
-                fileName: message.file.name,
-                browser: globalThis.navigator?.userAgent,
-              },
-              onMetric(metric) {
-                self.postMessage({
-                  kind: 'metric',
-                  requestId: message.requestId,
-                  metric,
-                } satisfies FullResExportWorkerResponse)
-              },
-            }
-          : {}),
       })
 
       await discardUnclaimedOpfsOutput()
@@ -454,25 +435,19 @@ async function handleStart(
       })
       disposeSession()
       disposeRuntime()
-      self.postMessage({
-        kind: 'success',
-        requestId: message.requestId,
-        result,
-      } satisfies FullResExportWorkerResponse)
+      respond({ kind: 'success', result })
     } finally {
       disposeSession()
     }
   } catch (error) {
     await discardUnclaimedOpfsOutput()
     const nextRows = getErrorNextRows(error)
-    self.postMessage({
+    respond({
       kind: 'error',
-      requestId: message.requestId,
       message: toErrorMessage(error),
       ...(nextRows === undefined ? {} : { nextRows }),
-    } satisfies FullResExportWorkerResponse)
+    })
   } finally {
-    activeRequests.delete(message.requestId)
     disposeRuntime()
   }
 }
@@ -481,7 +456,7 @@ self.onmessage = (event: MessageEvent<FullResExportWorkerRequest>) => {
   const message = event.data
 
   if (message.kind === 'cancel') {
-    activeRequests.get(message.requestId)?.abort()
+    runningExport?.abort()
     return
   }
 

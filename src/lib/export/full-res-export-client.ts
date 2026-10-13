@@ -3,13 +3,8 @@ import type {
   BlobOutputResult,
   ExportGeometry,
   ExportOutputResult,
-  ExportPerfMetric,
   FullResolutionExportProgress,
   JpegExportMetadata,
-} from '@lumaforge/render-engine/export'
-import {
-  normalizeExportConcurrency,
-  normalizePreferredStripRows,
 } from '@lumaforge/render-engine/export'
 
 import type { ExportAttemptPlan } from './export-plan'
@@ -46,102 +41,44 @@ export type FullResWorkerOutputResult =
   | BlobOutputResult
   | FullResWorkerFileBackedOutputReference
 
-export type FullResExportWorkerStartMessage = {
-  kind: 'start'
-  requestId: string
+/** What one export attempt hands its worker. */
+export type FullResExportJob = {
   file: File
-  filename?: string
+  filename: string
   graph: ExportColorGraphDescriptor
-  executionPlan?: ExportAttemptPlan
+  executionPlan: ExportAttemptPlan
   outputLocation?: FullResWorkerOutputLocation
-  preferredRows?: number
-  concurrency?: number
-  quality?: number
+  quality: number
   /** Full-resolution geometry; plain data so it survives structured clone. */
   geometry?: ExportGeometry
-  collectMetrics: boolean
 }
 
-export type FullResExportWorkerCancelMessage = {
-  kind: 'cancel'
-  requestId: string
+export type FullResExportWorkerStartMessage = FullResExportJob & {
+  kind: 'start'
 }
 
 export type FullResExportWorkerRequest =
   | FullResExportWorkerStartMessage
-  | FullResExportWorkerCancelMessage
-
-export type FullResExportWorkerProgressMessage = {
-  kind: 'progress'
-  requestId: string
-  progress: FullResolutionExportProgress
-}
-
-export type FullResExportWorkerSuccessMessage = {
-  kind: 'success'
-  requestId: string
-  result: FullResWorkerOutputResult
-}
+  | { kind: 'cancel' }
 
 export type FullResExportWorkerErrorMessage = {
   kind: 'error'
-  requestId: string
   message: string
   nextRows?: number
 }
 
-export type FullResExportWorkerMetricMessage = {
-  kind: 'metric'
-  requestId: string
-  metric: ExportPerfMetric
-}
-
 export type FullResExportWorkerResponse =
-  | FullResExportWorkerProgressMessage
-  | FullResExportWorkerSuccessMessage
+  | { kind: 'progress'; progress: FullResolutionExportProgress }
+  | { kind: 'success'; result: FullResWorkerOutputResult }
   | FullResExportWorkerErrorMessage
-  | FullResExportWorkerMetricMessage
 
-export type RunFullResolutionJpegExportInWorkerInput = {
-  file: File
-  filename?: string
-  graph: ExportColorGraphDescriptor
-  preferredRows?: number
-  concurrency?: number
-  quality?: number
-  geometry?: ExportGeometry
-  executionPlan?: ExportAttemptPlan
-  outputLocation?: FullResWorkerOutputLocation
+export type RunFullResolutionJpegExportInWorkerInput = FullResExportJob & {
   signal?: AbortSignal
   onProgress?: (progress: FullResolutionExportProgress) => void
-  onMetric?: (metric: ExportPerfMetric) => void
 }
 
-type PendingRequest = {
-  resolve: (value: ExportOutputResult) => void
-  reject: (reason?: unknown) => void
-  onProgress?: (progress: FullResolutionExportProgress) => void
-  onMetric?: (metric: ExportPerfMetric) => void
-  cleanup: () => void
-}
-
-function createDisposedError() {
-  return new Error('FULL_RES_EXPORT_WORKER_DISPOSED')
-}
-
-function createCancelledError() {
-  return new Error('FULL_RES_EXPORT_CANCELLED')
-}
-
-function createWorkerFailedError() {
-  return new Error('FULL_RES_EXPORT_WORKER_FAILED')
-}
-
-function createWorkerPostError(error: unknown) {
-  if (error instanceof Error) {
-    return error
-  }
-
+function toError(error: unknown, fallback: string) {
+  if (error instanceof Error) return error
   if (
     typeof error === 'object' &&
     error !== null &&
@@ -151,8 +88,7 @@ function createWorkerPostError(error: unknown) {
   ) {
     return new Error(error.message)
   }
-
-  return new Error('FULL_RES_EXPORT_WORKER_ERROR')
+  return new Error(fallback)
 }
 
 function createWorkerResponseError(response: FullResExportWorkerErrorMessage) {
@@ -174,203 +110,75 @@ function hydrateWorkerOutputResult(
   return createOpfsFileBackedOutputResult(opfsReference)
 }
 
-function createRequestId() {
-  if (
-    typeof crypto !== 'undefined' &&
-    typeof crypto.randomUUID === 'function'
-  ) {
-    return `full-res-export-${crypto.randomUUID()}`
-  }
-
-  return `full-res-export-${Date.now()}-${Math.random().toString(16).slice(2)}`
+function createExportWorker() {
+  return new Worker(new URL('./full-res-export.worker.ts', import.meta.url), {
+    type: 'module',
+  })
 }
 
-export class FullResolutionExportWorkerClient {
-  private readonly workerFactory: () => Worker
-  private worker: Worker | null = null
-  private readonly pending = new Map<string, PendingRequest>()
-  private disposed = false
-
-  constructor(
-    workerFactory: () => Worker = () =>
-      new Worker(new URL('./full-res-export.worker.ts', import.meta.url), {
-        type: 'module',
-      }),
-  ) {
-    this.workerFactory = workerFactory
-  }
-
-  private ensureWorker() {
-    if (this.disposed) {
-      throw createDisposedError()
-    }
-
-    if (this.worker) {
-      return this.worker
-    }
-
-    const worker = this.workerFactory()
-    const handleWorkerFailure = () => {
-      this.rejectPending(createWorkerFailedError())
-      this.resetWorker()
-    }
-
-    worker.onmessage = (event: MessageEvent<FullResExportWorkerResponse>) => {
-      const response = event.data
-      const pending = this.pending.get(response.requestId)
-      if (!pending) return
-
-      if (response.kind === 'progress') {
-        pending.onProgress?.(response.progress)
-        return
-      }
-
-      if (response.kind === 'metric') {
-        pending.onMetric?.(response.metric)
-        return
-      }
-
-      this.pending.delete(response.requestId)
-      pending.cleanup()
-
-      if (response.kind === 'success') {
-        pending.resolve(hydrateWorkerOutputResult(response.result))
-        return
-      }
-
-      pending.reject(createWorkerResponseError(response))
-    }
-
-    worker.onerror = () => handleWorkerFailure()
-    worker.onmessageerror = () => handleWorkerFailure()
-
-    this.worker = worker
-    return worker
-  }
-
-  private rejectPending(error: Error) {
-    for (const [requestId, pending] of this.pending) {
-      this.pending.delete(requestId)
-      pending.cleanup()
-      pending.reject(error)
-    }
-  }
-
-  private resetWorker() {
-    if (!this.worker) {
-      return
-    }
-
-    this.worker.onmessage = null
-    this.worker.onerror = null
-    this.worker.onmessageerror = null
-    this.worker.terminate()
-    this.worker = null
-  }
-
-  run(input: RunFullResolutionJpegExportInWorkerInput) {
-    if (this.disposed) {
-      return Promise.reject(createDisposedError())
-    }
-
-    if (input.signal?.aborted) {
-      return Promise.reject(createCancelledError())
-    }
-
-    let preferredRows: number | undefined
-    let concurrency: number | undefined
-    try {
-      preferredRows =
-        input.preferredRows === undefined
-          ? undefined
-          : normalizePreferredStripRows(input.preferredRows)
-      concurrency =
-        input.concurrency === undefined
-          ? undefined
-          : normalizeExportConcurrency(input.concurrency, 'balanced')
-    } catch (error) {
-      return Promise.reject(createWorkerPostError(error))
-    }
-
-    const requestId = createRequestId()
-
-    return new Promise<ExportOutputResult>((resolve, reject) => {
-      let worker: Worker
-
-      const onAbort = () => {
-        if (!this.pending.has(requestId)) return
-
-        try {
-          worker.postMessage({
-            kind: 'cancel',
-            requestId,
-          } satisfies FullResExportWorkerCancelMessage)
-        } catch (error) {
-          this.rejectPending(createWorkerPostError(error))
-          this.resetWorker()
-          return
-        }
-
-        this.pending.delete(requestId)
-        cleanup()
-        reject(createCancelledError())
-      }
-
-      const cleanup = () => {
-        input.signal?.removeEventListener('abort', onAbort)
-      }
-
-      this.pending.set(requestId, {
-        resolve,
-        reject,
-        onProgress: input.onProgress,
-        onMetric: input.onMetric,
-        cleanup,
-      })
-
-      input.signal?.addEventListener('abort', onAbort, { once: true })
-
-      try {
-        worker = this.ensureWorker()
-        worker.postMessage({
-          kind: 'start',
-          requestId,
-          file: input.file,
-          filename: input.filename,
-          graph: input.graph,
-          geometry: input.geometry,
-          executionPlan: input.executionPlan,
-          outputLocation: input.outputLocation,
-          preferredRows,
-          concurrency,
-          quality: input.quality,
-          collectMetrics: Boolean(input.onMetric),
-        } satisfies FullResExportWorkerStartMessage)
-      } catch (error) {
-        this.rejectPending(createWorkerPostError(error))
-        this.resetWorker()
-      }
-    })
-  }
-
-  dispose() {
-    if (this.disposed) {
-      return
-    }
-
-    this.disposed = true
-    this.rejectPending(createDisposedError())
-    this.resetWorker()
-  }
-}
-
+/**
+ * Runs one export attempt on a worker of its own, which is terminated once
+ * the attempt succeeds, fails or is cancelled. An attempt whose signal has
+ * already aborted starts no worker; aborting a running one asks the worker
+ * to stop, then terminates it.
+ */
 export function runFullResolutionJpegExportInWorker(
   input: RunFullResolutionJpegExportInWorkerInput,
-  clientFactory: () => FullResolutionExportWorkerClient = () =>
-    new FullResolutionExportWorkerClient(),
-) {
-  const client = clientFactory()
-  return client.run(input).finally(() => {
-    client.dispose()
+  workerFactory: () => Worker = createExportWorker,
+): Promise<ExportOutputResult> {
+  const { signal, onProgress, ...job } = input
+  if (signal?.aborted) {
+    return Promise.reject(new Error('FULL_RES_EXPORT_CANCELLED'))
+  }
+
+  return new Promise<ExportOutputResult>((resolve, reject) => {
+    let worker: Worker | null = null
+    const settle = (outcome: () => void) => {
+      signal?.removeEventListener('abort', onAbort)
+      if (worker) {
+        worker.onmessage = null
+        worker.onerror = null
+        worker.onmessageerror = null
+        worker.terminate()
+        worker = null
+      }
+      outcome()
+    }
+    const fail = (error: Error) => settle(() => reject(error))
+    const onAbort = () => {
+      try {
+        worker?.postMessage({
+          kind: 'cancel',
+        } satisfies FullResExportWorkerRequest)
+      } catch (error) {
+        fail(toError(error, 'FULL_RES_EXPORT_WORKER_ERROR'))
+        return
+      }
+      fail(new Error('FULL_RES_EXPORT_CANCELLED'))
+    }
+
+    try {
+      worker = workerFactory()
+      worker.onmessage = (event: MessageEvent<FullResExportWorkerResponse>) => {
+        const response = event.data
+        if (response.kind === 'progress') {
+          onProgress?.(response.progress)
+        } else if (response.kind === 'success') {
+          settle(() => resolve(hydrateWorkerOutputResult(response.result)))
+        } else {
+          fail(createWorkerResponseError(response))
+        }
+      }
+      worker.onerror = () => fail(new Error('FULL_RES_EXPORT_WORKER_FAILED'))
+      worker.onmessageerror = () =>
+        fail(new Error('FULL_RES_EXPORT_WORKER_FAILED'))
+      signal?.addEventListener('abort', onAbort, { once: true })
+      worker.postMessage({
+        kind: 'start',
+        ...job,
+      } satisfies FullResExportWorkerRequest)
+    } catch (error) {
+      fail(toError(error, 'FULL_RES_EXPORT_WORKER_ERROR'))
+    }
   })
 }

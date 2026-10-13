@@ -1135,9 +1135,7 @@ describe('orchestrateFullResExport success', () => {
     expect(input).toMatchObject({
       file: SOURCE_FILE,
       filename: FULL_RES_FILENAME,
-      quality: 0.92,
     })
-    expect(input).not.toHaveProperty('checkpoint')
     expect(input.outputLocation).toBeUndefined()
     expect(input).not.toHaveProperty('geometry')
     expect(input.executionPlan).toBe(h.plans[0])
@@ -1260,7 +1258,6 @@ describe('orchestrateFullResExport success', () => {
     await run
 
     expect(input.geometry).toBe(geometry)
-    expect(input.quality).toBe(0.92)
     // The plan is sized by the sensor frame the worker decodes; only the
     // recorded result carries the cropped, delivered frame.
     expect(h.planInputs.map((planInput) => planInput.source)).toEqual([
@@ -1300,7 +1297,7 @@ describe('orchestrateFullResExport success', () => {
       const job = h.installJob()
 
       const run = orchestrateFullResExport({ ...OPTIONS, interruption }, h.ctx)
-      const input = await job.started
+      await job.started
 
       expect(h.planInputs).toEqual([
         {
@@ -1317,11 +1314,7 @@ describe('orchestrateFullResExport success', () => {
         outputSink: sink,
         productCopy: 'interrupted-retry',
       })
-      // The safer plan changes rows and concurrency, never the JPEG quality.
-      expect(input.quality).toBe(0.92)
-      // Sized from the current source and rendering the current look; no
-      // checkpoint identity travels with the job.
-      expect(input).not.toHaveProperty('checkpoint')
+      // Sized from the current source and rendering the current look.
       expect(h.markerStore.markers().map((marker) => marker.attempt)).toEqual(
         expect.arrayContaining([
           'closed-page-attempt-1',
@@ -1368,7 +1361,7 @@ describe('orchestrateFullResExport success', () => {
       { ...OPTIONS, interruption: interruption! },
       h.ctx,
     )
-    const input = await job.started
+    await job.started
     job.resolve()
     await run
 
@@ -1377,7 +1370,6 @@ describe('orchestrateFullResExport success', () => {
       previousResourceFailure: true,
     })
     // A retry after a resource failure is lighter, not lower quality.
-    expect(input.quality).toBe(0.92)
     expect(h.manifestInputs[0]).toMatchObject({ quality: 0.92 })
     expect(h.markerStore.markers()).toEqual([])
   })

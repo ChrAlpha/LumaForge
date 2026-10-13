@@ -180,11 +180,12 @@ image-editor assumptions.
   client, OPFS and blob output sinks and the cross-tab OPFS output lifetime
   (`src/lib/export/opfs-output-lifetime.ts`), the large-resource registry,
   browser plan selection (`src/lib/export/export-plan.ts`), and export debug
-  events and mode copy (`src/lib/export/execution-profile.ts`). It holds no
+  events (`src/lib/export/execution-profile.ts`). It holds no
   checkpoint store or export journal. The export algorithm and its
   fail-closed gates live in `packages/render-engine/src/export`.
-- `src/lib/workers` holds the idle-terminating worker bridges for RAW decode
-  and export; each bridge reports generation-scoped lifecycle snapshots.
+- `src/lib/workers` holds the idle-terminating worker bridge for RAW decode,
+  which reports generation-scoped lifecycle snapshots. Each export attempt
+  runs on a worker of its own that ends with the attempt.
 - `src/lib/raw` adapts the app to `@lumaforge/luma-raw-runtime`.
   `src/lib/raw/raw-runtime-host.ts` is the workflow's one RAW runtime host,
   created in `src/modules/raw-processor/hooks/useRawWorkflowRefs.ts`. It owns

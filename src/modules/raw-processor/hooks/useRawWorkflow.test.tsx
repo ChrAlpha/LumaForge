@@ -705,8 +705,7 @@ describe('useRawWorkflow', () => {
       // source and the graph renders the current look.
       const [retry] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
       expect(retry).toMatchObject({
-        quality: 0.92,
-        executionPlan: {
+          executionPlan: {
           productCopy: 'interrupted-retry',
           runtimeMemoryProfile: 'low-memory',
           request: { source: defaultSourceDimensions },
@@ -1169,8 +1168,7 @@ describe('useRawWorkflow', () => {
         expect(exportSystemMock.runPreviewExportJob).toHaveBeenCalledWith(
           expect.objectContaining({
             filename: 'frame_neutral_hq-preview.jpg',
-            quality: 0.92,
-          }),
+                }),
         )
         const [{ width, height }] = renderToHiddenCanvas.mock.calls[0]!
         expect(result.current.exportResult).toMatchObject({
