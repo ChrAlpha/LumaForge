@@ -1,4 +1,3 @@
-import { useSetAtom } from 'jotai'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -9,7 +8,6 @@ import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ExportResultKind } from '../../model/export-result'
 import { DOCK_SPRING } from '../../motion'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
-import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import type { CpuPreviewNotice } from '../CpuPreviewBanner'
 import { CpuPreviewBanner } from '../CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
@@ -161,14 +159,6 @@ export function MobileLabChrome(props: {
     closeExport()
     exportActionRef.current?.focus({ preventScroll: true })
   }
-
-  // The histogram runs only while a surface draws it; on a phone that is
-  // while it is turned on.
-  const setHistogramShown = useSetAtom(mobileHistogramShownAtom)
-  useEffect(() => {
-    setHistogramShown(histogramOpen)
-  }, [histogramOpen, setHistogramShown])
-  useEffect(() => () => setHistogramShown(false), [setHistogramShown])
 
   const isExporting = props.isExporting === true
   const exportActionState = getMobileExportActionState({

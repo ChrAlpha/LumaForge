@@ -1,7 +1,9 @@
+import { useAtom } from 'jotai'
 import { useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { IMMERSIVE_STAGGER_MS } from '../../motion'
+import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import type { ScrubFieldId } from './AdjustListPanel'
 import type { MobileLookView, MobileMode } from './mobile-stage-layout'
 import { useMobilePreviewGestures } from './useMobilePreviewGestures'
@@ -53,7 +55,10 @@ export function useMobileLabChromeController({
   const [lookView, setLookView] = useState<MobileLookView>('strip')
   const [peeking, setPeeking] = useState(false)
   const [immersive, setImmersive] = useState(false)
-  const [histogramOpen, setHistogramOpen] = useState(false)
+  // The atom is the state: the histogram runs only while a surface draws
+  // it, and on a phone that is while it is turned on.
+  const [histogramOpen, setHistogramOpen] = useAtom(mobileHistogramShownAtom)
+  useEffect(() => () => setHistogramOpen(false), [setHistogramOpen])
   const [dockExpanded, setDockExpanded] = useState(true)
   const [compareSplitOpen, setCompareSplitOpen] = useState(false)
   // The original toggle (CPU preview): the view a peek hands back to.
@@ -192,7 +197,7 @@ export function useMobileLabChromeController({
     suppressNextPeekRestore.current = false
     setCompareSplitOpen(false)
     setHistogramOpen(false)
-  }, [])
+  }, [setHistogramOpen])
 
   useEffect(() => {
     if (hasImage) return
