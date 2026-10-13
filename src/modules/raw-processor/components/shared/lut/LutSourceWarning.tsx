@@ -43,7 +43,6 @@ export function LutSourceWarning({
       <Chip
         tone={tone}
         surface={surface}
-        size="sm"
         className="min-w-0 max-w-full normal-case tracking-normal"
       >
         <AlertTriangle aria-hidden="true" className="size-3 shrink-0" />

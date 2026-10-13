@@ -168,7 +168,6 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
                     {canGoBack ? (
                       <IconButton
                         icon={ArrowLeft}
-                        size="md"
                         aria-label={t('raw.mobile.lut.back')}
                         onClick={returnToOverview}
                         className="size-[44px] rounded-md bg-transparent text-lf-on-photo-ink/55 transition-colors hover:bg-lf-on-photo-bg-strong hover:text-lf-on-photo-ink [&_svg]:size-5 [&_svg]:stroke-current"
@@ -183,7 +182,6 @@ export function MobileLutBrowser(props: MobileLutBrowserProps) {
                     </DialogPrimitive.Title>
                     <IconButton
                       icon={X}
-                      size="md"
                       aria-label={t('raw.mobile.lut.close')}
                       onClick={props.onClose}
                       className="size-[44px] rounded-md bg-transparent text-lf-on-photo-ink/55 transition-colors hover:bg-lf-on-photo-bg-strong hover:text-lf-on-photo-ink [&_svg]:size-5 [&_svg]:stroke-current"

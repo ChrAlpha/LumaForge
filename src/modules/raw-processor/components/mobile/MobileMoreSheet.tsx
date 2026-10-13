@@ -114,7 +114,6 @@ export function MobileMoreSheet(props: {
               </h2>
               <IconButton
                 icon={X}
-                size="md"
                 aria-label={t('raw.mobile.more.close')}
                 onClick={props.onClose}
                 className="size-[44px] rounded-md bg-transparent text-lf-on-photo-ink/55 transition-colors hover:bg-[oklch(0.96_0.006_255/0.06)] hover:text-lf-on-photo-ink [&_svg]:size-5 [&_svg]:stroke-current"

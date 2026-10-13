@@ -3,7 +3,7 @@ import * as React from 'react'
 import type { VariantProps } from 'tailwind-variants'
 import { tv } from 'tailwind-variants'
 
-import { cx, focusRing } from '~/lib/cn'
+import { clsxm } from '~/lib/cn'
 
 const buttonVariants = tv({
   base: [
@@ -12,7 +12,7 @@ const buttonVariants = tv({
     'transition-colors duration-150 ease-out',
     'disabled:pointer-events-none disabled:opacity-55',
     'active:scale-[0.985]',
-    focusRing,
+    'outline-offset-2 outline-0 focus-visible:outline-2 outline-accent',
   ],
   variants: {
     variant: {
@@ -77,7 +77,7 @@ const Button = ({
   return (
     <Component
       ref={forwardedRef}
-      className={cx(buttonVariants({ variant, size }), className)}
+      className={clsxm(buttonVariants({ variant, size }), className)}
       disabled={disabled || isLoading}
       data-lf-button
       {...props}

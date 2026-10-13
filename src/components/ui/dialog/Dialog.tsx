@@ -1,9 +1,6 @@
-'use client'
-
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import clsx from 'clsx'
 import type * as React from 'react'
-
-import { cn } from '~/lib/cn'
 
 type DialogProps = React.ComponentProps<typeof DialogPrimitive.Root>
 
@@ -17,7 +14,7 @@ function DialogTitle({ className, ...props }: DialogTitleProps) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn(
+      className={clsx(
         'text-lg font-semibold leading-none tracking-tight',
         className,
       )}
@@ -34,7 +31,7 @@ function DialogDescription({ className, ...props }: DialogDescriptionProps) {
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn('text-sm text-muted-foreground', className)}
+      className={clsx('text-sm text-muted-foreground', className)}
       {...props}
     />
   )

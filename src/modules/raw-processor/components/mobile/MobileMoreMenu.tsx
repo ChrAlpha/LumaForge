@@ -67,7 +67,6 @@ export function MobileMoreMenu(props: {
     <div ref={rootRef} className="relative inline-flex">
       <IconButton
         icon={MoreHorizontal}
-        size="md"
         aria-label={props.ariaLabel}
         aria-expanded={open}
         aria-haspopup="menu"
