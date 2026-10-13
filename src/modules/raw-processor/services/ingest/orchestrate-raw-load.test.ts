@@ -6,14 +6,21 @@ import {
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { PreviewView } from '~/lib/preview/preview-view'
-import type { DecodedImage } from '~/lib/raw/decoder'
+import type { DecodedImage, ProgressCallback } from '~/lib/raw/decoder'
 import type { RawRuntimeSessionLease } from '~/lib/raw/raw-runtime-host'
-import type { RawRuntimeSession } from '~/lib/raw/runtime-adapter'
+import type {
+  PrewarmOutcome,
+  PrewarmState,
+  RawRuntimeSession,
+} from '~/lib/raw/runtime-adapter'
 
 import type { ImageSession } from '../../model/session'
 import { createImageSession } from '../../model/session-factory'
-import { createTestDecodedImage } from '../../test-support/builders'
+import {
+  createTestCube,
+  createTestDecodedImage,
+  createTestSession,
+} from '../../test-support/builders'
 import { toCustomStyle } from '../look/style-system'
 import type { RawLoadContext } from './orchestrate-raw-load'
 import { orchestrateRawLoad } from './orchestrate-raw-load'
@@ -22,154 +29,33 @@ const capabilityVectorMock = vi.hoisted(() => ({
   detectCapabilityVector: vi.fn(),
   getCapabilityVectorSnapshot: vi.fn(),
 }))
-
 const previewGpuBudgetMock = vi.hoisted(() => ({
   detectPreviewGpuCapabilitySnapshot: vi.fn(),
   derivePreviewGpuBudget: vi.fn(),
 }))
-
 const previewBackendMock = vi.hoisted(() => ({
   resolvePreviewBackend: vi.fn(),
 }))
-
-/** What each test's host opens for a lease's source. */
-const openSessionMock =
-  vi.fn<(file: File, signal: AbortSignal) => Promise<RawRuntimeSession>>()
-
-type TestLease = RawRuntimeSessionLease & {
-  prewarm: ReturnType<typeof vi.fn<RawRuntimeSessionLease['prewarm']>>
-  open: ReturnType<typeof vi.fn<RawRuntimeSessionLease['open']>>
-  release: ReturnType<typeof vi.fn<RawRuntimeSessionLease['release']>>
-  cancel: ReturnType<typeof vi.fn<RawRuntimeSessionLease['cancel']>>
-}
-
-/**
- * A host stand-in: every lease warms through `prewarm` and opens through
- * `openSessionMock`.
- */
-function createLeaseHost(
-  prewarm: RawRuntimeSessionLease['prewarm'] = async () => ({
-    status: 'ready',
-  }),
-) {
-  const leases: TestLease[] = []
-  const beginRuntimeSession = vi.fn((): RawRuntimeSessionLease => {
-    const controller = new AbortController()
-    const lease: TestLease = {
-      signal: controller.signal,
-      prewarm: vi.fn(prewarm),
-      open: vi.fn((file: File) => openSessionMock(file, controller.signal)),
-      release: vi.fn(),
-      cancel: vi.fn(() => controller.abort()),
-    }
-    leases.push(lease)
-    return lease
-  })
-  return { leases, beginRuntimeSession }
-}
 
 vi.mock('~/lib/runtime/capability-vector', () => capabilityVectorMock)
 vi.mock('~/lib/runtime/preview-gpu-budget', () => previewGpuBudgetMock)
 vi.mock('~/lib/preview/gpu-backend', () => previewBackendMock)
 
-const defaultIntent: ColorGraphIntent = {
+const CAPABILITY: CapabilityVector = {
+  coi: false,
+  pthread: false,
+  deviceMemoryGB: null,
+  hwConcurrency: 2,
+  webKitClass: 'unknown',
+  deviceFormFactor: 'unknown',
+  maybeOpfsSupported: false,
+}
+
+const INTENT: ColorGraphIntent = {
   ...NEUTRAL_USER_COLOR_INTENT,
   intensity: 0.7,
   styleKind: 'none',
   builtinPreset: null,
-}
-
-const defaultView: PreviewView = { mode: 'compare', compareSplit: 0.5 }
-
-interface OrderingHooks {
-  order: string[]
-  yieldToPaint: () => Promise<void>
-  prewarm?: () => Promise<{
-    status: 'ready' | 'failed'
-    reason?: string
-    recoverable?: boolean
-  }>
-  openSession?: () => Promise<never>
-  getPrewarmState: () => 'idle' | 'pending' | 'ready' | 'failed'
-}
-
-/**
- * A synchronous session store stand-in: a write is visible to the next read
- * in the same tick, as with the production store.
- */
-function createSessionStore(initial: ImageSession | null = null) {
-  let current = initial
-  return {
-    get: () => current,
-    set: (
-      value:
-        | ImageSession
-        | null
-        | ((prev: ImageSession | null) => ImageSession | null),
-    ) => {
-      current = typeof value === 'function' ? value(current) : value
-    },
-  }
-}
-
-function buildContext(
-  hooks: OrderingHooks,
-  host = createLeaseHost(
-    hooks.prewarm ??
-      (async () => {
-        hooks.order.push('prewarm')
-        return { status: 'ready' as const }
-      }),
-  ),
-  store = createSessionStore(),
-): RawLoadContext {
-  const { order } = hooks
-  return {
-    atoms: {
-      setStatus: vi.fn((status) => order.push(`status:${status}`)),
-      setError: vi.fn(),
-      setProgress: vi.fn(),
-      getColorIntent: vi.fn(() => defaultIntent),
-      getView: vi.fn(() => defaultView),
-      getLut: vi.fn(() => null),
-      setColorIntent: vi.fn(),
-      getSession: vi.fn(store.get),
-      setSession: vi.fn(store.set),
-    },
-    services: {
-      notify: vi.fn(),
-      replaceFile: vi.fn((file, retained) => {
-        order.push('replaceFile')
-        const next = createImageSession(file, retained)
-        store.set(next)
-        return next
-      }),
-      abortRuntimeWork: vi.fn(() => order.push('abortRuntimeWork')),
-      abortExportWork: vi.fn(() => order.push('abortExportWork')),
-      queueExportResultResourceDisposal: vi.fn(),
-      revokeCurrentEmbeddedPreviewUrl: vi.fn(),
-      setDecodedImageRef: vi.fn(),
-      yieldToPaint: vi.fn(async () => {
-        order.push('yieldToPaint')
-        await hooks.yieldToPaint()
-      }),
-      getPrewarmState: hooks.getPrewarmState,
-      beginRuntimeSession: host.beginRuntimeSession,
-    },
-    refs: {
-      embeddedPreviewUrlRef: { current: null },
-      isMountedRef: { current: true },
-      runtimeWorkSessionIdRef: { current: null },
-      pendingLoadSessionIdRef: { current: null },
-      previewCopyCanvasRef: { current: null },
-    },
-  }
-}
-
-async function flushMicrotasks(rounds = 4) {
-  for (let i = 0; i < rounds; i += 1) {
-    await Promise.resolve()
-  }
 }
 
 function deferred<T>() {
@@ -179,13 +65,10 @@ function deferred<T>() {
     resolve = innerResolve
     reject = innerReject
   })
-
   return { promise, resolve, reject }
 }
 
-function createDecodedImage(width: number, height: number): DecodedImage {
-  return createTestDecodedImage({ width, height, data: new Uint16Array(0) })
-}
+const never = () => new Promise<never>(() => {})
 
 function createRuntimeSession(
   overrides: Partial<RawRuntimeSession> = {},
@@ -193,475 +76,305 @@ function createRuntimeSession(
   return {
     sourceDimensions: { width: 6000, height: 4000 },
     extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
-    decodeQuickRaw: vi.fn().mockResolvedValue(createDecodedImage(1600, 1067)),
+    decodeQuickRaw: vi.fn().mockResolvedValue(createTestDecodedImage()),
     decodeBoundedHqRaw: vi
       .fn()
-      .mockResolvedValue(createDecodedImage(4243, 2828)),
+      .mockResolvedValue(createTestDecodedImage({ source: 'bounded-hq' })),
     dispose: vi.fn(),
     ...overrides,
   }
 }
 
-describe('orchestrateRawLoad ack-before-work contract', () => {
-  const defaultCapability: CapabilityVector = {
-    coi: false,
-    pthread: false,
-    deviceMemoryGB: null,
-    hwConcurrency: 2,
-    webKitClass: 'unknown',
-    deviceFormFactor: 'unknown',
-    maybeOpfsSupported: false,
+type TestLease = RawRuntimeSessionLease & {
+  [K in 'prewarm' | 'open' | 'release' | 'cancel']: ReturnType<
+    typeof vi.fn<RawRuntimeSessionLease[K]>
+  >
+}
+
+/**
+ * The load's ports over a synchronous session store, where a write is
+ * visible to the next read in the same tick as with the production store,
+ * and a host stand-in whose every lease warms through `prewarm` and opens
+ * through `open`. `order` logs the status tail, the outgoing release, the
+ * lease, the replacement, the paint boundary, and each open.
+ */
+function createLoad(initialSession: ImageSession | null = null) {
+  const order: string[] = []
+  let current = initialSession
+  const set: RawLoadContext['atoms']['setSession'] = (value) => {
+    current = typeof value === 'function' ? value(current) : value
   }
+  const store = { get: () => current, set }
+  const prewarm = vi.fn<RawRuntimeSessionLease['prewarm']>(async () => ({
+    status: 'ready',
+  }))
+  const open = vi.fn<(file: File) => Promise<RawRuntimeSession>>(async () =>
+    createRuntimeSession(),
+  )
+  const leases: TestLease[] = []
+  const ctx: RawLoadContext = {
+    atoms: {
+      setStatus: vi.fn((status) => order.push(`status:${status}`)),
+      setError: vi.fn((error) => order.push(`error:${String(error)}`)),
+      setProgress: vi.fn((progress) => order.push(`progress:${progress}`)),
+      getColorIntent: vi.fn(() => INTENT),
+      getView: vi.fn(() => ({ mode: 'compare' as const, compareSplit: 0.5 })),
+      getLut: vi.fn(() => null),
+      setColorIntent: vi.fn(),
+      getSession: vi.fn(store.get),
+      setSession: vi.fn(store.set),
+    },
+    services: {
+      notify: vi.fn(),
+      replaceFile: vi.fn((file, retained) => {
+        order.push('replaceFile')
+        current = createImageSession(file, retained)
+        return current
+      }),
+      abortRuntimeWork: vi.fn(() => order.push('abortRuntimeWork')),
+      abortExportWork: vi.fn(() => order.push('abortExportWork')),
+      queueExportResultResourceDisposal: vi.fn(),
+      revokeCurrentEmbeddedPreviewUrl: vi.fn(),
+      setDecodedImageRef: vi.fn(),
+      yieldToPaint: vi.fn(async () => {
+        order.push('yieldToPaint')
+      }),
+      getPrewarmState: vi.fn((): PrewarmState => 'ready'),
+      beginRuntimeSession: vi.fn(() => {
+        order.push('beginRuntimeSession')
+        const controller = new AbortController()
+        const lease: TestLease = {
+          signal: controller.signal,
+          prewarm: vi.fn(() => prewarm()),
+          open: vi.fn((file: File) => {
+            order.push('open')
+            return open(file)
+          }),
+          release: vi.fn(),
+          cancel: vi.fn(() => controller.abort()),
+        }
+        leases.push(lease)
+        return lease
+      }),
+    },
+    refs: {
+      embeddedPreviewUrlRef: { current: null },
+      isMountedRef: { current: true },
+      runtimeWorkSessionIdRef: { current: null },
+      pendingLoadSessionIdRef: { current: null },
+      previewCopyCanvasRef: { current: null },
+    },
+  }
+  return { ctx, store, order, prewarm, open, leases }
+}
 
-  beforeEach(() => {
-    openSessionMock.mockReset()
-    previewBackendMock.resolvePreviewBackend
-      .mockReset()
-      .mockResolvedValue({ backend: 'cpu' })
+type Load = ReturnType<typeof createLoad>
 
-    capabilityVectorMock.getCapabilityVectorSnapshot.mockReset()
-    capabilityVectorMock.detectCapabilityVector
-      .mockReset()
-      .mockResolvedValue(defaultCapability)
-    previewGpuBudgetMock.detectPreviewGpuCapabilitySnapshot
-      .mockReset()
-      .mockReturnValue(null)
-    previewGpuBudgetMock.derivePreviewGpuBudget
-      .mockReset()
-      .mockReturnValue({ boundedHqMaxPixels: 8_000_000 })
-  })
+const rawFile = (name = 'sample.ARW') => new File(['raw'], name)
 
-  it('commits visible status and sync setup before awaiting the paint boundary', async () => {
-    const order: string[] = []
-    openSessionMock.mockImplementation(
-      () =>
-        new Promise(() => {
-          order.push('openSession')
-        }),
-    )
+beforeEach(() => {
+  capabilityVectorMock.getCapabilityVectorSnapshot.mockReset()
+  capabilityVectorMock.detectCapabilityVector
+    .mockReset()
+    .mockResolvedValue(CAPABILITY)
+  previewGpuBudgetMock.detectPreviewGpuCapabilitySnapshot
+    .mockReset()
+    .mockReturnValue(null)
+  previewGpuBudgetMock.derivePreviewGpuBudget.mockReset()
+  previewBackendMock.resolvePreviewBackend
+    .mockReset()
+    .mockResolvedValue({ backend: 'cpu' })
+})
 
-    let resolvePaint: () => void = () => {}
-    const paintGate = new Promise<void>((resolve) => {
-      resolvePaint = resolve
-    })
-
-    const ctx = buildContext({
-      order,
-      yieldToPaint: () => paintGate,
-      getPrewarmState: () => 'ready',
-    })
-
-    const file = new File(['raw'], 'sample.ARW')
-    const loadPromise = orchestrateRawLoad(file, ctx)
-
-    await flushMicrotasks()
-
-    expect(order[0]).toBe('status:loading')
-    expect(order).toContain('yieldToPaint')
-    expect(order).toContain('replaceFile')
-    expect(order).toContain('abortRuntimeWork')
-    expect(order.indexOf('replaceFile')).toBeLessThan(
-      order.indexOf('yieldToPaint'),
-    )
-    expect(order).not.toContain('openSession')
-
-    resolvePaint()
-    await flushMicrotasks()
-
-    expect(order).toContain('openSession')
-    expect(order.indexOf('yieldToPaint')).toBeLessThan(
-      order.indexOf('openSession'),
-    )
-
-    loadPromise.catch(() => undefined)
-  })
-
-  it('reads the split from the view port and resets only the look through the color port', async () => {
-    openSessionMock.mockImplementation(() => new Promise(() => {}))
-    const ctx = buildContext({
-      order: [],
-      yieldToPaint: () => Promise.resolve(),
-      getPrewarmState: () => 'ready',
-    })
-    const intent: ColorGraphIntent = {
-      ...defaultIntent,
-      intensity: 0.37,
-      userContrast: 24,
+describe('orchestrateRawLoad', () => {
+  it('acks the load, releases the outgoing source, and publishes the replacement before the paint boundary, then opens', async () => {
+    const h = createLoad()
+    const paint = deferred<void>()
+    h.ctx.services.yieldToPaint = () => {
+      h.order.push('yieldToPaint')
+      return paint.promise
     }
-    vi.mocked(ctx.atoms.getColorIntent).mockReturnValue(intent)
-    vi.mocked(ctx.atoms.getView).mockReturnValue({
+    h.open.mockReturnValue(never())
+
+    void orchestrateRawLoad(rawFile('next.ARW'), h.ctx)
+
+    expect(h.order).toEqual([
+      'status:loading',
+      'progress:0',
+      'error:null',
+      'abortExportWork',
+      'abortRuntimeWork',
+      'beginRuntimeSession',
+      'replaceFile',
+      'yieldToPaint',
+    ])
+    const published = h.store.get()!
+    expect(published.sourceFile.name).toBe('next.ARW')
+    expect(h.ctx.refs.runtimeWorkSessionIdRef.current).toBe(published.id)
+    expect(h.ctx.refs.pendingLoadSessionIdRef.current).toBe(published.id)
+
+    paint.resolve()
+    await vi.waitFor(() => expect(h.order.at(-1)).toBe('open'))
+  })
+
+  it('starts the new session with the current split and resets only the look of the stored intent', () => {
+    const h = createLoad()
+    h.open.mockReturnValue(never())
+    const intent = { ...INTENT, intensity: 0.37, userContrast: 24 }
+    vi.mocked(h.ctx.atoms.getColorIntent).mockReturnValue(intent)
+    vi.mocked(h.ctx.atoms.getView).mockReturnValue({
       mode: 'original',
       compareSplit: 0.62,
     })
 
-    const loadPromise = orchestrateRawLoad(new File(['raw'], 'next.ARW'), ctx)
-    await flushMicrotasks()
+    void orchestrateRawLoad(rawFile('next.ARW'), h.ctx)
 
-    expect(ctx.atoms.setColorIntent).toHaveBeenCalledTimes(1)
-    const writeIntent = vi.mocked(ctx.atoms.setColorIntent).mock.calls[0]![0]
-    const written =
-      typeof writeIntent === 'function' ? writeIntent(intent) : writeIntent
-    expect(written).toEqual({
+    expect(h.ctx.atoms.setColorIntent).toHaveBeenCalledOnce()
+    const write = vi.mocked(h.ctx.atoms.setColorIntent).mock.calls[0]![0]
+    expect(typeof write === 'function' ? write(intent) : write).toEqual({
       ...intent,
       intensity: 0.7,
       styleKind: 'none',
       builtinPreset: null,
     })
-    expect(written).not.toHaveProperty('viewMode')
-    expect(written).not.toHaveProperty('compareSplit')
-
-    const nextSession = vi.mocked(ctx.services.replaceFile).mock.results[0]!
-      .value as ReturnType<typeof createImageSession>
-    const startSession = vi
-      .mocked(ctx.atoms.setSession)
-      .mock.calls.map(([update]) => update)
-      .find((update) => typeof update === 'function')
-    expect(startSession).toBeDefined()
-    const started = (
-      startSession as (
-        prev: ReturnType<typeof createImageSession> | null,
-      ) => ReturnType<typeof createImageSession> | null
-    )(nextSession)
-    expect(started?.viewState).toMatchObject({
+    expect(h.store.get()?.viewState).toMatchObject({
       mode: 'compare',
       compareSplit: 0.62,
     })
-
-    loadPromise.catch(() => undefined)
   })
 
-  it('does not open a runtime session when superseded during capability detection', async () => {
-    const order: string[] = []
-    const capability = deferred<CapabilityVector>()
-    capabilityVectorMock.detectCapabilityVector.mockReturnValue(
-      capability.promise,
-    )
-    openSessionMock.mockImplementation(
-      () =>
-        new Promise(() => {
-          order.push('openSession')
-        }),
-    )
-
-    const ctx = buildContext({
-      order,
-      yieldToPaint: () => Promise.resolve(),
-      getPrewarmState: () => 'ready',
-    })
-
-    const file = new File(['raw'], 'sample.ARW')
-    const loadPromise = orchestrateRawLoad(file, ctx)
-
-    await flushMicrotasks()
-
-    ctx.refs.runtimeWorkSessionIdRef.current = 'newer-session'
-    capability.resolve(defaultCapability)
-    await loadPromise
-
-    expect(openSessionMock).not.toHaveBeenCalled()
-    expect(
-      vi.mocked(ctx.services.beginRuntimeSession).mock.results[0]!.value,
-    ).toMatchObject({ signal: { aborted: true } })
-  })
-
-  it('enters warming when prewarm is pending and flips to loading after prewarm resolves', async () => {
-    const order: string[] = []
-    openSessionMock.mockImplementation(() => new Promise(() => {}))
-
-    let resolvePrewarm: (outcome: {
-      status: 'ready' | 'failed'
-      reason?: string
-    }) => void = () => {}
-    const prewarmPromise = new Promise<{
-      status: 'ready' | 'failed'
-      reason?: string
-    }>((resolve) => {
-      resolvePrewarm = resolve
-    })
-
-    const ctx = buildContext({
-      order,
-      yieldToPaint: () => Promise.resolve(),
-      getPrewarmState: () => 'pending',
-      prewarm: () => prewarmPromise,
-    })
-
-    const file = new File(['raw'], 'sample.ARW')
-    const loadPromise = orchestrateRawLoad(file, ctx)
-
-    await flushMicrotasks()
-
-    expect(order[0]).toBe('status:warming')
-    expect(order).not.toContain('status:loading')
-
-    resolvePrewarm({ status: 'ready' })
-    await flushMicrotasks()
-
-    expect(order).toContain('status:loading')
-    expect(order.indexOf('status:warming')).toBeLessThan(
-      order.indexOf('status:loading'),
-    )
-
-    loadPromise.catch(() => undefined)
-  })
-
-  it('awaits the backend before opening RAW and applying its bounded HQ budget', async () => {
-    const order: string[] = []
-    const gpu = {
-      webgpu: true,
-      maxTextureSize: 8192,
+  it('retains the stored LUT look and its strength into the next session', () => {
+    const lut: ParsedLUT = {
+      ...parseCubeLUT(createTestCube('Store Look', 2), {
+        sourceName: 'store-look.cube',
+      }),
+      fingerprint: 'store-look-fingerprint',
+      profileResolution: { kind: 'unknown' },
     }
-    const quick = createDecodedImage(1600, 1067)
-    const bounded = createDecodedImage(4243, 2828)
-    const decodeBoundedHqRaw = vi.fn().mockResolvedValue(bounded)
+    const h = createLoad(
+      createTestSession({
+        activeStyle: { ...toCustomStyle(lut), currentIntensity: 0.33 },
+      }),
+    )
+    h.open.mockReturnValue(never())
+    vi.mocked(h.ctx.atoms.getLut).mockReturnValue(lut)
 
-    capabilityVectorMock.detectCapabilityVector.mockResolvedValue({
-      ...defaultCapability,
-      pthread: false,
-      hwConcurrency: 8,
-      webKitClass: 'chromium',
-      deviceFormFactor: 'desktop',
+    void orchestrateRawLoad(rawFile('second.ARW'), h.ctx)
+
+    expect(h.store.get()).toMatchObject({
+      sourceFile: { name: 'second.ARW' },
+      activeStyle: { kind: 'custom', currentIntensity: 0.33 },
     })
+  })
+
+  it('shows warming until its lease warms the runtime, then loading', async () => {
+    const h = createLoad()
+    const warm = deferred<PrewarmOutcome>()
+    vi.mocked(h.ctx.services.getPrewarmState).mockReturnValue('pending')
+    h.prewarm.mockReturnValue(warm.promise)
+    h.open.mockReturnValue(never())
+
+    void orchestrateRawLoad(rawFile(), h.ctx)
+    await vi.waitFor(() => expect(h.leases[0]!.prewarm).toHaveBeenCalled())
+
+    expect(h.order[0]).toBe('status:warming')
+    expect(h.order).not.toContain('status:loading')
+
+    warm.resolve({ status: 'ready' })
+    await vi.waitFor(() => expect(h.order.at(-1)).toBe('open'))
+    expect(h.order).toContain('status:loading')
+  })
+
+  it('awaits the preview backend before opening and sizes bounded HQ by its GPU budget with the quick frame exposure', async () => {
+    const gpu = { webgpu: true, maxTextureSize: 8192 }
     previewGpuBudgetMock.detectPreviewGpuCapabilitySnapshot.mockReturnValue(gpu)
     previewGpuBudgetMock.derivePreviewGpuBudget.mockReturnValue({
       boundedHqMaxPixels: 12_000_000,
     })
-    openSessionMock.mockResolvedValue({
-      sourceDimensions: { width: 6000, height: 4000 },
-      extractEmbeddedPreview: vi.fn().mockResolvedValue(null),
+    const backend = deferred<unknown>()
+    previewBackendMock.resolvePreviewBackend.mockReturnValue(backend.promise)
+    const quick = createTestDecodedImage({
+      renderExposure: { ev: 0.5, multiplier: Math.SQRT2, source: 'identity' },
+    })
+    const session = createRuntimeSession({
       decodeQuickRaw: vi.fn().mockResolvedValue(quick),
-      decodeBoundedHqRaw,
-      dispose: vi.fn(),
     })
+    const h = createLoad()
+    h.open.mockResolvedValue(session)
 
-    const ctx = buildContext({
-      order,
-      yieldToPaint: () => Promise.resolve(),
-      getPrewarmState: () => 'ready',
-    })
-
-    const backendReady = deferred<{ backend: 'webgpu' }>()
-    previewBackendMock.resolvePreviewBackend.mockReturnValue(
-      backendReady.promise,
+    const load = orchestrateRawLoad(rawFile(), h.ctx)
+    await vi.waitFor(() =>
+      expect(previewBackendMock.resolvePreviewBackend).toHaveBeenCalled(),
     )
-    const load = orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-    await flushMicrotasks(8)
-    expect(openSessionMock).not.toHaveBeenCalled()
-    expect(previewGpuBudgetMock.derivePreviewGpuBudget).not.toHaveBeenCalled()
-    backendReady.resolve({ backend: 'webgpu' })
+    expect(h.open).not.toHaveBeenCalled()
+    backend.resolve({ backend: 'webgpu' })
     await load
 
     expect(previewGpuBudgetMock.derivePreviewGpuBudget).toHaveBeenCalledWith({
-      capability: {
-        ...defaultCapability,
-        pthread: false,
-        hwConcurrency: 8,
-        webKitClass: 'chromium',
-        deviceFormFactor: 'desktop',
-      },
+      capability: CAPABILITY,
       gpu,
       sourceWidth: 6000,
       sourceHeight: 4000,
     })
-    expect(decodeBoundedHqRaw).toHaveBeenCalledWith(
+    expect(session.decodeBoundedHqRaw).toHaveBeenCalledWith(
       { maxOutputPixels: 12_000_000, pinnedExposure: quick.renderExposure },
       undefined,
-      expect.any(AbortSignal),
+      h.leases[0]!.signal,
     )
   })
 
-  it('does not open RAW when forced backend initialization fails', async () => {
-    const ctx = buildContext({
-      order: [],
-      yieldToPaint: () => Promise.resolve(),
-      getPrewarmState: () => 'ready',
+  it('decodes on its lease, reports the loaded source once bounded HQ lands, and releases the lease only then', async () => {
+    const hq = deferred<DecodedImage>()
+    const session = createRuntimeSession({
+      decodeQuickRaw: vi.fn(async (onProgress?: ProgressCallback) => {
+        onProgress?.({ phase: 'decoding', progress: 50 })
+        return createTestDecodedImage()
+      }),
+      decodeBoundedHqRaw: vi.fn(() => hq.promise),
     })
-    previewBackendMock.resolvePreviewBackend.mockRejectedValue(
-      new Error('WebGPU preview is unavailable'),
-    )
-    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-    expect(openSessionMock).not.toHaveBeenCalled()
-    expect(ctx.atoms.setStatus).toHaveBeenCalledWith('error')
-  })
+    const h = createLoad()
+    h.open.mockResolvedValue(session)
+    const file = rawFile()
 
-  it('does not open a superseded session after delayed backend detection', async () => {
-    const ctx = buildContext({
-      order: [],
-      yieldToPaint: () => Promise.resolve(),
-      getPrewarmState: () => 'ready',
-    })
-    const backendReady = deferred<void>()
-    previewBackendMock.resolvePreviewBackend.mockReturnValue(
-      backendReady.promise,
-    )
-    const load = orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-    await flushMicrotasks(8)
-    ctx.refs.runtimeWorkSessionIdRef.current = 'newer-session'
-    backendReady.resolve()
-    await load
-    expect(openSessionMock).not.toHaveBeenCalled()
-  })
+    await orchestrateRawLoad(file, h.ctx)
 
-  it('surfaces failures thrown before the session exists instead of sticking in loading', async () => {
-    const order: string[] = []
-    const ctx = buildContext({
-      order,
-      yieldToPaint: () => Promise.resolve(),
-      getPrewarmState: () => 'ready',
-    })
-    vi.mocked(ctx.services.replaceFile).mockImplementation(() => {
-      throw new Error('session creation failed')
-    })
-
-    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-
-    expect(ctx.atoms.setError).toHaveBeenCalledWith('session creation failed')
-    expect(order).toContain('status:error')
-    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
-      [{ kind: 'load-failed', message: 'session creation failed' }],
-    ])
-  })
-
-  it('releases the outgoing source after its status tail and before the new lease, fences first', () => {
-    openSessionMock.mockImplementation(() => new Promise(() => {}))
-    const order: string[] = []
-    const ctx = buildContext({
-      order,
-      yieldToPaint: () => new Promise(() => {}),
-      getPrewarmState: () => 'ready',
-    })
-    const { atoms, services, refs } = ctx
-    refs.runtimeWorkSessionIdRef.current = 'outgoing'
-    refs.pendingLoadSessionIdRef.current = 'outgoing'
-    refs.previewCopyCanvasRef.current = document.createElement('canvas')
-    const fences = () =>
-      `${String(refs.runtimeWorkSessionIdRef.current)}/${String(refs.pendingLoadSessionIdRef.current)}/canvas=${refs.previewCopyCanvasRef.current ? 'set' : 'null'}`
-    vi.mocked(atoms.setProgress).mockImplementation((value) => {
-      order.push(`progress:${value}`)
-    })
-    vi.mocked(atoms.setError).mockImplementation((value) => {
-      order.push(`error:${String(value)}`)
-    })
-    vi.mocked(services.abortExportWork).mockImplementation(() => {
-      order.push(`abortExportWork:${fences()}`)
-    })
-    vi.mocked(services.abortRuntimeWork).mockImplementation(() => {
-      order.push(`abortRuntimeWork:${fences()}`)
-    })
-    vi.mocked(services.queueExportResultResourceDisposal).mockImplementation(
-      (...args: unknown[]) => {
-        order.push(`disposeExportResults(${args.map(String).join()})`)
-      },
-    )
-    vi.mocked(services.revokeCurrentEmbeddedPreviewUrl).mockImplementation(
-      () => {
-        order.push(`revokeEmbeddedPreviewUrl:${fences()}`)
-      },
-    )
-    const beginRuntimeSession = services.beginRuntimeSession
-    services.beginRuntimeSession = () => {
-      order.push(`beginRuntimeSession:${fences()}`)
-      return beginRuntimeSession()
-    }
-
-    void orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-
-    expect(order.slice(0, order.indexOf('replaceFile'))).toEqual([
-      'status:loading',
-      'progress:0',
-      'error:null',
-      'abortExportWork:null/null/canvas=set',
-      'abortRuntimeWork:null/null/canvas=set',
-      'disposeExportResults()',
-      'revokeEmbeddedPreviewUrl:null/null/canvas=set',
-      'beginRuntimeSession:null/null/canvas=null',
-    ])
-    expect(refs.runtimeWorkSessionIdRef.current).toBe(atoms.getSession()?.id)
-  })
-})
-
-describe('orchestrateRawLoad host session lease', () => {
-  const capability: CapabilityVector = {
-    coi: false,
-    pthread: false,
-    deviceMemoryGB: null,
-    hwConcurrency: 2,
-    webKitClass: 'unknown',
-    deviceFormFactor: 'unknown',
-    maybeOpfsSupported: false,
-  }
-
-  beforeEach(() => {
-    openSessionMock.mockReset()
-    previewBackendMock.resolvePreviewBackend
-      .mockReset()
-      .mockResolvedValue({ backend: 'cpu' })
-    capabilityVectorMock.getCapabilityVectorSnapshot.mockReset()
-    capabilityVectorMock.detectCapabilityVector
-      .mockReset()
-      .mockResolvedValue(capability)
-    previewGpuBudgetMock.detectPreviewGpuCapabilitySnapshot
-      .mockReset()
-      .mockReturnValue(null)
-    previewGpuBudgetMock.derivePreviewGpuBudget.mockReset()
-  })
-
-  function buildLeaseContext() {
-    const host = createLeaseHost()
-    const ctx = buildContext(
-      {
-        order: [],
-        yieldToPaint: () => Promise.resolve(),
-        getPrewarmState: () => 'ready',
-      },
-      host,
-    )
-    return { ctx, host }
-  }
-
-  it('opens the source once on its own lease, decodes quick before bounded HQ, and keeps the lease until HQ settles', async () => {
-    const quick = createDecodedImage(1600, 1067)
-    const boundedHq = deferred<DecodedImage>()
-    const runtimeSession = createRuntimeSession({
-      decodeQuickRaw: vi.fn().mockResolvedValue(quick),
-      decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
-    })
-    openSessionMock.mockResolvedValue(runtimeSession)
-    const { ctx, host } = buildLeaseContext()
-    const file = new File(['raw'], 'sample.ARW')
-
-    await orchestrateRawLoad(file, ctx)
-
-    expect(host.beginRuntimeSession).toHaveBeenCalledTimes(1)
-    const [lease] = host.leases
-    expect(lease!.open).toHaveBeenCalledTimes(1)
-    expect(lease!.open).toHaveBeenCalledWith(file)
-    expect(runtimeSession.decodeQuickRaw).toHaveBeenCalledWith(
+    const lease = h.leases[0]!
+    expect(lease.open).toHaveBeenCalledExactlyOnceWith(file)
+    expect(session.decodeQuickRaw).toHaveBeenCalledWith(
       expect.any(Function),
-      lease!.signal,
+      lease.signal,
     )
-    expect(runtimeSession.decodeBoundedHqRaw).toHaveBeenCalledWith(
-      expect.objectContaining({ pinnedExposure: quick.renderExposure }),
-      undefined,
-      lease!.signal,
+    expect(h.order).toEqual(
+      expect.arrayContaining(['status:decoding', 'progress:50']),
     )
-    expect(
-      vi.mocked(runtimeSession.decodeQuickRaw).mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      vi.mocked(runtimeSession.decodeBoundedHqRaw).mock.invocationCallOrder[0]!,
-    )
-    expect(lease!.release).not.toHaveBeenCalled()
-    expect(lease!.cancel).not.toHaveBeenCalled()
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).not.toBeNull()
+    expect(h.ctx.atoms.setStatus).toHaveBeenLastCalledWith('ready')
+    expect(h.ctx.services.notify).not.toHaveBeenCalled()
+    expect(lease.release).not.toHaveBeenCalled()
+    expect(h.ctx.refs.runtimeWorkSessionIdRef.current).toBe(h.store.get()!.id)
 
-    boundedHq.resolve(createDecodedImage(4243, 2828))
-    await vi.waitFor(() => expect(lease!.release).toHaveBeenCalled())
-    expect(lease!.cancel).not.toHaveBeenCalled()
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBeNull()
-    expect(runtimeSession.dispose).not.toHaveBeenCalled()
+    hq.resolve(
+      createTestDecodedImage({
+        source: 'bounded-hq',
+        width: 80,
+        height: 60,
+        metadata: { width: 80, height: 60, make: 'Sony', model: 'ILCE-7RM5' },
+      }),
+    )
+    await vi.waitFor(() => expect(lease.release).toHaveBeenCalled())
+
+    expect(lease.cancel).not.toHaveBeenCalled()
+    expect(h.ctx.refs.runtimeWorkSessionIdRef.current).toBeNull()
+    expect(h.ctx.services.notify).toHaveBeenCalledExactlyOnceWith({
+      kind: 'loaded',
+      fileName: 'sample.ARW',
+      width: 80,
+      height: 60,
+      make: 'Sony',
+      model: 'ILCE-7RM5',
+    })
   })
 
-  it('releases the lease as soon as a preview without bounded HQ completes', async () => {
+  it('releases the lease as soon as a preview with no bounded HQ step completes', async () => {
     previewGpuBudgetMock.detectPreviewGpuCapabilitySnapshot.mockReturnValue({
       webgpu: true,
       maxTextureSize: 8192,
@@ -669,163 +382,239 @@ describe('orchestrateRawLoad host session lease', () => {
     previewGpuBudgetMock.derivePreviewGpuBudget.mockReturnValue({
       boundedHqMaxPixels: 1,
     })
-    const runtimeSession = createRuntimeSession({
+    const session = createRuntimeSession({
       sourceDimensions: { width: 1200, height: 800 },
     })
-    openSessionMock.mockResolvedValue(runtimeSession)
-    const { ctx, host } = buildLeaseContext()
+    const h = createLoad()
+    h.open.mockResolvedValue(session)
 
-    await orchestrateRawLoad(new File(['raw'], 'small.ARW'), ctx)
+    await orchestrateRawLoad(rawFile('small.ARW'), h.ctx)
 
-    const [lease] = host.leases
-    expect(runtimeSession.decodeBoundedHqRaw).not.toHaveBeenCalled()
-    expect(lease!.release).toHaveBeenCalled()
-    expect(lease!.cancel).not.toHaveBeenCalled()
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBeNull()
+    expect(session.decodeBoundedHqRaw).not.toHaveBeenCalled()
+    expect(h.leases[0]!.release).toHaveBeenCalled()
+    expect(h.leases[0]!.cancel).not.toHaveBeenCalled()
+    expect(h.ctx.refs.runtimeWorkSessionIdRef.current).toBeNull()
   })
 
-  it('fails early and cancels the lease when the source does not open', async () => {
-    openSessionMock.mockRejectedValue(
-      Object.assign(new Error('open exploded'), { code: 'RAW_OPEN_FAILED' }),
-    )
-    const { ctx, host } = buildLeaseContext()
+  it.each([
+    [
+      'the runtime build has no probe',
+      undefined,
+      'Full-resolution export is not available in this runtime build yet.',
+    ],
+    [
+      'the probe rejects',
+      () => Promise.reject(new Error('probe exploded')),
+      'probe exploded',
+    ],
+  ] as const)(
+    'marks full-resolution export unsupported when %s',
+    async (_case, probeExportCapability, reason) => {
+      const h = createLoad()
+      h.open.mockResolvedValue(
+        createRuntimeSession(
+          probeExportCapability ? { probeExportCapability } : {},
+        ),
+      )
 
-    await orchestrateRawLoad(new File(['raw'], 'broken.ARW'), ctx)
+      await orchestrateRawLoad(rawFile(), h.ctx)
 
-    const [lease] = host.leases
-    expect(lease!.open).toHaveBeenCalledTimes(1)
-    expect(lease!.cancel).toHaveBeenCalled()
-    expect(ctx.atoms.setError).toHaveBeenLastCalledWith('open exploded')
-    expect(ctx.atoms.setStatus).toHaveBeenLastCalledWith('error')
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBeNull()
-  })
+      expect(h.store.get()?.exportState.fullResCapability).toEqual({
+        status: 'unsupported',
+        reason,
+      })
+    },
+  )
 
-  it('cancels the lease without opening when prewarm fails', async () => {
-    const host = createLeaseHost(async () => ({
-      status: 'failed',
-      reason: 'no runtime',
-    }))
-    const ctx = buildContext(
-      {
-        order: [],
-        yieldToPaint: () => Promise.resolve(),
-        getPrewarmState: () => 'idle',
-      },
-      host,
-    )
+  /** Holds the first load's step at a phase on `held`; later calls answer. */
+  const HOLD_AT = {
+    'detects capability': (_h: Load, held: Promise<never>) =>
+      capabilityVectorMock.detectCapabilityVector.mockReturnValueOnce(held),
+    'resolves the preview backend': (_h: Load, held: Promise<never>) =>
+      previewBackendMock.resolvePreviewBackend.mockReturnValueOnce(held),
+    warms: (h: Load, held: Promise<never>) => {
+      vi.mocked(h.ctx.services.getPrewarmState).mockReturnValueOnce('pending')
+      return h.prewarm.mockReturnValueOnce(held)
+    },
+    opens: (h: Load, held: Promise<never>) => h.open.mockReturnValueOnce(held),
+    'decodes quick': (h: Load, held: Promise<never>) => {
+      const session = createRuntimeSession({ decodeQuickRaw: () => held })
+      h.open.mockResolvedValueOnce(session)
+      return vi.spyOn(session, 'decodeQuickRaw')
+    },
+    'decodes bounded HQ': (h: Load, held: Promise<never>) => {
+      const session = createRuntimeSession({ decodeBoundedHqRaw: () => held })
+      h.open.mockResolvedValueOnce(session)
+      return vi.spyOn(session, 'decodeBoundedHqRaw')
+    },
+  }
 
-    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-
-    const [lease] = host.leases
-    expect(lease!.prewarm).toHaveBeenCalledTimes(1)
-    expect(lease!.open).not.toHaveBeenCalled()
-    expect(lease!.cancel).toHaveBeenCalled()
-    expect(ctx.atoms.setError).toHaveBeenLastCalledWith('no runtime')
-  })
-
-  it('reports nothing when a newer load ends its warm-up', async () => {
-    const warmup = deferred<never>()
-    const host = createLeaseHost(() => warmup.promise)
-    const ctx = buildContext(
-      {
-        order: [],
-        yieldToPaint: () => Promise.resolve(),
-        getPrewarmState: () => 'pending',
-      },
-      host,
-    )
-
-    const load = orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-    await vi.waitFor(() => expect(host.leases[0]!.prewarm).toHaveBeenCalled())
-    ctx.refs.runtimeWorkSessionIdRef.current = 'newer-session'
-    warmup.reject(
+  it.each([
+    ['detects capability', CAPABILITY, 'cancel'],
+    ['resolves the preview backend', { backend: 'cpu' }, 'cancel'],
+    [
+      'warms',
       Object.assign(new Error('The RAW session lease ended.'), {
         code: 'RAW_JOB_CANCELLED',
       }),
-    )
-    await load
+      'cancel',
+    ],
+    ['opens', new Error('open exploded'), 'cancel'],
+    ['decodes quick', new Error('decode exploded'), 'release'],
+    [
+      'decodes bounded HQ',
+      createTestDecodedImage({ source: 'bounded-hq' }),
+      'release',
+    ],
+  ] as const)(
+    'leaves its successor alone when a load replaced while it %s settles late',
+    async (phase, late, end) => {
+      const h = createLoad()
+      h.open.mockReturnValue(never())
+      const held = deferred<never>()
+      const step = HOLD_AT[phase](h, held.promise)
 
-    expect(host.leases[0]!.open).not.toHaveBeenCalled()
-    expect(host.leases[0]!.cancel).toHaveBeenCalled()
-    expect(ctx.atoms.setError).not.toHaveBeenCalledWith(
-      'The RAW session lease ended.',
-    )
-    expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
-    expect(ctx.services.notify).not.toHaveBeenCalled()
-  })
+      const first = orchestrateRawLoad(rawFile('first.ARW'), h.ctx)
+      await vi.waitFor(() => expect(step).toHaveBeenCalled())
+      void orchestrateRawLoad(rawFile('second.ARW'), h.ctx)
+      await vi.waitFor(() => expect(h.leases[1]?.open).toHaveBeenCalled())
+      const successor = h.store.get()!
+      const sessionWrites = vi.mocked(h.ctx.atoms.setSession).mock.calls.length
+      const frameWrites = vi.mocked(h.ctx.services.setDecodedImageRef).mock
+        .calls.length
 
-  it('publishes nothing from an open that settles after unmount and cancels the lease', async () => {
+      if (late instanceof Error) held.reject(late)
+      else held.resolve(late as never)
+      await first
+      await vi.waitFor(() => expect(h.leases[0]![end]).toHaveBeenCalled())
+
+      expect(h.store.get()).toBe(successor)
+      expect(h.ctx.refs.runtimeWorkSessionIdRef.current).toBe(successor.id)
+      expect(h.ctx.refs.pendingLoadSessionIdRef.current).toBe(successor.id)
+      expect(h.ctx.atoms.setSession).toHaveBeenCalledTimes(sessionWrites)
+      expect(h.ctx.services.setDecodedImageRef).toHaveBeenCalledTimes(
+        frameWrites,
+      )
+      expect(h.ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
+      expect(h.ctx.services.notify).not.toHaveBeenCalled()
+      expect(h.leases[1]!.cancel).not.toHaveBeenCalled()
+      expect(h.leases[1]!.release).not.toHaveBeenCalled()
+    },
+  )
+
+  it('publishes nothing from an open that settles after the view unmounts, and cancels its lease', async () => {
     const open = deferred<RawRuntimeSession>()
-    const runtimeSession = createRuntimeSession()
-    openSessionMock.mockReturnValue(open.promise)
-    const { ctx, host } = buildLeaseContext()
+    const session = createRuntimeSession()
+    const h = createLoad()
+    h.open.mockReturnValue(open.promise)
 
-    const load = orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-    await vi.waitFor(() => expect(openSessionMock).toHaveBeenCalled())
-    const sessionWrites = vi.mocked(ctx.atoms.setSession).mock.calls.length
-    ctx.refs.isMountedRef.current = false
-    open.resolve(runtimeSession)
+    const load = orchestrateRawLoad(rawFile(), h.ctx)
+    await vi.waitFor(() => expect(h.open).toHaveBeenCalled())
+    const sessionWrites = vi.mocked(h.ctx.atoms.setSession).mock.calls.length
+    h.ctx.refs.isMountedRef.current = false
+    open.resolve(session)
     await load
 
-    expect(host.leases[0]!.cancel).toHaveBeenCalled()
-    expect(runtimeSession.decodeQuickRaw).not.toHaveBeenCalled()
-    expect(ctx.atoms.setSession).toHaveBeenCalledTimes(sessionWrites)
-    expect(ctx.atoms.setError).not.toHaveBeenCalledWith(expect.any(String))
+    expect(session.decodeQuickRaw).not.toHaveBeenCalled()
+    expect(h.ctx.atoms.setSession).toHaveBeenCalledTimes(sessionWrites)
+    expect(h.ctx.atoms.setError).not.toHaveBeenCalledWith(expect.any(String))
+    expect(h.leases[0]!.cancel).toHaveBeenCalled()
   })
 
-  it('publishes no bounded HQ frame after unmount and still releases the lease', async () => {
-    const boundedHq = deferred<DecodedImage>()
-    const runtimeSession = createRuntimeSession({
-      decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
+  it('publishes no frame once the store holds another session, even while the runtime epoch still names the load', async () => {
+    const quick = deferred<DecodedImage>()
+    const session = createRuntimeSession({
+      decodeQuickRaw: vi.fn(() => quick.promise),
     })
-    openSessionMock.mockResolvedValue(runtimeSession)
-    const { ctx, host } = buildLeaseContext()
+    const h = createLoad()
+    h.open.mockResolvedValue(session)
 
-    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-    const decodedWrites = vi.mocked(ctx.services.setDecodedImageRef).mock.calls
-      .length
-    ctx.refs.isMountedRef.current = false
-    boundedHq.resolve(createDecodedImage(4243, 2828))
+    const load = orchestrateRawLoad(rawFile('first.ARW'), h.ctx)
+    await vi.waitFor(() => expect(session.decodeQuickRaw).toHaveBeenCalled())
+    const loadSessionId = h.store.get()!.id
+    const successor = createTestSession({ id: 'successor' })
+    h.store.set(successor)
+    quick.resolve(createTestDecodedImage())
+    await load
 
-    await vi.waitFor(() => expect(host.leases[0]!.release).toHaveBeenCalled())
-    expect(ctx.services.setDecodedImageRef).toHaveBeenCalledTimes(decodedWrites)
-    expect(ctx.services.notify).not.toHaveBeenCalled()
-  })
-
-  it('reports a loaded source once its bounded HQ frame is ready', async () => {
-    const boundedHq = deferred<DecodedImage>()
-    openSessionMock.mockResolvedValue(
-      createRuntimeSession({
-        decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
-      }),
+    expect(h.ctx.refs.runtimeWorkSessionIdRef.current).toBe(loadSessionId)
+    expect(h.store.get()).toBe(successor)
+    expect(h.ctx.services.setDecodedImageRef).toHaveBeenCalledExactlyOnceWith(
+      null,
     )
-    const { ctx, host } = buildLeaseContext()
-
-    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
-    expect(ctx.services.notify).not.toHaveBeenCalled()
-
-    boundedHq.resolve({
-      ...createDecodedImage(4243, 2828),
-      metadata: { width: 4243, height: 2828, make: 'Sony', model: 'ILCE-7RM5' },
-    })
-    await vi.waitFor(() => expect(host.leases[0]!.release).toHaveBeenCalled())
-
-    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
-      [
-        {
-          kind: 'loaded',
-          fileName: 'sample.ARW',
-          width: 4243,
-          height: 2828,
-          make: 'Sony',
-          model: 'ILCE-7RM5',
-        },
-      ],
-    ])
+    expect(h.ctx.atoms.setStatus).not.toHaveBeenCalledWith('ready')
   })
+
+  it.each([
+    {
+      failure: 'the source does not open',
+      message: 'open exploded',
+      opens: true,
+      arrange: (h: Load) =>
+        h.open.mockRejectedValue(
+          Object.assign(new Error('open exploded'), {
+            code: 'RAW_OPEN_FAILED',
+          }),
+        ),
+    },
+    {
+      failure: 'the open rejects without a message',
+      message: null,
+      opens: true,
+      arrange: (h: Load) => h.open.mockRejectedValue({ reason: 'closed' }),
+    },
+    {
+      failure: 'the runtime does not warm',
+      message: 'no runtime',
+      opens: false,
+      arrange: (h: Load) => {
+        vi.mocked(h.ctx.services.getPrewarmState).mockReturnValue('idle')
+        h.prewarm.mockResolvedValue({ status: 'failed', reason: 'no runtime' })
+      },
+    },
+    {
+      failure: 'the preview backend fails',
+      message: 'WebGPU preview is unavailable',
+      opens: false,
+      arrange: () =>
+        previewBackendMock.resolvePreviewBackend.mockRejectedValue(
+          new Error('WebGPU preview is unavailable'),
+        ),
+    },
+    {
+      failure: 'the session cannot be created',
+      message: 'session creation failed',
+      opens: false,
+      arrange: (h: Load) =>
+        vi.mocked(h.ctx.services.replaceFile).mockImplementation(() => {
+          throw new Error('session creation failed')
+        }),
+    },
+  ])(
+    'reports one load failure and cancels its lease when $failure',
+    async ({ message, opens, arrange }) => {
+      const h = createLoad()
+      arrange(h)
+
+      await orchestrateRawLoad(rawFile('broken.ARW'), h.ctx)
+
+      expect(h.ctx.atoms.setError).toHaveBeenLastCalledWith(
+        message ?? 'Failed to load file',
+      )
+      expect(h.ctx.atoms.setStatus).toHaveBeenLastCalledWith('error')
+      expect(h.ctx.services.notify).toHaveBeenCalledExactlyOnceWith({
+        kind: 'load-failed',
+        message,
+      })
+      expect(h.open).toHaveBeenCalledTimes(opens ? 1 : 0)
+      expect(h.leases[0]!.cancel).toHaveBeenCalled()
+      expect(h.ctx.refs.runtimeWorkSessionIdRef.current).toBeNull()
+    },
+  )
 
   it('reports an unavailable preview once when the quick decode fails', async () => {
-    openSessionMock.mockResolvedValue(
+    const h = createLoad()
+    h.open.mockResolvedValue(
       createRuntimeSession({
         decodeQuickRaw: vi.fn().mockRejectedValue(
           Object.assign(new Error('decode exploded'), {
@@ -834,302 +623,25 @@ describe('orchestrateRawLoad host session lease', () => {
         ),
       }),
     )
-    const { ctx } = buildLeaseContext()
 
-    await orchestrateRawLoad(new File(['raw'], 'sample.ARW'), ctx)
+    await orchestrateRawLoad(rawFile(), h.ctx)
 
-    expect(ctx.atoms.setStatus).toHaveBeenLastCalledWith('error')
-    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
-      [{ kind: 'preview-unavailable' }],
-    ])
+    expect(h.ctx.atoms.setError).toHaveBeenLastCalledWith('decode exploded')
+    expect(h.ctx.atoms.setStatus).toHaveBeenLastCalledWith('error')
+    expect(h.ctx.services.notify).toHaveBeenCalledExactlyOnceWith({
+      kind: 'preview-unavailable',
+    })
   })
 
-  it('reports a load failure with the error message when the source does not open', async () => {
-    openSessionMock.mockRejectedValue(
-      Object.assign(new Error('open exploded'), { code: 'RAW_OPEN_FAILED' }),
-    )
-    const { ctx } = buildLeaseContext()
+  it('refuses an unsupported file before any work and reports nothing', async () => {
+    const h = createLoad()
 
-    await orchestrateRawLoad(new File(['raw'], 'broken.ARW'), ctx)
+    await orchestrateRawLoad(new File(['x'], 'notes.txt'), h.ctx)
 
-    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
-      [{ kind: 'load-failed', message: 'open exploded' }],
-    ])
-  })
-
-  it('reports a load failure without a message when the rejection carries none', async () => {
-    openSessionMock.mockRejectedValue({ reason: 'socket closed' })
-    const { ctx } = buildLeaseContext()
-
-    await orchestrateRawLoad(new File(['raw'], 'broken.ARW'), ctx)
-
-    expect(ctx.atoms.setError).toHaveBeenLastCalledWith('Failed to load file')
-    expect(vi.mocked(ctx.services.notify).mock.calls).toEqual([
-      [{ kind: 'load-failed', message: null }],
-    ])
-  })
-
-  it('reports nothing for an unsupported file', async () => {
-    const { ctx } = buildLeaseContext()
-
-    await orchestrateRawLoad(new File(['x'], 'notes.txt'), ctx)
-
-    expect(ctx.atoms.setError).toHaveBeenCalledWith(
+    expect(h.ctx.atoms.setError).toHaveBeenCalledExactlyOnceWith(
       'Unsupported file format: notes.txt',
     )
-    expect(ctx.services.notify).not.toHaveBeenCalled()
-  })
-
-  it('begins a fresh lease for each load', async () => {
-    openSessionMock.mockImplementation(async () => createRuntimeSession())
-    const { ctx, host } = buildLeaseContext()
-
-    await orchestrateRawLoad(new File(['raw'], 'a.ARW'), ctx)
-    await orchestrateRawLoad(new File(['raw'], 'b.ARW'), ctx)
-
-    expect(host.beginRuntimeSession).toHaveBeenCalledTimes(2)
-    expect(host.leases[0]!.open).toHaveBeenCalledTimes(1)
-    expect(host.leases[1]!.open).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('orchestrateRawLoad session store', () => {
-  const capability: CapabilityVector = {
-    coi: false,
-    pthread: false,
-    deviceMemoryGB: null,
-    hwConcurrency: 2,
-    webKitClass: 'unknown',
-    deviceFormFactor: 'unknown',
-    maybeOpfsSupported: false,
-  }
-
-  beforeEach(() => {
-    openSessionMock.mockReset()
-    previewBackendMock.resolvePreviewBackend
-      .mockReset()
-      .mockResolvedValue({ backend: 'cpu' })
-    capabilityVectorMock.getCapabilityVectorSnapshot.mockReset()
-    capabilityVectorMock.detectCapabilityVector
-      .mockReset()
-      .mockResolvedValue(capability)
-    previewGpuBudgetMock.detectPreviewGpuCapabilitySnapshot
-      .mockReset()
-      .mockReturnValue(null)
-    previewGpuBudgetMock.derivePreviewGpuBudget.mockReset()
-  })
-
-  function createParsedLut(): ParsedLUT {
-    const cube = `TITLE "Store Look"\nLUT_3D_SIZE 2\n${'0 0 0\n'.repeat(8)}`
-    return {
-      ...parseCubeLUT(cube, { sourceName: 'store-look.cube' }),
-      fingerprint: 'store-look-fingerprint',
-      profileResolution: { kind: 'unknown' },
-    }
-  }
-
-  function buildStoreContext(
-    options: {
-      store?: ReturnType<typeof createSessionStore>
-      host?: ReturnType<typeof createLeaseHost>
-      getPrewarmState?: OrderingHooks['getPrewarmState']
-    } = {},
-  ) {
-    const store = options.store ?? createSessionStore()
-    const host = options.host ?? createLeaseHost()
-    const ctx = buildContext(
-      {
-        order: [],
-        yieldToPaint: () => Promise.resolve(),
-        getPrewarmState: options.getPrewarmState ?? (() => 'ready'),
-      },
-      host,
-      store,
-    )
-    return { ctx, store, host }
-  }
-
-  it('publishes the replacement to the store before any later command in the same tick', () => {
-    openSessionMock.mockImplementation(() => new Promise(() => {}))
-    const { ctx, store } = buildStoreContext()
-
-    void orchestrateRawLoad(new File(['raw'], 'next.ARW'), ctx)
-
-    // Nothing has been awaited yet: the next command in this tick reads the
-    // replacement, with its load already started, from the store.
-    const published = store.get()
-    expect(published?.sourceFile.name).toBe('next.ARW')
-    expect(published?.id).toBe(ctx.refs.runtimeWorkSessionIdRef.current)
-    expect(published?.id).toBe(ctx.refs.pendingLoadSessionIdRef.current)
-    expect(published?.viewState).toMatchObject({
-      mode: 'compare',
-      compareSplit: 0.5,
-    })
-  })
-
-  it('carries the look strength the store holds when the load starts', async () => {
-    openSessionMock.mockImplementation(() => new Promise(() => {}))
-    const lut = createParsedLut()
-    const store = createSessionStore(
-      createImageSession(new File(['raw'], 'first.ARW'), {
-        activeStyle: { ...toCustomStyle(lut), currentIntensity: 0.33 },
-      }),
-    )
-    const { ctx } = buildStoreContext({ store })
-    vi.mocked(ctx.atoms.getLut).mockReturnValue(lut)
-
-    void orchestrateRawLoad(new File(['raw'], 'second.ARW'), ctx)
-    await flushMicrotasks()
-
-    expect(store.get()).toMatchObject({
-      sourceFile: { name: 'second.ARW' },
-      activeStyle: { kind: 'custom', currentIntensity: 0.33 },
-    })
-    expect(ctx.atoms.setColorIntent).toHaveBeenCalledTimes(1)
-  })
-
-  it('publishes no frame once the store holds another session, even while the runtime epoch still names the load', async () => {
-    const quick = deferred<DecodedImage>()
-    const runtimeSession = createRuntimeSession({
-      decodeQuickRaw: vi.fn(() => quick.promise),
-    })
-    openSessionMock.mockResolvedValue(runtimeSession)
-    const { ctx, store } = buildStoreContext()
-
-    const load = orchestrateRawLoad(new File(['raw'], 'first.ARW'), ctx)
-    await vi.waitFor(() =>
-      expect(runtimeSession.decodeQuickRaw).toHaveBeenCalled(),
-    )
-    const loadSessionId = store.get()!.id
-    const successor = createImageSession(new File(['raw'], 'other.ARW'))
-    store.set(successor)
-    quick.resolve(createDecodedImage(1600, 1067))
-    await load
-
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBe(loadSessionId)
-    expect(store.get()).toBe(successor)
-    expect(ctx.services.setDecodedImageRef).toHaveBeenCalledTimes(1)
-    expect(ctx.services.setDecodedImageRef).toHaveBeenCalledWith(null)
-    expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('ready')
-  })
-
-  it('leaves the successor alone when a replaced open rejects late', async () => {
-    const lateOpen = deferred<RawRuntimeSession>()
-    const successorOpen = deferred<RawRuntimeSession>()
-    openSessionMock
-      .mockReturnValueOnce(lateOpen.promise)
-      .mockReturnValueOnce(successorOpen.promise)
-    const { ctx, store, host } = buildStoreContext()
-
-    const first = orchestrateRawLoad(new File(['raw'], 'first.ARW'), ctx)
-    await vi.waitFor(() => expect(openSessionMock).toHaveBeenCalledTimes(1))
-    void orchestrateRawLoad(new File(['raw'], 'second.ARW'), ctx)
-    await vi.waitFor(() => expect(openSessionMock).toHaveBeenCalledTimes(2))
-    const successor = store.get()!
-    expect(successor.sourceFile.name).toBe('second.ARW')
-
-    lateOpen.reject(
-      Object.assign(new Error('open exploded'), { code: 'RAW_OPEN_FAILED' }),
-    )
-    await first
-
-    expect(store.get()).toBe(successor)
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBe(successor.id)
-    expect(ctx.refs.pendingLoadSessionIdRef.current).toBe(successor.id)
-    expect(ctx.atoms.setError).not.toHaveBeenCalledWith('open exploded')
-    expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
-    expect(ctx.services.notify).not.toHaveBeenCalled()
-    expect(host.leases[0]!.cancel).toHaveBeenCalled()
-    expect(host.leases[1]!.cancel).not.toHaveBeenCalled()
-    expect(host.leases[1]!.release).not.toHaveBeenCalled()
-  })
-
-  it('reports nothing from a replaced quick decode that fails late', async () => {
-    const quick = deferred<DecodedImage>()
-    const replaced = createRuntimeSession({
-      decodeQuickRaw: vi.fn(() => quick.promise),
-    })
-    openSessionMock
-      .mockResolvedValueOnce(replaced)
-      .mockReturnValueOnce(new Promise(() => {}))
-    const { ctx, store } = buildStoreContext()
-
-    const first = orchestrateRawLoad(new File(['raw'], 'first.ARW'), ctx)
-    await vi.waitFor(() => expect(replaced.decodeQuickRaw).toHaveBeenCalled())
-    void orchestrateRawLoad(new File(['raw'], 'second.ARW'), ctx)
-    await vi.waitFor(() => expect(openSessionMock).toHaveBeenCalledTimes(2))
-    const successor = store.get()!
-    const sessionWrites = vi.mocked(ctx.atoms.setSession).mock.calls.length
-
-    quick.reject(
-      Object.assign(new Error('decode exploded'), {
-        code: 'RAW_DECODE_FAILED',
-      }),
-    )
-    await first
-
-    expect(store.get()).toBe(successor)
-    expect(ctx.atoms.setSession).toHaveBeenCalledTimes(sessionWrites)
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBe(successor.id)
-    expect(ctx.refs.pendingLoadSessionIdRef.current).toBe(successor.id)
-    expect(ctx.atoms.setStatus).not.toHaveBeenCalledWith('error')
-    expect(ctx.services.notify).not.toHaveBeenCalled()
-  })
-
-  it('opens nothing for a load replaced while it warms and leaves the successor its epochs', async () => {
-    const warmup = deferred<{ status: 'ready' }>()
-    const prewarm = vi
-      .fn<RawRuntimeSessionLease['prewarm']>()
-      .mockReturnValueOnce(warmup.promise)
-      .mockResolvedValue({ status: 'ready' })
-    const host = createLeaseHost(prewarm)
-    const getPrewarmState = vi
-      .fn<OrderingHooks['getPrewarmState']>()
-      .mockReturnValueOnce('pending')
-      .mockReturnValue('ready')
-    openSessionMock.mockReturnValue(new Promise(() => {}))
-    const { ctx, store } = buildStoreContext({ host, getPrewarmState })
-
-    const first = orchestrateRawLoad(new File(['raw'], 'first.ARW'), ctx)
-    await vi.waitFor(() => expect(host.leases[0]!.prewarm).toHaveBeenCalled())
-    void orchestrateRawLoad(new File(['raw'], 'second.ARW'), ctx)
-    await vi.waitFor(() => expect(host.leases[1]!.open).toHaveBeenCalled())
-    const successor = store.get()!
-
-    warmup.resolve({ status: 'ready' })
-    await first
-
-    expect(host.leases[0]!.open).not.toHaveBeenCalled()
-    expect(host.leases[0]!.cancel).toHaveBeenCalled()
-    expect(openSessionMock).toHaveBeenCalledTimes(1)
-    expect(store.get()).toBe(successor)
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBe(successor.id)
-    expect(ctx.refs.pendingLoadSessionIdRef.current).toBe(successor.id)
-  })
-
-  it('keeps the bounded HQ lease of a replaced load until it settles, then leaves the successor epoch', async () => {
-    const boundedHq = deferred<DecodedImage>()
-    const replaced = createRuntimeSession({
-      decodeBoundedHqRaw: vi.fn(() => boundedHq.promise),
-    })
-    openSessionMock
-      .mockResolvedValueOnce(replaced)
-      .mockReturnValueOnce(new Promise(() => {}))
-    const { ctx, store, host } = buildStoreContext()
-
-    await orchestrateRawLoad(new File(['raw'], 'first.ARW'), ctx)
-    expect(host.leases[0]!.release).not.toHaveBeenCalled()
-    void orchestrateRawLoad(new File(['raw'], 'second.ARW'), ctx)
-    await vi.waitFor(() => expect(openSessionMock).toHaveBeenCalledTimes(2))
-    const successor = store.get()!
-    const decodedWrites = vi.mocked(ctx.services.setDecodedImageRef).mock.calls
-      .length
-
-    boundedHq.resolve(createDecodedImage(4243, 2828))
-    await vi.waitFor(() => expect(host.leases[0]!.release).toHaveBeenCalled())
-
-    expect(ctx.services.setDecodedImageRef).toHaveBeenCalledTimes(decodedWrites)
-    expect(store.get()).toBe(successor)
-    expect(ctx.refs.runtimeWorkSessionIdRef.current).toBe(successor.id)
+    expect(h.ctx.services.beginRuntimeSession).not.toHaveBeenCalled()
+    expect(h.ctx.services.notify).not.toHaveBeenCalled()
   })
 })
