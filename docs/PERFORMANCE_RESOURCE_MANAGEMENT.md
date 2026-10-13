@@ -15,27 +15,6 @@ browser, the file, and the benchmark that produced it, such as
 writer) or `packages/luma-raw-runtime/benchmarks/bench-runtime.ts` (RAW decode
 stages).
 
-The policy snapshot was checked on 2026-06-01 against the resource policy
-current at verification time. Source and test paths were last refreshed on
-2026-10-11. The refreshes followed these moves:
-
-- 2026-10-05: the policy and preview-plan modules moved into
-  `@lumaforge/render-engine`.
-- 2026-10-06: browser plan selection moved into
-  `src/lib/export/export-plan.ts`, and export interruption history moved to
-  source-scoped markers.
-- 2026-10-08: RAW decode work moved behind one runtime host per workflow, and
-  the processed-window export lifecycle moved into `@lumaforge/render-engine`.
-- 2026-10-09: the `/raw` mount took ownership of the session it publishes,
-  source teardown was delegated to the owners of each resource, each preview
-  GPU pipeline got one lifecycle owner, and decoded preview frames got an
-  identity their producer mints.
-- 2026-10-11: the CPU preview's cached originals go with the worker source they
-  were rendered from, a replaced decoded-frame resource no longer releases the
-  frame that replaced it, and Transform events are fenced by the lifetime of
-  the client that holds the frame. The on-device storage, online LUT source,
-  and Transform preview lifetimes were added.
-
 Primary implementation sources:
 
 - `src/lib/runtime/capability-vector.ts`
@@ -66,7 +45,7 @@ Primary implementation sources:
 - `src/lib/export/output-sink.ts`
 - `src/lib/export/opfs-output-lifetime.ts`
 
-External API facts checked during the 2026-06-01 refresh:
+External API facts, checked on 2026-06-01:
 
 - [MDN `navigator.deviceMemory`](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/deviceMemory):
   approximate, privacy-coarsened, limited browser availability.

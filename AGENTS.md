@@ -585,9 +585,10 @@ These are owner decisions. They override cleanup advice that says otherwise.
 - `README.md`, `docs/README.md`, and the user guides each have a Chinese
   twin (`README_zh.md`, `docs/README_zh.md`, and the `_zh` guides). Change a
   pair together so both say the same thing.
-- Write every repository path in this file in full from the repository root.
-  `pnpm check:agent-paths` fails on a backticked path that does not resolve;
-  CI runs it on every change, docs-only ones included.
+- Write every repository path in this file and in
+  `docs/PERFORMANCE_RESOURCE_MANAGEMENT.md` in full from the repository root.
+  `pnpm check:agent-paths` fails on a backticked path in either that does not
+  resolve; CI runs it on every change, docs-only ones included.
 - Code comments state the rule in place; do not point them at design
   documents or spec section numbers.
 - Keep docs self-contained when the user asks for calculation or architecture
@@ -674,8 +675,9 @@ These are owner decisions. They override cleanup advice that says otherwise.
 - CI follows the same split (jobs in `.github/workflows/build.yml`, aggregated
   by its `build` job; every job except `quality` is path-selected):
   - `quality` runs on every change, docs-only ones included. It runs
-    `scripts/quality/check-agent-paths.mjs` against this file, then installs
-    dependencies and runs `scripts/quality/check-test-projects.mjs` (every
+    `scripts/quality/check-agent-paths.mjs` against this file and the
+    performance reference, then installs dependencies and runs
+    `scripts/quality/check-test-projects.mjs` (every
     test file runs in exactly one Vitest project), `pnpm lint:check`,
     `pnpm typecheck:tooling`, `pnpm check:structure` (knip with
     `scripts/quality/knip.json`, then madge through

@@ -4,8 +4,9 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Checks that every repository path AGENTS.md names in backticks exists as
- * Git tracks it (or would track it), so a mistyped or moved path fails. A
+ * Checks that every repository path AGENTS.md and the performance reference
+ * name in backticks exists as Git tracks it (or would track it), so a
+ * mistyped or moved path fails. A
  * word is a path when it contains `/` or ends in a file extension; `~/x`
  * resolves under `src/`, and a package specifier must name a workspace
  * package, one of its export subpaths, or a declared dependency. Spans that start with a command
@@ -22,15 +23,21 @@ const EXTENSION =
 // nothing may be committed to.
 const ABSENT = new Set(['src/generated-routes.ts', 'docs/superpowers/'])
 const MODULE_SUFFIXES = ['', '.ts', '.tsx', '.mjs', '/index.ts', '/index.tsx']
+const DOCUMENTS = ['AGENTS.md', 'docs/PERFORMANCE_RESOURCE_MANAGEMENT.md']
 
 /**
  * @param {string} markdown
  * @param {{ files: string[], packages: Map<string, string[]>,
  *   dependencies: Set<string> }} repo Workspace package names map to their
  *   `exports` keys.
+ * @param {string} [document] The name problems are reported under.
  * @returns {string[]} One problem per word that does not resolve.
  */
-export function checkAgentPaths(markdown, { files, packages, dependencies }) {
+export function checkAgentPaths(
+  markdown,
+  { files, packages, dependencies },
+  document = 'AGENTS.md',
+) {
   const known = new Set(files)
   for (const file of files) {
     for (let at = file.indexOf('/'); at > 0; at = file.indexOf('/', at + 1)) {
@@ -61,7 +68,7 @@ export function checkAgentPaths(markdown, { files, packages, dependencies }) {
       if (SKIPPED.test(word) || ABSENT.has(word)) continue
       if (!word.includes('/') && !EXTENSION.test(word)) continue
       if (!resolves(word)) {
-        problems.push(`AGENTS.md:${line}: \`${word}\` does not resolve`)
+        problems.push(`${document}:${line}: \`${word}\` does not resolve`)
       }
     }
   }
@@ -97,9 +104,13 @@ export function loadRepo(root = ROOT) {
 }
 
 if (import.meta.main) {
-  const markdown = readFileSync(`${ROOT}AGENTS.md`, 'utf8')
-  const problems = checkAgentPaths(markdown, loadRepo())
+  const repo = loadRepo()
+  const problems = DOCUMENTS.flatMap((document) =>
+    checkAgentPaths(readFileSync(`${ROOT}${document}`, 'utf8'), repo, document),
+  )
   for (const problem of problems) console.error(problem)
-  if (problems.length === 0) console.log('AGENTS.md: every path resolves')
+  if (problems.length === 0) {
+    console.log(`${DOCUMENTS.join(', ')}: every path resolves`)
+  }
   process.exitCode = problems.length === 0 ? 0 : 1
 }
