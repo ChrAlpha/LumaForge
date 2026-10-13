@@ -135,7 +135,7 @@ export function MobileMoreSheet(props: {
             </section>
             <section className="grid gap-2">
               <h3 className="m-0 text-[0.66rem] font-semibold uppercase tracking-wide text-lf-on-photo-ink/55">
-                {t('raw.mobile.more.fileHeading')}
+                {t('raw.fileFacts.title')}
               </h3>
               <FactRows rows={props.fileRows} />
             </section>

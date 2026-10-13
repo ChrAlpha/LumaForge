@@ -70,7 +70,7 @@ export function MobileLutCatalogView({
         ariaLabel={
           isEntryFailed
             ? t('raw.lutSource.loadFailedRetry', { label: entry.title })
-            : t('raw.mobile.lut.loadEntry', { label: entry.title })
+            : t('raw.lutSource.load', { label: entry.title })
         }
         onClick={() => {
           void loadOnlineLutEntry(entry.id, onEntryLoaded)
@@ -91,7 +91,7 @@ export function MobileLutCatalogView({
         <div className="grid gap-2 px-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <span className="shrink-0 rounded-lf-pill border border-lf-on-photo-bord-soft bg-lf-on-photo-bg px-1.5 py-0.5 text-lf-eyebrow font-medium leading-none text-lf-on-photo-ink/62">
-              {t('raw.mobile.lut.entryCount', {
+              {t('raw.lutSource.countMany', {
                 count: selectedEntries.length,
               })}
             </span>

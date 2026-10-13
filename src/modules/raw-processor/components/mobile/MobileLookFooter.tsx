@@ -73,7 +73,7 @@ export function MobileLookFooter(props: {
               'shrink-0 px-1.5 font-semibold text-lf-on-photo-ink hover:text-lf-on-photo-ink',
             )}
           >
-            {t('raw.mobile.lut.retry')}
+            {t('raw.lutSource.retry')}
           </button>
         </span>
       )

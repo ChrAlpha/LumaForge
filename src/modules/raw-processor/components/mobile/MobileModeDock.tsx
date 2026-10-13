@@ -18,8 +18,8 @@ const TABS: {
   labelKey: Parameters<Translate>[0]
 }[] = [
   { id: 'look', icon: Wand2, labelKey: 'raw.mobile.mode.look' },
-  { id: 'tone', icon: SlidersHorizontal, labelKey: 'raw.mobile.mode.adjust' },
-  { id: 'transform', icon: Scan, labelKey: 'raw.mobile.mode.transform' },
+  { id: 'tone', icon: SlidersHorizontal, labelKey: 'raw.adjust.title' },
+  { id: 'transform', icon: Scan, labelKey: 'raw.transform.title' },
 ]
 
 /**

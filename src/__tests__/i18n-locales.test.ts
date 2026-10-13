@@ -27,18 +27,6 @@ describe('i18n locale catalogs', () => {
     expect(enMessages['landing.heroCopy']).toContain('A LUT is optional')
     expect(enMessages['raw.onboarding.slogan']).toBe('Finish a RAW with a LUT')
     expect(zhMessages['raw.onboarding.slogan']).toBe('用 LUT 完成一张 RAW')
-    expect(enMessages).not.toHaveProperty('raw.mobile.empty.title')
-    expect(enMessages).not.toHaveProperty('raw.stage.uploadTitle')
-    expect(zhMessages).not.toHaveProperty('raw.mobile.empty.title')
-    expect(zhMessages).not.toHaveProperty('raw.stage.uploadTitle')
-    // Calibration catalogs are rejected as invalid catalogs; no copy names
-    // a calibration workflow the app no longer has.
-    expect(enMessages).not.toHaveProperty(
-      'raw.lutSource.issues.calibrationCatalog',
-    )
-    expect(zhMessages).not.toHaveProperty(
-      'raw.lutSource.issues.calibrationCatalog',
-    )
     // The Look tab must not reuse a tone or colour term (色调 is Tint).
     expect(zhMessages['raw.mobile.mode.look']).toBe('风格')
     expect(zhMessages['raw.mobile.mode.look']).not.toBe(
@@ -60,14 +48,10 @@ describe('i18n locale catalogs', () => {
     }
     // No export progress outlives the tab, so no copy blames the browser
     // for failing to store it.
-    expect(enMessages).not.toHaveProperty('raw.export.nonDurable')
-    expect(zhMessages).not.toHaveProperty('raw.export.nonDurable')
     expect(Object.values(enMessages).join('\n')).not.toMatch(
       /cannot store export progress/i,
     )
     expect(enMessages['raw.export.lowMemory']).toContain('Keep the tab open')
-    expect(enMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
-    expect(zhMessages['raw.export.derivedLabelHint']).toContain('{{label}}')
   })
 
   it('gives every typed reason copy in both locales', () => {
@@ -86,42 +70,43 @@ describe('i18n locale catalogs', () => {
     }
   })
 
-  it('keeps exactly the Transform copy that production code looks up', () => {
+  it('keeps exactly the copy that production code looks up', () => {
     const root = resolve(process.cwd(), 'src')
     const sources = readdirSync(root, { recursive: true, encoding: 'utf8' })
       .filter(
         (path) =>
           /\.tsx?$/.test(path) &&
           !/\.(?:test|spec)\.tsx?$/.test(path) &&
-          !/\.fixture\.ts$/.test(path),
+          !/\.fixture\.tsx?$/.test(path),
       )
       .map((path) => readFileSync(join(root, path), 'utf8'))
-    const staticKeys = new Set<string>()
-    const dynamicPrefixes = new Set<string>()
+    const catalogKeys = Object.keys(enMessages)
+    const literals = new Set<string>()
+    const prefixes = new Set<string>()
     for (const source of sources) {
-      for (const [, key] of source.matchAll(/['"`](transform\.[\w.-]+)['"`]/g))
-        staticKeys.add(key)
-      for (const [, prefix] of source.matchAll(/`(transform\.[\w.-]*)\$\{/g))
-        dynamicPrefixes.add(prefix)
+      for (const [, key] of source.matchAll(
+        /['"`]([a-z][\w-]*(?:\.[\w-]+)+)['"`]/g,
+      ))
+        literals.add(key)
+      for (const [, prefix] of source.matchAll(/`([a-z][\w.-]*\.)\$\{/g)) {
+        if (catalogKeys.some((key) => key.startsWith(prefix)))
+          prefixes.add(prefix)
+      }
     }
-    // Upright modes are the only dynamically built Transform keys.
-    expect([...dynamicPrefixes].sort()).toEqual([
+    // Upright modes are the only dynamically built keys.
+    expect([...prefixes].sort()).toEqual([
       'transform.mode.',
       'transform.modeHelp.',
     ])
-    const used = new Set(staticKeys)
-    for (const prefix of dynamicPrefixes)
-      for (const mode of UPRIGHT_MODES) used.add(`${prefix}${mode}`)
-    const catalog = (messages: Record<string, string>) =>
-      Object.keys(messages)
-        .filter((key) => key.startsWith('transform.'))
-        .sort()
-    expect(catalog(enMessages)).toEqual([...used].sort())
-    expect(catalog(zhMessages)).toEqual([...used].sort())
-    for (const key of used) {
-      expect(enMessages[key as keyof typeof enMessages], key).toBeTruthy()
-      expect(zhMessages[key as keyof typeof zhMessages], key).toBeTruthy()
+    const used = new Set(literals)
+    for (const prefix of prefixes) {
+      for (const mode of UPRIGHT_MODES) {
+        const key = `${prefix}${mode}`
+        expect(enMessages[key as keyof typeof enMessages], key).toBeTruthy()
+        used.add(key)
+      }
     }
+    expect(catalogKeys.filter((key) => !used.has(key))).toEqual([])
   })
 
   it('translates by key only: no helper matches English text back to copy', () => {

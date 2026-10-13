@@ -49,7 +49,7 @@ export function MobileLutCatalogEntryButton(props: {
         // the icon and the word.
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-lf-on-photo-ink/80">
           <CircleAlert aria-hidden="true" className="size-3.5" />
-          {t('raw.mobile.lut.retry')}
+          {t('raw.lutSource.retry')}
         </span>
       ) : (
         <Download
