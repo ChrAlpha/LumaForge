@@ -3,16 +3,10 @@ import { loadNativeModuleForNode } from '@lumaforge/luma-native-artifacts/load-f
 import { createNativeFactory } from '../worker/native-adapter'
 import type { LumaRawRuntimeCore } from '../worker/runtime-core'
 import { createRuntimeCore } from '../worker/runtime-core'
+import { createDecodeSession } from './decode-session'
 import { LumaRawRuntimeError } from './errors'
 import type {
-  LumaEmbeddedPreview,
-  LumaRawBoundedHqOptions,
-  LumaRawCameraCalibrationProfile,
   LumaRawDecodeSession,
-  LumaRawExportCapability,
-  LumaRawFrame,
-  LumaRawProcessedWindow,
-  LumaRawProcessedWindowRequest,
   LumaRawQuickOptions,
   LumaRawRuntimeInfo,
   LumaRawRuntimeMemoryProfile,
@@ -179,98 +173,13 @@ export async function createLumaRawRuntimeForNode(
     )
 
     openSessionIds.add(sessionInfo.sessionId)
-    let sessionDisposed = false
-    const dispose = () => {
-      if (sessionDisposed) return
-      sessionDisposed = true
-      openSessionIds.delete(sessionInfo.sessionId)
-      void dispatch(
-        core,
-        'closeSession',
-        { sessionId: sessionInfo.sessionId },
-        counter,
-      ).catch(() => undefined)
-    }
-
-    return {
-      ...sessionInfo,
-      extractEmbeddedPreview(stageSignal?: AbortSignal) {
-        return dispatch(
-          core,
-          'extractEmbeddedPreviewFromSession',
-          { sessionId: sessionInfo.sessionId },
-          counter,
-          stageSignal,
-        ) as Promise<LumaEmbeddedPreview | null>
-      },
-      probeExportCapability(stageSignal?: AbortSignal) {
-        return dispatch(
-          core,
-          'probeExportCapabilityFromSession',
-          { sessionId: sessionInfo.sessionId },
-          counter,
-          stageSignal,
-        ) as Promise<LumaRawExportCapability>
-      },
-      readProcessedWindow(
-        request: LumaRawProcessedWindowRequest,
-        stageSignal?: AbortSignal,
-      ) {
-        return dispatch(
-          core,
-          'readProcessedWindowFromSession',
-          { sessionId: sessionInfo.sessionId, request },
-          counter,
-          stageSignal,
-        ) as Promise<LumaRawProcessedWindow>
-      },
-      applyCalibration(
-        profile: LumaRawCameraCalibrationProfile,
-        stageSignal?: AbortSignal,
-      ) {
-        return dispatch(
-          core,
-          'applyCalibrationToSession',
-          {
-            sessionId: sessionInfo.sessionId,
-            cameraCalibration: profile,
-          },
-          counter,
-          stageSignal,
-        ) as Promise<{ applied: true }>
-      },
-      decodeQuick(
-        stageOptions: LumaRawQuickOptions = quickOptions,
-        stageSignal?: AbortSignal,
-      ) {
-        return dispatch(
-          core,
-          'decodeQuickFromSession',
-          {
-            sessionId: sessionInfo.sessionId,
-            maxOutputPixels: stageOptions.maxOutputPixels,
-          },
-          counter,
-          stageSignal,
-        ) as Promise<LumaRawFrame>
-      },
-      decodeBoundedHq(
-        stageOptions: LumaRawBoundedHqOptions,
-        stageSignal?: AbortSignal,
-      ) {
-        return dispatch(
-          core,
-          'decodeBoundedHqFromSession',
-          {
-            sessionId: sessionInfo.sessionId,
-            maxOutputPixels: stageOptions.maxOutputPixels,
-          },
-          counter,
-          stageSignal,
-        ) as Promise<LumaRawFrame>
-      },
-      dispose,
-    }
+    return createDecodeSession(
+      sessionInfo,
+      quickOptions,
+      (type, payload, _transfer, stageSignal) =>
+        dispatch(core, type, payload, counter, stageSignal),
+      () => openSessionIds.delete(sessionInfo.sessionId),
+    )
   }
 
   return {

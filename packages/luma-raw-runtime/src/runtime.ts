@@ -1,9 +1,7 @@
+import { createDecodeSession } from './decode-session'
 import { LumaRawRuntimeError } from './errors'
 import type {
-  LumaRawBoundedHqOptions,
-  LumaRawCameraCalibrationProfile,
   LumaRawDecodeSession,
-  LumaRawExportCapability,
   LumaRawQuickOptions,
   LumaRawRuntime,
   LumaRawRuntimeInfo,
@@ -170,91 +168,9 @@ export function createLumaRawRuntime(
       readFile,
     )
 
-    let disposed = false
-    const closeSession = () => {
-      if (disposed) return
-      disposed = true
-      void client
-        .request('closeSession', { sessionId: sessionInfo.sessionId })
-        .catch(() => undefined)
-    }
-
-    return {
-      ...sessionInfo,
-      extractEmbeddedPreview(stageSignal?: AbortSignal) {
-        return client.request(
-          'extractEmbeddedPreviewFromSession',
-          { sessionId: sessionInfo.sessionId },
-          [],
-          stageSignal,
-        )
-      },
-      probeExportCapability(
-        stageSignal?: AbortSignal,
-      ): Promise<LumaRawExportCapability> {
-        return client.request(
-          'probeExportCapabilityFromSession',
-          { sessionId: sessionInfo.sessionId },
-          [],
-          stageSignal,
-        )
-      },
-      readProcessedWindow(request, stageSignal?: AbortSignal) {
-        return client.request(
-          'readProcessedWindowFromSession',
-          { sessionId: sessionInfo.sessionId, request },
-          [],
-          stageSignal,
-        )
-      },
-      applyCalibration(
-        profile: LumaRawCameraCalibrationProfile,
-        stageSignal?: AbortSignal,
-      ) {
-        const transferables: Transferable[] = [profile.xyzToCamera.buffer]
-        if (profile.toneCurveLut) {
-          transferables.push(profile.toneCurveLut.buffer)
-        }
-        return client.request(
-          'applyCalibrationToSession',
-          {
-            sessionId: sessionInfo.sessionId,
-            cameraCalibration: profile,
-          },
-          transferables,
-          stageSignal,
-        )
-      },
-      decodeQuick(
-        stageOptions: LumaRawQuickOptions = options,
-        stageSignal?: AbortSignal,
-      ) {
-        return client.request(
-          'decodeQuickFromSession',
-          {
-            sessionId: sessionInfo.sessionId,
-            maxOutputPixels: stageOptions.maxOutputPixels,
-          },
-          [],
-          stageSignal,
-        )
-      },
-      decodeBoundedHq(
-        stageOptions: LumaRawBoundedHqOptions,
-        stageSignal?: AbortSignal,
-      ) {
-        return client.request(
-          'decodeBoundedHqFromSession',
-          {
-            sessionId: sessionInfo.sessionId,
-            maxOutputPixels: stageOptions.maxOutputPixels,
-          },
-          [],
-          stageSignal,
-        )
-      },
-      dispose: closeSession,
-    }
+    return createDecodeSession(sessionInfo, options, (...args) =>
+      client.request(...args),
+    )
   }
 
   return {
