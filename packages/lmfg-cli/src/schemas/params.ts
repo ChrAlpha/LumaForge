@@ -61,16 +61,14 @@ export const BandShiftSchema = z.strictObject({
   lightness: bounded(HSL_SHIFT_BOUNDS).optional(),
 })
 
-export const SelectiveColorSchema = z.strictObject({
-  red: BandShiftSchema.optional(),
-  orange: BandShiftSchema.optional(),
-  yellow: BandShiftSchema.optional(),
-  green: BandShiftSchema.optional(),
-  aqua: BandShiftSchema.optional(),
-  blue: BandShiftSchema.optional(),
-  purple: BandShiftSchema.optional(),
-  magenta: BandShiftSchema.optional(),
-})
+export const SelectiveColorSchema = z.strictObject(
+  Object.fromEntries(
+    HSL_BAND_IDS.map((band) => [band, BandShiftSchema.optional()]),
+  ) as Record<
+    (typeof HSL_BAND_IDS)[number],
+    z.ZodOptional<typeof BandShiftSchema>
+  >,
+)
 
 /** Field schemas without defaults — shared by the full and override shapes. */
 const PARAM_FIELDS = {
@@ -112,59 +110,30 @@ export const PARAM_DEFAULTS = {
 }
 
 export const NUMERIC_PARAM_KEYS = [
-  'exposure_ev',
-  'contrast',
-  'highlights',
-  'shadows',
-  'whites',
-  'blacks',
-  'temperature',
-  'tint',
-  'saturation',
-  'vibrance',
+  ...(Object.keys(USER_COLOR_PARAM_KEYS) as UserColorParamKey[]),
   'intensity',
-] as const
+] as const satisfies readonly ParamKey[]
+
+type ParamKey = keyof typeof PARAM_FIELDS
+type ParamFields = typeof PARAM_FIELDS
+
+const PARAM_ENTRIES = Object.entries(PARAM_FIELDS) as {
+  [K in ParamKey]: [K, ParamFields[K]]
+}[ParamKey][]
 
 export const RenderParamsSchema = z
   .strictObject({
     schema: z.literal('lmfg.params.v1').optional(),
-    exposure_ev: PARAM_FIELDS.exposure_ev.default(PARAM_DEFAULTS.exposure_ev),
-    contrast: PARAM_FIELDS.contrast.default(PARAM_DEFAULTS.contrast),
-    highlights: PARAM_FIELDS.highlights.default(PARAM_DEFAULTS.highlights),
-    shadows: PARAM_FIELDS.shadows.default(PARAM_DEFAULTS.shadows),
-    whites: PARAM_FIELDS.whites.default(PARAM_DEFAULTS.whites),
-    blacks: PARAM_FIELDS.blacks.default(PARAM_DEFAULTS.blacks),
-    temperature: PARAM_FIELDS.temperature.default(PARAM_DEFAULTS.temperature),
-    tint: PARAM_FIELDS.tint.default(PARAM_DEFAULTS.tint),
-    saturation: PARAM_FIELDS.saturation.default(PARAM_DEFAULTS.saturation),
-    vibrance: PARAM_FIELDS.vibrance.default(PARAM_DEFAULTS.vibrance),
-    intensity: PARAM_FIELDS.intensity.default(PARAM_DEFAULTS.intensity),
-    raw_render_exposure: PARAM_FIELDS.raw_render_exposure.default(
-      PARAM_DEFAULTS.raw_render_exposure,
-    ),
-    selective_color: PARAM_FIELDS.selective_color.default(
-      PARAM_DEFAULTS.selective_color,
-    ),
-    lut: PARAM_FIELDS.lut.default(PARAM_DEFAULTS.lut),
+    ...(Object.fromEntries(
+      PARAM_ENTRIES.map(([key, field]) => [
+        key,
+        (field as z.ZodType).default(PARAM_DEFAULTS[key]),
+      ]),
+    ) as { [K in ParamKey]: z.ZodDefault<ParamFields[K]> }),
   })
   .transform(({ schema: _schema, ...rest }) => rest)
 
-export const RenderParamsOverrideSchema = z.strictObject({
-  exposure_ev: PARAM_FIELDS.exposure_ev.optional(),
-  contrast: PARAM_FIELDS.contrast.optional(),
-  highlights: PARAM_FIELDS.highlights.optional(),
-  shadows: PARAM_FIELDS.shadows.optional(),
-  whites: PARAM_FIELDS.whites.optional(),
-  blacks: PARAM_FIELDS.blacks.optional(),
-  temperature: PARAM_FIELDS.temperature.optional(),
-  tint: PARAM_FIELDS.tint.optional(),
-  saturation: PARAM_FIELDS.saturation.optional(),
-  vibrance: PARAM_FIELDS.vibrance.optional(),
-  intensity: PARAM_FIELDS.intensity.optional(),
-  raw_render_exposure: PARAM_FIELDS.raw_render_exposure.optional(),
-  selective_color: PARAM_FIELDS.selective_color.optional(),
-  lut: PARAM_FIELDS.lut.optional(),
-})
+export const RenderParamsOverrideSchema = z.strictObject(PARAM_FIELDS).partial()
 
 export type RenderParams = z.output<typeof RenderParamsSchema>
 export type RenderParamsOverride = z.output<typeof RenderParamsOverrideSchema>
