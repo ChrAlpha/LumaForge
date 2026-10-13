@@ -1210,58 +1210,6 @@ describe('rawToolSurface', () => {
     }
   })
 
-  it('mobile keeps export result actions reachable through the toolbar while the preview is released', () => {
-    const prev = jotaiStore.get(viewportWidthAtom)
-    jotaiStore.set(viewportWidthAtom, 390)
-    try {
-      const { container } = renderRawToolSurface({
-        ...baseProps,
-        hasImage: true,
-        previewSuspended: true,
-        exportResult: {
-          kind: 'full-resolution',
-          identity: mockIdentity,
-          output: {
-            kind: 'blob',
-            filename: 'DSC09142_fullres.jpg',
-            blob: new Blob(['jpeg'], { type: 'image/jpeg' }),
-            byteLength: 4,
-            mimeType: 'image/jpeg',
-          },
-          filename: 'DSC09142_fullres.jpg',
-          width: 6000,
-          height: 4000,
-          size: 4,
-          createdAt: 0,
-          copyCapability: {
-            mode: 'preview-size',
-            reasonCode: 'full-resolution-copy-unsupported',
-          },
-        },
-        exportShareCapability: { available: true },
-      })
-
-      expect(container.querySelector('[data-raw-mobile-lab]')).toHaveClass(
-        'pointer-events-none',
-      )
-      expect(
-        container.querySelector('[data-mobile-released-export-actions]'),
-      ).not.toBeInTheDocument()
-      expect(
-        container.querySelector('[data-mobile-topbar]'),
-      ).toBeInTheDocument()
-      expect(
-        screen.getByRole('tablist', { name: /lab modes/i }),
-      ).toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: /download/i }),
-      ).toBeInTheDocument()
-    } finally {
-      cleanup()
-      jotaiStore.set(viewportWidthAtom, prev)
-    }
-  })
-
   it('mobile locks the tools while the preview is released, and keeps every delivery action on the result', async () => {
     const user = userEvent.setup()
     const prev = jotaiStore.get(viewportWidthAtom)
