@@ -18,31 +18,6 @@ import type {
 } from '../../model/export-result'
 import type { SupportLevel } from '../../model/session'
 
-/**
- * Why a surface refuses an action: a fact of the surface policy, not of the
- * workflow. A workflow refusal (an export that cannot be reproduced, an HQ
- * preview not rendered yet) carries its own export reason, with its copy
- * below.
- */
-export const RAW_REASON_CODES = [
-  'no-source',
-  'runtime-warming',
-  'source-loading',
-  'preview-decoding',
-  'look-processing',
-  'export-running',
-  'preview-released',
-  'cpu-preview',
-  'transform-compare',
-  'transform-pending',
-  'transform-invalid',
-  'transform-unavailable',
-  'transform-hq-export',
-  'no-lut',
-] as const
-
-export type RawReasonCode = (typeof RAW_REASON_CODES)[number]
-
 /** Each surface reason reads as the copy the surfaces already show for it. */
 export const RAW_REASON_COPY = {
   'no-source': 'raw.preview.noImage',
@@ -59,11 +34,15 @@ export const RAW_REASON_COPY = {
   'transform-unavailable': 'raw.transform.unavailable',
   'transform-hq-export': 'raw.transform.hqExportReason',
   'no-lut': 'raw.strength.reason',
-} as const satisfies Record<RawReasonCode, MessageKey>
+} as const satisfies Record<string, MessageKey>
 
-export function rawReasonMessageKey(code: RawReasonCode): MessageKey {
-  return RAW_REASON_COPY[code]
-}
+/**
+ * Why a surface refuses an action: a fact of the surface policy, not of the
+ * workflow. A workflow refusal (an export that cannot be reproduced, an HQ
+ * preview not rendered yet) carries its own export reason, with its copy
+ * below.
+ */
+export type RawReasonCode = keyof typeof RAW_REASON_COPY
 
 /**
  * Why the processed preview does not draw the look as selected. The neutral
