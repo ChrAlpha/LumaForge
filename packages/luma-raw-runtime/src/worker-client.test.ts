@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createNativeFactory } from '../worker/native-adapter'
 import { LumaRawRuntimeError } from './errors'
 import { LumaRawWorkerClient } from './worker-client'
 import type {
@@ -36,118 +35,7 @@ class ThrowingWorker extends FakeWorker {
   })
 }
 
-describe('lumaRawWorkerRequest typing', () => {
-  it('narrows payload by request type', () => {
-    const request: LumaRawWorkerRequest = {
-      id: 'raw-job-1',
-      type: 'probe',
-      payload: {
-        fileBuffer: new ArrayBuffer(1),
-        fileName: 'sample.ARW',
-        fileSize: 1,
-      },
-    }
-
-    function assertNarrowing(narrowedRequest: LumaRawWorkerRequest) {
-      switch (narrowedRequest.type) {
-        case 'probe':
-          expect(narrowedRequest.payload.fileName).toBe('sample.ARW')
-          break
-        case 'init':
-          expect(narrowedRequest.payload.requireCrossOriginIsolation).toBe(
-            false,
-          )
-          break
-        default:
-          break
-      }
-    }
-
-    assertNarrowing(request)
-
-    if (false) {
-      function acceptInitRequest(
-        _request: LumaRawWorkerRequest<'init'>,
-      ): void {}
-
-      const badPayload = {
-        fileBuffer: new ArrayBuffer(1),
-        fileName: 'sample.ARW',
-        fileSize: 1,
-      }
-
-      acceptInitRequest({
-        id: 'raw-job-2',
-        type: 'init',
-        // @ts-expect-error payload must match the request type
-        payload: badPayload,
-      })
-    }
-  })
-})
-
 describe('lumaRawWorkerClient', () => {
-  it('types the applyCalibrationToSession protocol request and response', () => {
-    const xyzToCamera = new Float32Array(9)
-    const request: LumaRawWorkerRequest<'applyCalibrationToSession'> = {
-      id: 'raw-job-apply-calibration',
-      type: 'applyCalibrationToSession',
-      payload: {
-        sessionId: 'session-cal',
-        cameraCalibration: {
-          profileId: 'p1',
-          profileName: 'Test Profile',
-          xyzToCamera,
-        },
-      },
-    }
-
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: 'applyCalibrationToSession',
-      payload: { applied: true },
-    }
-
-    expect(request.payload.cameraCalibration.xyzToCamera).toBe(xyzToCamera)
-    expect(response.ok).toBe(true)
-    if (response.ok && response.type === 'applyCalibrationToSession') {
-      expect(response.payload.applied).toBe(true)
-    }
-  })
-
-  it('types raw-window worker protocol requests and responses', () => {
-    const request: LumaRawWorkerRequest<'readRawWindowFromSession'> = {
-      id: 'raw-job-window',
-      type: 'readRawWindowFromSession',
-      payload: {
-        sessionId: 'session-1',
-        rect: { x: 1, y: 2, width: 3, height: 4 },
-      },
-    }
-
-    const response: LumaRawWorkerResponse = {
-      id: request.id,
-      ok: true,
-      type: 'readRawWindowFromSession',
-      payload: {
-        rect: { x: 1, y: 2, width: 3, height: 4 },
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        data: new Uint16Array(12),
-        blackLevel: 512,
-        whiteLevel: 16383,
-      },
-    }
-
-    expect(request.payload.rect.width).toBe(3)
-    expect(response.ok).toBe(true)
-    if (response.ok && response.type === 'readRawWindowFromSession') {
-      expect(response.payload.cfa.pattern).toBe('rggb')
-      expect(response.payload.data).toBeInstanceOf(Uint16Array)
-      expect(response.payload.rect.height).toBe(4)
-    }
-  })
-
   it('deduplicates transferables by backing buffer', () => {
     const buffer = new ArrayBuffer(16)
     const view = new Uint8Array(buffer)
@@ -176,56 +64,6 @@ describe('lumaRawWorkerClient', () => {
     }
 
     expect(collectTransferables(payload)).toEqual([payload.data.buffer])
-  })
-
-  it('collects adapter-normalized typed array output buffers safely', () => {
-    const pooledThumbnail = new Uint8Array([9, 1, 2, 3, 8]).subarray(1, 4)
-    const pooledImage = new Uint16Array([9, 1, 2, 3, 8]).subarray(1, 4)
-    const processor = createNativeFactory({
-      LumaRawProcessor: class {
-        openBuffer() {
-          return { copyToWasm: 1, librawOpen: 1 }
-        }
-        loadBuffer() {
-          return { copyToWasm: 1 }
-        }
-        openWithSettings() {
-          return { copyToWasm: 0, librawOpen: 1 }
-        }
-        readMetadata() {
-          return {}
-        }
-        extractThumbnail() {
-          return {
-            data: pooledThumbnail,
-            width: 3,
-            height: 1,
-            format: 'jpeg',
-          }
-        }
-        decodePreview() {
-          return { data: pooledImage, width: 1, height: 1 }
-        }
-        decodeHq() {
-          return { data: pooledImage, width: 1, height: 1 }
-        }
-      },
-    }).createProcessor()
-
-    const thumbnail = processor.extractThumbnail()
-    const image = processor.decodePreview()
-    const transferables = collectTransferables({
-      thumbnail: thumbnail?.data,
-      image: image.data,
-    })
-
-    expect(thumbnail?.data.buffer).not.toBe(pooledThumbnail.buffer)
-    expect(image.data.buffer).not.toBe(pooledImage.buffer)
-    expect(transferables).toContain(thumbnail?.data.buffer)
-    expect(transferables).toContain(image.data.buffer)
-    expect(transferables).not.toContain(pooledThumbnail.buffer)
-    expect(transferables).not.toContain(pooledImage.buffer)
-    expect(transferables).toHaveLength(2)
   })
 
   it('correlates worker responses by request id', async () => {

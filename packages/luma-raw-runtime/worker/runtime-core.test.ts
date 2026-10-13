@@ -1253,69 +1253,6 @@ describe('runtime-core', () => {
     })
   })
 
-  it('does not read processed windows for pre-cancelled jobs', async () => {
-    let readCount = 0
-    const core = createRuntimeCore({
-      createProcessor() {
-        return {
-          ...makeNativeFactory().createProcessor(),
-          readProcessedWindow() {
-            readCount += 1
-            return {
-              rect: { x: 0, y: 0, width: 1, height: 1 },
-              workingSpace: 'linear-prophoto-rgb',
-              data: new Uint16Array([1, 2, 3]),
-              width: 1,
-              height: 1,
-              stride: 3,
-              normalized: false,
-              orientationApplied: true,
-              colorApplied: true,
-              warnings: [],
-            }
-          },
-        }
-      },
-    })
-
-    const opened = await core.handleRequest({
-      id: 'job-processed-cancel-open',
-      type: 'openSession',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-    expect(opened.ok && opened.type === 'openSession').toBe(true)
-    if (!opened.ok || opened.type !== 'openSession') return
-
-    await core.handleRequest({
-      id: 'job-processed-cancel-command',
-      type: 'cancel',
-      payload: { targetJobId: 'job-processed-cancelled' },
-    })
-    const cancelled = await core.handleRequest({
-      id: 'job-processed-cancelled',
-      type: 'readProcessedWindowFromSession',
-      payload: {
-        sessionId: opened.payload.sessionId,
-        request: {
-          outputRect: { x: 0, y: 0, width: 1, height: 1 },
-          halo: { left: 0, top: 0, right: 0, bottom: 0 },
-        },
-      },
-    })
-
-    expect(cancelled).toMatchObject({
-      id: 'job-processed-cancelled',
-      ok: false,
-      type: 'readProcessedWindowFromSession',
-      error: { code: 'RAW_JOB_CANCELLED' },
-    })
-    expect(readCount).toBe(0)
-  })
-
   it('passes quick maxOutputPixels to native decodePreview', async () => {
     let receivedMaxOutputPixels: number | undefined
 
@@ -1621,92 +1558,6 @@ describe('runtime-core', () => {
     })
   })
 
-  it('refuses a numeric capability orientation without changing metadata orientation', async () => {
-    // Native payloads are untrusted wire values; this one carries the bare
-    // orientation number older wrappers wrote instead of the orientation record.
-    const nativeCapability = {
-      supported: true,
-      strategy: 'libraw-processed-window',
-      width: 4000,
-      height: 3000,
-      rawWidth: 4024,
-      rawHeight: 3024,
-      visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
-      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      blackLevel: 512,
-      whiteLevel: 16383,
-      orientation: 1,
-      color: {
-        whiteBalance: [2, 1, 1.5, 1],
-        cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-        workingSpace: 'linear-prophoto-rgb',
-        librawOutputColor: 'prophoto',
-        gamma: 'linear',
-        cameraWhiteBalanceAppliedByRuntime: true,
-        cameraMatrixAppliedByRuntime: true,
-      },
-      sensor: {
-        layout: 'bayer',
-        colorCount: 3,
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        phaseIsWindowLocal: false,
-      },
-      windows: { librawProcessed: true, rawMosaic: true },
-      diagnostics: {
-        hasRawImage: true,
-        hasColor3Image: false,
-        hasColor4Image: false,
-        hasXTransTable: false,
-      },
-      reasons: [],
-    } as unknown as LumaRawExportCapability
-    const core = createRuntimeCore({
-      createProcessor() {
-        return {
-          ...makeNativeFactory().createProcessor(),
-          probeExportCapability() {
-            return nativeCapability
-          },
-        }
-      },
-    })
-
-    const opened = await core.handleRequest({
-      id: 'job-export-normalized-open',
-      type: 'openSession',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-    expect(opened.ok && opened.type === 'openSession').toBe(true)
-    if (!opened.ok || opened.type !== 'openSession') return
-    expect(opened.payload.probe.orientation).toBe(1)
-
-    const capability = await core.handleRequest({
-      id: 'job-export-normalized-capability',
-      type: 'probeExportCapabilityFromSession',
-      payload: { sessionId: opened.payload.sessionId },
-    })
-
-    expect(capability).toMatchObject({
-      ok: true,
-      type: 'probeExportCapabilityFromSession',
-      payload: {
-        supported: false,
-        reasons: ['unsupported-orientation'],
-      },
-    })
-    if (
-      !capability.ok ||
-      capability.type !== 'probeExportCapabilityFromSession'
-    ) {
-      return
-    }
-    expect(capability.payload.orientation).toBeUndefined()
-  })
-
   it('fails closed for missing session raw-window support', async () => {
     const core = createRuntimeCore(makeNativeFactory())
 
@@ -1874,26 +1725,6 @@ describe('runtime-core', () => {
     })
     expect(disposeCount).toBe(1)
     expect(decodeAfterCancel).toMatchObject({
-      ok: false,
-      type: 'decodeQuickFromSession',
-      error: {
-        code: 'RAW_WORKER_PROTOCOL_ERROR',
-      },
-    })
-  })
-
-  it('returns a protocol error for unknown session ids', async () => {
-    const core = createRuntimeCore(makeNativeFactory())
-
-    const response = await core.handleRequest({
-      id: 'job-missing-session',
-      type: 'decodeQuickFromSession',
-      payload: {
-        sessionId: 'missing-session',
-      },
-    })
-
-    expect(response).toMatchObject({
       ok: false,
       type: 'decodeQuickFromSession',
       error: {

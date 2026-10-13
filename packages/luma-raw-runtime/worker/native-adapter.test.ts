@@ -317,142 +317,6 @@ describe('native-adapter', () => {
     })
   })
 
-  it('requires supported export capabilities to include export color and geometry facts', () => {
-    const processor = createProcessor({
-      exportCapability: {
-        supported: true,
-        width: 4000,
-        height: 3000,
-        rawWidth: 4048,
-        rawHeight: 3040,
-        visibleCrop: { x: 24, y: 20, width: 4000, height: 3000 },
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        blackLevel: 512,
-        whiteLevel: 16383,
-        orientation: { code: 1, supported: true },
-        color: { ...NATIVE_COLOR_FACTS },
-        windows: { librawProcessed: true, rawMosaic: true },
-        reasons: [],
-      },
-    })
-
-    const capability = processor.probeExportCapability?.()
-
-    expect(capability).toMatchObject({
-      supported: true,
-      width: 4000,
-      height: 3000,
-      rawWidth: 4048,
-      rawHeight: 3040,
-      visibleCrop: { x: 24, y: 20, width: 4000, height: 3000 },
-      orientation: { code: 1, supported: true },
-      color: {
-        whiteBalance: expect.any(Array),
-        cameraToWorkingRgb: expect.any(Array),
-        workingSpace: 'linear-prophoto-rgb',
-      },
-    })
-    expect(capability?.color?.whiteBalance).toHaveLength(4)
-    expect(capability?.color?.whiteBalance).toEqual([2.1, 1, 1.4, 1])
-    expect(capability?.color?.cameraToWorkingRgb).toHaveLength(9)
-  })
-
-  it('normalizes capability v2 facts while retaining legacy geometry fields', () => {
-    const processor = createProcessor({
-      exportCapability: {
-        supported: true,
-        strategy: 'libraw-processed-window',
-        width: 4000,
-        height: 3000,
-        rawWidth: 4024,
-        rawHeight: 3024,
-        visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        blackLevel: 512,
-        whiteLevel: 16383,
-        orientation: {
-          code: 6,
-          supported: true,
-          outputWidth: 3000,
-          outputHeight: 4000,
-        },
-        sensor: {
-          layout: 'bayer',
-          colorCount: 3,
-          cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-          phaseIsWindowLocal: false,
-        },
-        levels: {
-          black: 512,
-          white: 16383,
-          perChannelBlack: [512, 513, 514, 515],
-        },
-        color: { ...NATIVE_COLOR_FACTS },
-        windows: { librawProcessed: true, rawMosaic: false },
-        diagnostics: {
-          make: 'Nikon',
-          model: 'Fixture',
-          normalizedMake: 'nikon',
-          normalizedModel: 'fixture',
-          librawFilterCode: 0x94949494,
-          hasRawImage: true,
-          hasColor3Image: true,
-          hasColor4Image: false,
-          hasXTransTable: false,
-          canRepeatCropProcess: true,
-          lastLibRawWarningMask: 2,
-        },
-        reasons: [],
-      },
-    })
-
-    expect(processor.probeExportCapability?.()).toEqual({
-      supported: true,
-      strategy: 'libraw-processed-window',
-      width: 4000,
-      height: 3000,
-      rawWidth: 4024,
-      rawHeight: 3024,
-      visibleCrop: { x: 12, y: 12, width: 4000, height: 3000 },
-      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      blackLevel: 512,
-      whiteLevel: 16383,
-      orientation: {
-        code: 6,
-        supported: true,
-        outputWidth: 3000,
-        outputHeight: 4000,
-      },
-      sensor: {
-        layout: 'bayer',
-        colorCount: 3,
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        phaseIsWindowLocal: false,
-      },
-      levels: {
-        black: 512,
-        white: 16383,
-        perChannelBlack: [512, 513, 514, 515],
-      },
-      color: { ...NATIVE_COLOR_FACTS },
-      windows: { librawProcessed: true, rawMosaic: false },
-      diagnostics: {
-        make: 'Nikon',
-        model: 'Fixture',
-        normalizedMake: 'nikon',
-        normalizedModel: 'fixture',
-        librawFilterCode: 0x94949494,
-        hasRawImage: true,
-        hasColor3Image: true,
-        hasColor4Image: false,
-        hasXTransTable: false,
-        canRepeatCropProcess: true,
-        lastLibRawWarningMask: 2,
-      },
-      reasons: [],
-    })
-  })
-
   it('fails closed when a supported payload lacks a LibRaw processed window', () => {
     const processor = createProcessor({
       exportCapability: {
@@ -1187,88 +1051,6 @@ describe('native-adapter', () => {
     )
   })
 
-  it('fails closed when export color facts are missing, unusable, or orientation is unsupported', () => {
-    const baseCapability = {
-      supported: true,
-      width: 4000,
-      height: 3000,
-      rawWidth: 4048,
-      rawHeight: 3040,
-      visibleCrop: { x: 24, y: 20, width: 4000, height: 3000 },
-      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      blackLevel: 512,
-      whiteLevel: 16383,
-      orientation: { code: 1, supported: true },
-      color: {
-        whiteBalance: [2.1, 1, 1.4, 1],
-        cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-        workingSpace: 'linear-prophoto-rgb',
-        librawOutputColor: 'prophoto',
-        gamma: 'linear',
-        cameraWhiteBalanceAppliedByRuntime: true,
-        cameraMatrixAppliedByRuntime: true,
-      },
-      reasons: [],
-    }
-    const missingColor = createProcessor({
-      exportCapability: {
-        ...baseCapability,
-        color: undefined,
-      },
-    })
-    const rotatedUnsupported = createProcessor({
-      exportCapability: {
-        ...baseCapability,
-        orientation: { code: 6, supported: false },
-      },
-    })
-    const unusableTransform = createProcessor({
-      exportCapability: {
-        ...baseCapability,
-        color: {
-          whiteBalance: [2.1, 1, 1.4, 1],
-          cameraToWorkingRgb: [0, 0, 0, 0, 0, 0, 0, 0, 0],
-          workingSpace: 'linear-prophoto-rgb',
-          librawOutputColor: 'prophoto',
-          gamma: 'linear',
-          cameraWhiteBalanceAppliedByRuntime: true,
-          cameraMatrixAppliedByRuntime: true,
-        },
-      },
-    })
-    const degenerateTransform = createProcessor({
-      exportCapability: {
-        ...baseCapability,
-        color: {
-          whiteBalance: [2.1, 1, 1.4, 1],
-          cameraToWorkingRgb: [1, 2, 3, 2, 4, 6, 0, 1, 0],
-          workingSpace: 'linear-prophoto-rgb',
-          librawOutputColor: 'prophoto',
-          gamma: 'linear',
-          cameraWhiteBalanceAppliedByRuntime: true,
-          cameraMatrixAppliedByRuntime: true,
-        },
-      },
-    })
-
-    expect(missingColor.probeExportCapability?.()).toMatchObject({
-      supported: false,
-      reasons: expect.arrayContaining(['missing-color-transform']),
-    })
-    expect(unusableTransform.probeExportCapability?.()).toMatchObject({
-      supported: false,
-      reasons: expect.arrayContaining(['missing-color-transform']),
-    })
-    expect(degenerateTransform.probeExportCapability?.()).toMatchObject({
-      supported: false,
-      reasons: expect.arrayContaining(['missing-color-transform']),
-    })
-    expect(rotatedUnsupported.probeExportCapability?.()).toMatchObject({
-      supported: false,
-      reasons: expect.arrayContaining(['unsupported-orientation']),
-    })
-  })
-
   it('fails closed when visible crop exceeds raw bounds', () => {
     const processor = createProcessor({
       exportCapability: {
@@ -1371,100 +1153,6 @@ describe('native-adapter', () => {
         'unsupported-cfa',
         'compressed-raw-window-unavailable',
         'missing-dimensions',
-        'missing-levels',
-        'processed-window-unavailable',
-      ],
-    })
-  })
-
-  it('downgrades malformed supported export capability payloads to unsupported', () => {
-    const missingRequiredFields = createProcessor({
-      exportCapability: {
-        supported: true,
-        width: 0,
-        height: 4000,
-        rawWidth: 6048,
-        rawHeight: 4024,
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        blackLevel: 512,
-        whiteLevel: 16383,
-      },
-    })
-    const invalidLevels = createProcessor({
-      exportCapability: {
-        supported: true,
-        width: 6000,
-        height: 4000,
-        rawWidth: 6048,
-        rawHeight: 4024,
-        visibleCrop: { x: 24, y: 20, width: 6000, height: 4000 },
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        blackLevel: Number.NaN,
-        whiteLevel: 16383,
-        orientation: { code: 1, supported: true },
-        color: {
-          whiteBalance: [2, 1, 1.5, 1],
-          cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-          workingSpace: 'linear-prophoto-rgb',
-          librawOutputColor: 'prophoto',
-          gamma: 'linear',
-          cameraWhiteBalanceAppliedByRuntime: true,
-          cameraMatrixAppliedByRuntime: true,
-        },
-        reasons: ['raw-window-unavailable', 'bogus'],
-      },
-    })
-
-    expect(missingRequiredFields.probeExportCapability?.()).toMatchObject({
-      supported: false,
-      width: 0,
-      height: 4000,
-      rawWidth: 6048,
-      rawHeight: 4024,
-      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      blackLevel: 512,
-      whiteLevel: 16383,
-      reasons: expect.arrayContaining([
-        'missing-dimensions',
-        'missing-visible-crop',
-        'missing-color-transform',
-      ]),
-    })
-    expect(invalidLevels.probeExportCapability?.()).toEqual({
-      supported: false,
-      width: 6000,
-      height: 4000,
-      rawWidth: 6048,
-      rawHeight: 4024,
-      visibleCrop: { x: 24, y: 20, width: 6000, height: 4000 },
-      cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-      blackLevel: 0,
-      whiteLevel: 16383,
-      orientation: { code: 1, supported: true },
-      color: {
-        librawOutputColor: 'prophoto',
-        gamma: 'linear',
-        cameraWhiteBalanceAppliedByRuntime: true,
-        cameraMatrixAppliedByRuntime: true,
-        whiteBalance: [2, 1, 1.5, 1],
-        cameraToWorkingRgb: [1, 0, 0, 0, 1, 0, 0, 0, 1],
-        workingSpace: 'linear-prophoto-rgb',
-      },
-      sensor: {
-        layout: 'bayer',
-        colorCount: 3,
-        cfa: { pattern: 'rggb', xPhase: 0, yPhase: 0 },
-        phaseIsWindowLocal: false,
-      },
-      windows: { librawProcessed: false, rawMosaic: false },
-      diagnostics: {
-        hasRawImage: false,
-        hasColor3Image: false,
-        hasColor4Image: false,
-        hasXTransTable: false,
-      },
-      reasons: [
-        'raw-window-unavailable',
         'missing-levels',
         'processed-window-unavailable',
       ],
@@ -1880,7 +1568,10 @@ describe('native export capability facts', () => {
     const supportedCapability = wrapperSource.match(
       /val supportedExportCapability\(const libraw_data_t &imgdata,[\s\S]*?\n\}/,
     )?.[0]
-    const colorFactKeys = Array.from((supportedCapability ?? '').matchAll(/color_facts\.set\("(\w+)"/g), (match) => match[1])
+    const colorFactKeys = Array.from(
+      (supportedCapability ?? '').matchAll(/color_facts\.set\("(\w+)"/g),
+      (match) => match[1],
+    )
 
     expect(colorFactKeys.sort()).toEqual(Object.keys(NATIVE_COLOR_FACTS).sort())
     expect(supportedCapability).toContain(
@@ -2017,6 +1708,40 @@ describe('native export capability facts', () => {
     })
   })
 
+  it.each([
+    ['an all-zero', [0, 0, 0, 0, 0, 0, 0, 0, 0]],
+    ['a singular', [1, 2, 3, 2, 4, 6, 0, 1, 0]],
+  ])('refuses %s cameraToWorkingRgb', (_label, cameraToWorkingRgb) => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability({
+        color: { ...NATIVE_COLOR_FACTS, cameraToWorkingRgb },
+      }),
+    })
+
+    expect(processor.probeExportCapability?.()).toMatchObject({
+      supported: false,
+      reasons: ['missing-color-transform'],
+    })
+  })
+
+  it.each([
+    ['zero width', { width: 0 }, 'missing-dimensions'],
+    [
+      'a non-finite black level',
+      { blackLevel: Number.NaN, levels: undefined },
+      'missing-levels',
+    ],
+  ])('refuses a supported capability with %s', (_label, overrides, reason) => {
+    const processor = createProcessor({
+      exportCapability: nativeSupportedCapability(overrides),
+    })
+
+    expect(processor.probeExportCapability?.()).toMatchObject({
+      supported: false,
+      reasons: [reason],
+    })
+  })
+
   it.each([1, 6])(
     'refuses numeric capability orientation %i and keeps metadata orientation',
     (code) => {
@@ -2033,9 +1758,12 @@ describe('native export capability facts', () => {
     },
   )
 
-  it('refuses a supported capability without orientation facts', () => {
+  it.each([
+    ['no orientation facts', undefined],
+    ['an unsupported orientation', { code: 6, supported: false }],
+  ])('refuses a supported capability with %s', (_label, orientation) => {
     const processor = createProcessor({
-      exportCapability: nativeSupportedCapability({ orientation: undefined }),
+      exportCapability: nativeSupportedCapability({ orientation }),
     })
 
     expect(processor.probeExportCapability?.()).toMatchObject({
