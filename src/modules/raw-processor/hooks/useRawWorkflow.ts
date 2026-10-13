@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { yieldToPaint } from '~/lib/dom'
 
 import { hasActiveExport } from '../services/export/export-state'
+import { getCurrentView } from '../state/preview-view.atoms'
 import { getCurrentSession, setCurrentSession } from '../state/session.atoms'
 import {
   getEffectiveColorIntent,
@@ -79,9 +80,8 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     exportAbortControllerRef,
     exportGraphVersionRef,
     decodedImageRef,
-    viewRef,
     rawRenderExposureRef,
-  } = useRawWorkflowRefs({ initialView: detachedView })
+  } = useRawWorkflowRefs()
   const compareStage = useRawCompareStage({
     detachedView,
     setDetachedView,
@@ -89,16 +89,14 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     decodedImageRef,
   })
   const [decodedImageVersion, setDecodedImageVersion] = useState(0)
-  const { getCurrentView, scheduleToast, dismissError, updateStats } =
-    useRawWorkflowActions({
-      viewRef,
-      isMountedRef,
-      status,
-      setError,
-      setStatus,
-      setStats,
-      getStats: getPipelineStats,
-    })
+  const { scheduleToast, dismissError, updateStats } = useRawWorkflowActions({
+    isMountedRef,
+    status,
+    setError,
+    setStatus,
+    setStats,
+    getStats: getPipelineStats,
+  })
   const {
     hasImage,
     loadedImage,
@@ -187,7 +185,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   // command needs it; only the view it is shown in is published here, and
   // never through a color setter.
   const { params } = lookStage
-  viewRef.current = compareStage.view
   const {
     decodedFrame,
     revokeCurrentEmbeddedPreviewUrl,

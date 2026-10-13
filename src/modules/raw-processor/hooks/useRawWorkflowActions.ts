@@ -1,7 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import type { PreviewView } from '~/lib/preview/preview-view'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ProcessingStatus } from '../model/workflow'
@@ -19,7 +18,6 @@ import {
 export const PIPELINE_TIMING_PUBLISH_MS = 250
 
 type UseRawWorkflowActionsInput = {
-  viewRef: MutableRefObject<PreviewView>
   isMountedRef: MutableRefObject<boolean>
   status: ProcessingStatus
   setError: (error: string | null) => void
@@ -30,7 +28,6 @@ type UseRawWorkflowActionsInput = {
 }
 
 export function useRawWorkflowActions({
-  viewRef,
   isMountedRef,
   status,
   setError,
@@ -38,14 +35,6 @@ export function useRawWorkflowActions({
   setStats,
   getStats,
 }: UseRawWorkflowActionsInput) {
-  // The view as last rendered, read at call time. The color intent has no
-  // port here: readers take it from the store, so a view port can never hand
-  // out or carry color.
-  const getCurrentView = useCallback(
-    (): PreviewView => viewRef.current,
-    [viewRef],
-  )
-
   const scheduleToast = useCallback(
     (notify: () => void) => {
       // Sonner uses flushSync internally; move RAW-workspace toasts out of the
@@ -110,7 +99,6 @@ export function useRawWorkflowActions({
   )
 
   return {
-    getCurrentView,
     scheduleToast,
     dismissError,
     updateStats,

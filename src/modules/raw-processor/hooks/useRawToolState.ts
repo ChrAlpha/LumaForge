@@ -11,11 +11,11 @@ import { jotaiStore } from '~/lib/jotai'
 import type { ColorValue } from '../components/color-fields'
 import type { ToneValue } from '../components/tone-fields'
 import type { ProcessingStatus } from '../model/workflow'
-import { projectEffectiveColorIntent } from '../services/look/effective-color-intent'
 import { resolveActiveLook } from '../services/look/look-session-state'
 import { DEFAULT_LOOK_INTENSITY } from '../services/look/style-system'
 import { currentSessionAtom } from '../state/session.atoms'
 import {
+  effectiveColorIntentAtom,
   lutAtom,
   processingParamsAtom,
   useProcessingStatusValue,
@@ -39,15 +39,9 @@ export interface RawToolAdjustments {
 
 const storeOptions = { store: jotaiStore }
 
-// Read-only projections of the stored intent, the session and the LUT. They
-// hold no value of their own: each is recomputed from those atoms, and a
-// reader rerenders only when the part it reads changes.
-const effectiveIntentAtom = atom((get) =>
-  projectEffectiveColorIntent(
-    get(processingParamsAtom),
-    get(currentSessionAtom),
-  ),
-)
+// Read-only projections of the effective intent, the session and the LUT.
+// They hold no value of their own, and a reader rerenders only when the part
+// it reads changes.
 
 function pickTone(intent: ColorGraphIntent): ToneValue {
   return {
@@ -75,12 +69,12 @@ function sameFields<Value extends object>(left: Value, right: Value) {
   )
 }
 
-const toneAtom = selectAtom(effectiveIntentAtom, pickTone, sameFields)
-const colorAtom = selectAtom(effectiveIntentAtom, pickColor, sameFields)
+const toneAtom = selectAtom(effectiveColorIntentAtom, pickTone, sameFields)
+const colorAtom = selectAtom(effectiveColorIntentAtom, pickColor, sameFields)
 // The HSL record is copied by reference through every intent write, so a
 // tone or colour edit leaves it the same record.
 const selectiveColorAtom = selectAtom(
-  effectiveIntentAtom,
+  effectiveColorIntentAtom,
   (intent): NormalizedSelectiveColorBands => intent.selectiveColor,
 )
 // The strength the look applies at, resolved the way the active look is: the

@@ -1,24 +1,13 @@
 import { renderHook } from '@testing-library/react'
 import { atom, createStore } from 'jotai'
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  expectTypeOf,
-  it,
-  vi,
-} from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { PreviewView } from '~/lib/preview/preview-view'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import {
   PIPELINE_TIMING_PUBLISH_MS,
   useRawWorkflowActions,
 } from './useRawWorkflowActions'
-
-const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 function createStats(overrides: Partial<PipelineStats> = {}): PipelineStats {
   return {
@@ -38,7 +27,6 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
   const setStatus = vi.fn()
   const { result } = renderHook(() =>
     useRawWorkflowActions({
-      viewRef: { current: view },
       isMountedRef: { current: true },
       status,
       setError,
@@ -59,49 +47,12 @@ function renderStatsHarness(status: 'ready' | 'error' = 'ready') {
 }
 
 describe('useRawWorkflowActions', () => {
-  it('reads the current view from its ref and offers no color port', () => {
-    const viewRef = {
-      current: { mode: 'original', compareSplit: 0.62 } as PreviewView,
-    }
-    const { result } = renderHook(() =>
-      useRawWorkflowActions({
-        viewRef,
-        isMountedRef: { current: true },
-        status: 'ready',
-        setError: vi.fn(),
-        setStatus: vi.fn(),
-        setStats: vi.fn(),
-        getStats: () => null,
-      }),
-    )
-
-    expect(result.current.getCurrentView()).toEqual({
-      mode: 'original',
-      compareSplit: 0.62,
-    })
-    // The port reads the ref when called, not the render that made it, and
-    // hands out the view its owner holds, with nothing composed onto it.
-    viewRef.current = { mode: 'compare', compareSplit: 0.2 }
-    expect(result.current.getCurrentView()).toBe(viewRef.current)
-    expect(result.current.getCurrentView()).toEqual({
-      mode: 'compare',
-      compareSplit: 0.2,
-    })
-
-    // Color is read from the store by its readers; the view port neither
-    // takes nor hands out a color intent.
-    expect(result.current).not.toHaveProperty('getCurrentColorIntent')
-    type ActionsInput = Parameters<typeof useRawWorkflowActions>[0]
-    expectTypeOf<ActionsInput>().not.toHaveProperty('paramsRef')
-  })
-
   it('runs scheduled toasts only while mounted', () => {
     vi.useFakeTimers()
     const notify = vi.fn()
     const isMountedRef = { current: false }
     const { result } = renderHook(() =>
       useRawWorkflowActions({
-        viewRef: { current: view },
         isMountedRef,
         status: 'ready',
         setError: vi.fn(),

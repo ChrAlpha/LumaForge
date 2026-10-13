@@ -18,7 +18,7 @@ import {
   areSamePipelineFacts,
   toPipelineFacts,
 } from '../services/preview/pipeline-stats'
-import { getCurrentSession } from './session.atoms'
+import { currentSessionAtom } from './session.atoms'
 
 /**
  * The stored color intent: the user's color, plus the look selection while no
@@ -61,13 +61,24 @@ export const setColorIntent: SetColorIntent = (value) => {
 }
 
 /**
- * The color intent the photo renders and exports with, read from the store
- * when called: the stored intent with the current session's look projected
- * over it, through the same projection the rendered params use. A write to
- * either atom is visible here in the same tick, before any rerender.
+ * The color intent the photo renders and exports with: the stored intent
+ * with the current session's look projected over it. Readers of the store
+ * and of the rendered params both go through this one atom.
+ */
+export const effectiveColorIntentAtom = atom((get) =>
+  projectEffectiveColorIntent(
+    get(processingParamsAtom),
+    get(currentSessionAtom),
+  ),
+)
+
+/**
+ * The effective intent read from the store when called; a write to the
+ * stored intent or the session is visible here in the same tick, before any
+ * rerender.
  */
 export function getEffectiveColorIntent(): ColorGraphIntent {
-  return projectEffectiveColorIntent(getProcessingParams(), getCurrentSession())
+  return jotaiStore.get(effectiveColorIntentAtom)
 }
 
 const baseLutAtom = atom<ParsedLUT | null>(null)

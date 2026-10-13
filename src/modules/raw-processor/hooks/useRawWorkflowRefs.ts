@@ -3,16 +3,11 @@ import { useMemo, useRef, useState } from 'react'
 
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
-import type { PreviewView } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
 
-type UseRawWorkflowRefsInput = {
-  initialView: PreviewView
-}
-
-export function useRawWorkflowRefs({ initialView }: UseRawWorkflowRefsInput) {
+export function useRawWorkflowRefs() {
   // The one RAW host of this workflow: readiness, load, restore, and the
   // bridge release before export all drive this instance. It owns every RAW
   // session and its cancellation; the workflow keeps only source epochs.
@@ -27,9 +22,6 @@ export function useRawWorkflowRefs({ initialView }: UseRawWorkflowRefsInput) {
   const exportAbortControllerRef = useRef<AbortController | null>(null)
   const exportGraphVersionRef = useRef(0)
   const decodedImageRef = useRef<DecodedImage | null>(null)
-  // The view as last rendered. The color intent is read from the store and
-  // has no ref here.
-  const viewRef = useRef(initialView)
   const rawRenderExposureRef = useRef<RawRenderExposure | null>(null)
 
   if (!resourceRegistryRef.current) {
@@ -49,7 +41,6 @@ export function useRawWorkflowRefs({ initialView }: UseRawWorkflowRefsInput) {
       exportAbortControllerRef,
       exportGraphVersionRef,
       decodedImageRef,
-      viewRef,
       rawRenderExposureRef,
     }),
     [
@@ -65,7 +56,6 @@ export function useRawWorkflowRefs({ initialView }: UseRawWorkflowRefsInput) {
       rawRuntimeHost,
       resourceRegistryRef,
       runtimeWorkSessionIdRef,
-      viewRef,
     ],
   )
 }
