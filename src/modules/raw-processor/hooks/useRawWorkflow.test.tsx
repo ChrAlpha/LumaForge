@@ -1631,18 +1631,9 @@ describe('useRawWorkflow embedded preview state', () => {
           getLutData: () => null,
         } as never
         hook.result.current.updateStats({
-          uploadTime: 1,
-          lutUploadTime: 0,
           processTime: 2,
-          totalTime: 3,
           inputSize: { width: 6000, height: 4000 },
           previewSize: { width: 1200, height: 800 },
-          inputFormat: 'uint16-rgb',
-          transformPath: 'no-lut',
-          lutRole: null,
-          lutInputTransfer: null,
-          lutOutputTransfer: null,
-          lutSize: null,
         })
       })
       return { ...hook, renderToHiddenCanvas }
@@ -2313,18 +2304,9 @@ describe('useRawWorkflow embedded preview state', () => {
         getLutData: () => null,
       } as never
       result.current.updateStats({
-        uploadTime: 1,
-        lutUploadTime: 0,
         processTime: 2,
-        totalTime: 3,
         inputSize: { width: 6000, height: 4000 },
         previewSize: { width: 1200, height: 800 },
-        inputFormat: 'uint16-rgb',
-        transformPath: 'no-lut',
-        lutRole: null,
-        lutInputTransfer: null,
-        lutOutputTransfer: null,
-        lutSize: null,
       })
     })
 
@@ -2418,18 +2400,9 @@ describe('useRawWorkflow embedded preview state', () => {
         getLutData: () => null,
       } as never
       result.current.updateStats({
-        uploadTime: 1,
-        lutUploadTime: 0,
         processTime: 2,
-        totalTime: 3,
         inputSize: { width: 4000, height: 3000 },
         previewSize: { width: 1200, height: 900 },
-        inputFormat: 'uint16-rgb',
-        transformPath: 'no-lut',
-        lutRole: null,
-        lutInputTransfer: null,
-        lutOutputTransfer: null,
-        lutSize: null,
       })
     })
 

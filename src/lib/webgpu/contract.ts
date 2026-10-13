@@ -3,11 +3,7 @@
  * app. Nothing here touches a graphics API.
  */
 
-import type {
-  ColorGraphIntent,
-  LUTRole,
-  TransferFunctionId,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 
 /**
  * What the GPU executor draws. `technical-original` is the RAW render with
@@ -31,18 +27,9 @@ export interface PreviewGpuCapabilities {
 }
 
 export interface PipelineStats {
-  uploadTime: number
-  lutUploadTime: number
   processTime: number
-  totalTime: number
   inputSize: { width: number; height: number }
   previewSize: { width: number; height: number }
-  inputFormat: RawUploadInputFormat
-  transformPath: PipelineTransformPath
-  lutRole: LUTRole | null
-  lutInputTransfer: TransferFunctionId | null
-  lutOutputTransfer: TransferFunctionId | null
-  lutSize: number | null
 }
 
 /** The only GPU source: the decoder's linear ProPhoto RGB16 render. */
@@ -54,43 +41,4 @@ export interface RawUploadInput {
   colorSpace: 'linear-prophoto-rgb'
   renderExposureEv: number
   renderExposureMultiplier: number
-}
-
-export type RawUploadInputFormat = 'uint16-rgb'
-
-export type PipelineTransformPath =
-  | 'no-lut'
-  | 'builtin-style'
-  | 'display-lut'
-  | 'scene-creative-lut'
-  | 'combined-output-lut'
-  | 'technical-output-lut'
-  | 'disabled-lut'
-
-export interface PipelineTelemetrySnapshot {
-  inputFormat: RawUploadInputFormat
-  transformPath: PipelineTransformPath
-  lutRole: LUTRole | null
-  lutInputTransfer: TransferFunctionId | null
-  lutOutputTransfer: TransferFunctionId | null
-  lutSize: number | null
-}
-
-export interface ExportRenderStats extends PipelineTelemetrySnapshot {
-  strategy: 'full-frame' | 'tiled' | 'fail'
-  width: number
-  height: number
-  tileCount: number
-  planningTime: number
-  renderTime: number
-  totalTime: number
-  reason?:
-    | 'texture-limit'
-    | 'memory-budget'
-    | 'canvas-limit'
-    | 'gpu-limit'
-    | 'render-failure'
-  failureCode?: string
-  failureMessage?: string
-  retryable?: boolean
 }

@@ -22,8 +22,6 @@ export class WebGPUImages {
   inputUpload: RawUploadInput | null = null
   lutData: LUTData | null = null
   selectiveActive = false
-  uploadTime = 0
-  lutUploadTime = 0
   textureAllocations = 0
   uploadedBytes = 0
   private lut: GPUTexture | null = null
@@ -87,7 +85,6 @@ export class WebGPUImages {
 
   uploadImage(input: RawUploadInput) {
     validateImageUpload(input, this.device.limits.maxTextureDimension2D)
-    const start = performance.now()
     if (
       !this.input ||
       this.input.width !== input.width ||
@@ -118,7 +115,6 @@ export class WebGPUImages {
     uploadRgb16(this.device, this.input, input)
     this.inputUpload = input
     this.uploadedBytes += input.width * input.height * 8
-    this.uploadTime = performance.now() - start
   }
 
   clearImage() {
@@ -128,7 +124,6 @@ export class WebGPUImages {
     this.processedView = null
     this.inputGroup = this.outputGroup = null
     this.inputUpload = null
-    this.uploadTime = 0
   }
 
   outputGroupFor(view: GPUTextureView) {
@@ -155,7 +150,6 @@ export class WebGPUImages {
         this.lutData = lut
         return
       }
-      const start = performance.now()
       if (!this.lut || this.lut.width !== lut.size) {
         this.lut?.destroy()
         this.lut = null
@@ -174,7 +168,6 @@ export class WebGPUImages {
       )
       this.uploadedBytes += lut.size ** 3 * 16
       this.lutData = lut
-      this.lutUploadTime = performance.now() - start
     } catch (error) {
       // Callers degrade to an unstyled preview after a failed replacement.
       // Release both a previous LUT and any partially created replacement.
@@ -187,7 +180,6 @@ export class WebGPUImages {
     this.lut?.destroy()
     this.lut = null
     this.lutData = null
-    this.lutUploadTime = 0
     this.rebindLut()
   }
 

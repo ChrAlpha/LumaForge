@@ -20,7 +20,6 @@ import { PREVIEW_VIEW_MODES } from '~/lib/preview/preview-view'
 import type { GpuPreviewInput } from './contract'
 import type { WebGPUImages } from './images'
 import { resolveGpuPreviewLook } from './lut-profile'
-import { webGPUTelemetry } from './pipeline-telemetry'
 import { getShaderSpecialization } from './specialization'
 import {
   UNIFORM_BUFFER_SIZE,
@@ -216,7 +215,6 @@ describe('webGPU color intent', () => {
     expectTypeOf(getShaderSpecialization)
       .parameter(0)
       .toEqualTypeOf<ColorGraphIntent>()
-    expectTypeOf(webGPUTelemetry).parameter(0).toEqualTypeOf<ColorGraphIntent>()
     expectTypeOf(resolveGpuPreviewLook)
       .parameter(0)
       .toEqualTypeOf<ColorGraphIntent>()
@@ -415,12 +413,6 @@ describe('webGPU preview of a look export refuses', () => {
         expect(getShaderSpecialization(params, lut)).toEqual(
           getShaderSpecialization(stripped(params), null),
         )
-        expect(webGPUTelemetry(params, lut)).toMatchObject({
-          transformPath: 'disabled-lut',
-          lutRole: null,
-          lutInputTransfer: null,
-          lutOutputTransfer: null,
-        })
       })
     }
   }
@@ -439,7 +431,6 @@ describe('webGPU preview of a look export refuses', () => {
       styleKind: 2,
       useLut: true,
     })
-    expect(webGPUTelemetry(params, lut).transformPath).toBe('display-lut')
   })
 
   it('draws the selected built-in preset, which only WebGPU implements', () => {
@@ -453,7 +444,6 @@ describe('webGPU preview of a look export refuses', () => {
     expect(view.getFloat32(UNIFORM_FIELDS.intensity.offset, true)).toBe(
       Math.fround(0.37),
     )
-    expect(webGPUTelemetry(params, null).transformPath).toBe('builtin-style')
   })
 
   it('draws no style for a built-in selection without a preset, as export does', () => {
@@ -475,6 +465,5 @@ describe('webGPU preview of a look export refuses', () => {
     expect(getShaderSpecialization(params, null)).toEqual(
       getShaderSpecialization(stripped(params), null),
     )
-    expect(webGPUTelemetry(params, null).transformPath).toBe('no-lut')
   })
 })

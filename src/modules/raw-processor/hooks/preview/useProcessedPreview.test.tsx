@@ -35,7 +35,7 @@ function createPipeline() {
     clearLUT: vi.fn(),
     uploadLUT: vi.fn(),
     setParams: vi.fn(),
-    render: vi.fn(() => ({ totalTime: 1 }) as PipelineStats),
+    render: vi.fn(() => ({ processTime: 1 }) as PipelineStats),
     waitForGpu: vi.fn(() => Promise.resolve()),
   } satisfies Record<keyof ProcessedPreviewPipeline, unknown>
 }

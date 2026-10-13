@@ -263,7 +263,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         full,
         referenceFrame(fixture, { ...params, viewMode: 'processed' }),
         REFERENCE,
-        { stats: gpu.getLastExportStats() },
+        { plan: gpu.getLastSnapshotPlan() },
       )
       const resized = await gpu.renderToHiddenCanvas({
         width: 43,
@@ -316,11 +316,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       renderReference(failedLutFixture, failedLutParams, null, 'stripped'),
       REFERENCE,
     )
-    add(
-      'lut-upload-failure-telemetry',
-      gpu.render().transformPath === 'no-lut',
-      { transformPath: gpu.render().transformPath },
-    )
+    add('lut-upload-failure-dropped-lut', gpu.getLutData() === null, {})
     await gpu.waitForGpu()
 
     const tiledFixture = makeImage(513, 289)
@@ -334,18 +330,18 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         height: tiledFixture.height,
         budgetBytes: 256 * 256 * 32,
       })
-      const stats = gpu.getLastExportStats()
+      const plan = gpu.getLastSnapshotPlan()
       check(
         'u16/snapshot-tiled',
         readCanvas(actual),
         referenceFrame(tiledFixture, tiledParams),
         REFERENCE,
-        { stats },
+        { plan },
       )
       add(
         'snapshot-tiled-strategy',
-        stats.strategy === 'tiled' && stats.tileCount > 1,
-        { stats },
+        plan.strategy === 'tiled' && plan.tileCount > 1,
+        { plan },
       )
     } catch (error) {
       add('snapshot-tiled', false, { error: String(error), stack: error.stack })

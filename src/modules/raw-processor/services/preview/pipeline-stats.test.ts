@@ -10,23 +10,14 @@ import {
 } from './pipeline-stats'
 
 const stats: PipelineStats = {
-  uploadTime: 4,
-  lutUploadTime: 0,
   processTime: 18,
-  totalTime: 22,
   inputSize: { width: 4000, height: 2666 },
   previewSize: { width: 1200, height: 800 },
-  inputFormat: 'uint16-rgb',
-  transformPath: 'no-lut',
-  lutRole: null,
-  lutInputTransfer: null,
-  lutOutputTransfer: null,
-  lutSize: null,
 }
 
 describe('pipeline stats', () => {
   it('tells a new frame timing from a new pipeline', () => {
-    const retimed = { ...stats, processTime: 9, totalTime: 12 }
+    const retimed = { ...stats, processTime: 9 }
     const resized = { ...stats, previewSize: { width: 600, height: 400 } }
 
     expect(areSamePipelineStats(stats, { ...stats })).toBe(true)
@@ -35,12 +26,12 @@ describe('pipeline stats', () => {
     expect(differsOnlyInTiming(stats, resized)).toBe(false)
   })
 
-  it('keeps the facts without the timings, compared by value', () => {
+  it('keeps the facts without the timing, compared by value', () => {
     const facts = toPipelineFacts(stats)
-    expect(facts).not.toHaveProperty('processTime')
-    expect(facts).not.toHaveProperty('uploadTime')
-    expect(facts.previewSize).toEqual({ width: 1200, height: 800 })
-
+    expect(facts).toEqual({
+      inputSize: { width: 4000, height: 2666 },
+      previewSize: { width: 1200, height: 800 },
+    })
     expect(
       areSamePipelineFacts(
         facts,
@@ -54,7 +45,7 @@ describe('pipeline stats', () => {
     expect(
       areSamePipelineFacts(
         facts,
-        toPipelineFacts({ ...stats, transformPath: 'display-lut' }),
+        toPipelineFacts({ ...stats, inputSize: { width: 6000, height: 4000 } }),
       ),
     ).toBe(false)
     expect(areSamePipelineFacts(null, null)).toBe(true)

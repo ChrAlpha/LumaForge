@@ -3,7 +3,6 @@ import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 
 import { GPUReadbackJobs } from './async-resources'
 import type {
-  ExportRenderStats,
   PipelineStats,
   PreviewGpuCapabilities,
   RawUploadInput,
@@ -12,10 +11,10 @@ import type { WebGPUDeviceLease } from './device'
 import { acquireWebGPUDevice } from './device'
 import { WebGPUFrameScheduler } from './frame-scheduler'
 import { WebGPUImages } from './images'
-import { webGPUCapabilities, webGPUTelemetry } from './pipeline-telemetry'
 import { WebGPUProgramSelection } from './program-selection'
 import type { WebGPUPrograms } from './programs'
 import { getWebGPUPrograms } from './programs'
+import type { SnapshotPlan } from './snapshot'
 import { planSnapshotRender, renderSnapshot } from './snapshot'
 import { getShaderSpecialization } from './specialization'
 import { readFloat16Texture } from './texture-data'
@@ -44,7 +43,7 @@ export class WebGPUProcessingPipeline {
   private lost = false
   private lostError: Error | null = null
   private initialization: Promise<void> | null = null
-  private lastExportStats: ExportRenderStats | null = null
+  private lastSnapshotPlan: (SnapshotPlan & { tileCount: number }) | null = null
   private lossListeners = new Set<(error: Error) => void>()
   private uniformUploads = 0
   private processDraws = 0
@@ -207,15 +206,10 @@ export class WebGPUProcessingPipeline {
     const start = performance.now()
     if (images.input && this.context) this.frames!.request()
     this.assertReady()
-    const elapsed = performance.now() - start
     return {
-      uploadTime: images.uploadTime,
-      lutUploadTime: images.lutUploadTime,
-      processTime: elapsed,
-      totalTime: elapsed,
+      processTime: performance.now() - start,
       inputSize: this.getInputDimensions(),
       previewSize: { width: this.canvas.width, height: this.canvas.height },
-      ...this.telemetry(),
     }
   }
 
@@ -330,7 +324,6 @@ export class WebGPUProcessingPipeline {
   }) {
     const { device, images } = this.assertReady()
     if (!images.inputUpload) throw new Error('EXPORT_SOURCE_MISSING')
-    const start = performance.now()
     const plan = planSnapshotRender({
       width,
       height,
@@ -338,23 +331,15 @@ export class WebGPUProcessingPipeline {
       lutSize: images.lutData?.size ?? 0,
       budgetBytes,
     })
-    const planningTime = performance.now() - start
-    const stats = {
-      ...this.telemetry(),
-      width,
-      height,
-      planningTime,
-      renderTime: 0,
-      totalTime: planningTime,
-      tileCount: 0,
+    this.lastSnapshotPlan = {
+      ...plan,
+      tileCount:
+        plan.strategy === 'tiled'
+          ? Math.ceil(width / plan.tileWidth) *
+            Math.ceil(height / plan.tileHeight)
+          : Number(plan.strategy === 'full-frame'),
     }
     if (plan.strategy === 'fail') {
-      this.lastExportStats = {
-        ...stats,
-        strategy: 'fail',
-        reason: plan.reason,
-        retryable: plan.reason === 'canvas-limit',
-      }
       throw new Error(
         plan.reason === 'canvas-limit'
           ? 'EXPORT_CANVAS_LIMIT_EXCEEDED'
@@ -366,7 +351,7 @@ export class WebGPUProcessingPipeline {
       // The snapshot reuses the retained processed target with export view mode.
       // Any subsequent interactive frame must restore the live view parameters.
       this.dirty = true
-      const canvas = await renderSnapshot({
+      return await renderSnapshot({
         device,
         programs: this.programs,
         images,
@@ -381,36 +366,14 @@ export class WebGPUProcessingPipeline {
         },
         scope,
       })
-      const totalTime = performance.now() - start
-      this.lastExportStats = {
-        ...stats,
-        strategy: plan.strategy,
-        tileCount:
-          plan.strategy === 'tiled'
-            ? Math.ceil(width / plan.tileWidth) *
-              Math.ceil(height / plan.tileHeight)
-            : 1,
-        renderTime: totalTime - planningTime,
-        totalTime,
-      }
-      return canvas
-    } catch (error) {
-      this.lastExportStats = {
-        ...stats,
-        strategy: 'fail',
-        reason: 'render-failure',
-        failureMessage: error instanceof Error ? error.message : String(error),
-        retryable: true,
-        totalTime: performance.now() - start,
-      }
-      throw error
     } finally {
       scope.dispose()
     }
   }
 
-  getLastExportStats() {
-    return this.lastExportStats ? { ...this.lastExportStats } : null
+  /** The last HQ snapshot's plan, with its tile count. */
+  getLastSnapshotPlan() {
+    return this.lastSnapshotPlan ? { ...this.lastSnapshotPlan } : null
   }
   resize(width: number, height: number) {
     if (this.canvas.width !== width) this.canvas.width = width
@@ -424,7 +387,14 @@ export class WebGPUProcessingPipeline {
   }
   getCapabilities(): PreviewGpuCapabilities {
     const { device } = this.assertReady()
-    return webGPUCapabilities(device, this.lease!.adapter)
+    const info = this.lease!.adapter.info
+    return {
+      maxTextureSize: device.limits.maxTextureDimension2D,
+      max3DTextureSize: device.limits.maxTextureDimension3D,
+      float32Filterable: device.features.has('float32-filterable'),
+      rendererInfo: info.description || info.device || 'WebGPU',
+      vendorInfo: info.vendor,
+    }
   }
   getResourceStats() {
     return {
@@ -440,9 +410,6 @@ export class WebGPUProcessingPipeline {
       uniformUploads: this.uniformUploads,
       processDraws: this.processDraws,
     }
-  }
-  private telemetry() {
-    return webGPUTelemetry(this.params, this.images?.lutData ?? null)
   }
   dispose(_options: { releaseContext?: boolean } = {}) {
     this.disposed = true

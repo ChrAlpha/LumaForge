@@ -884,18 +884,9 @@ describe('rawWorkflowToolProvider Transform guards', () => {
     } as unknown as UseRawWorkflowReturn
     act(() =>
       setPipelineStats({
-        uploadTime: 4,
-        lutUploadTime: 0,
         processTime: 18,
-        totalTime: 22,
         inputSize: { width: 4000, height: 2666 },
         previewSize: { width: 1200, height: 800 },
-        inputFormat: 'uint16-rgb',
-        transformPath: 'no-lut',
-        lutRole: null,
-        lutInputTransfer: null,
-        lutOutputTransfer: null,
-        lutSize: null,
       }),
     )
     try {

@@ -144,8 +144,8 @@ export class RawProcessingPipeline {
     return this.renderer.renderToHiddenCanvas(...args)
   }
 
-  getLastExportStats() {
-    return this.renderer.getLastExportStats()
+  getLastSnapshotPlan() {
+    return this.renderer.getLastSnapshotPlan()
   }
 
   resize(...args: Parameters<PreviewPipelineBackend['resize']>) {

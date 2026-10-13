@@ -22,18 +22,9 @@ const view: PreviewView = { mode: 'compare', compareSplit: 0.5 }
 
 function createStats(overrides: Partial<PipelineStats> = {}): PipelineStats {
   return {
-    uploadTime: 1,
-    lutUploadTime: 0,
     processTime: 2,
-    totalTime: 3,
     inputSize: { width: 800, height: 600 },
     previewSize: { width: 640, height: 480 },
-    inputFormat: 'uint16-rgb',
-    transformPath: 'no-lut',
-    lutRole: null,
-    lutInputTransfer: null,
-    lutOutputTransfer: null,
-    lutSize: null,
     ...overrides,
   }
 }
@@ -173,28 +164,20 @@ describe('useRawWorkflowActions', () => {
       vi.useRealTimers()
     })
 
-    it.each<[string, Partial<PipelineStats>]>([
-      ['uploadTime', { uploadTime: 1.5 }],
-      ['lutUploadTime', { lutUploadTime: 0.5 }],
-      ['processTime', { processTime: 2.5 }],
-      ['totalTime', { totalTime: 3.5 }],
-    ])(
-      'publishes a %s change alone on a trailing beat with the latest timings',
-      (_field, overrides) => {
-        const { result, notifications, readStats } = renderStatsHarness()
-        const first = createStats()
-        result.current.updateStats(first)
+    it('publishes a timing change alone on a trailing beat with the latest timing', () => {
+      const { result, notifications, readStats } = renderStatsHarness()
+      const first = createStats()
+      result.current.updateStats(first)
 
-        result.current.updateStats(createStats(overrides))
-        const latest = createStats({ ...overrides, processTime: 9 })
-        result.current.updateStats(latest)
-        expect(readStats()).toBe(first)
+      result.current.updateStats(createStats({ processTime: 2.5 }))
+      const latest = createStats({ processTime: 9 })
+      result.current.updateStats(latest)
+      expect(readStats()).toBe(first)
 
-        vi.advanceTimersByTime(PIPELINE_TIMING_PUBLISH_MS)
-        expect(readStats()).toBe(latest)
-        expect(notifications).toHaveBeenCalledTimes(2)
-      },
-    )
+      vi.advanceTimersByTime(PIPELINE_TIMING_PUBLISH_MS)
+      expect(readStats()).toBe(latest)
+      expect(notifications).toHaveBeenCalledTimes(2)
+    })
 
     it('publishes a pipeline change at once and drops the timings it outdates', () => {
       const { result, notifications, readStats } = renderStatsHarness()
@@ -229,11 +212,6 @@ describe('useRawWorkflowActions', () => {
     ['inputSize.height', { inputSize: { width: 800, height: 601 } }],
     ['previewSize.width', { previewSize: { width: 641, height: 480 } }],
     ['previewSize.height', { previewSize: { width: 640, height: 481 } }],
-    ['transformPath', { transformPath: 'display-lut' }],
-    ['lutRole', { lutRole: 'display-look' }],
-    ['lutInputTransfer', { lutInputTransfer: 's-log3' }],
-    ['lutOutputTransfer', { lutOutputTransfer: 's-log3' }],
-    ['lutSize', { lutSize: 33 }],
   ])('publishes a pipeline change to %s at once', (_field, overrides) => {
     const { result, notifications, readStats } = renderStatsHarness()
 
