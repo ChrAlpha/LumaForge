@@ -146,7 +146,6 @@ export function createLumaRawRuntime(
     options.requireCrossOriginIsolation ?? memoryProfile === 'desktop'
   const client = new LumaRawWorkerClient(
     options.workerFactory ?? defaultWorkerFactory,
-    { memoryProfile },
   )
 
   async function openSession(
@@ -160,6 +159,7 @@ export function createLumaRawRuntime(
         'openSession',
         {
           ...createFilePayload(file, fileBuffer),
+          memoryProfile,
           maxOutputPixels: options.maxOutputPixels,
         },
         [fileBuffer],

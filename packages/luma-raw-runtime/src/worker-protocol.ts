@@ -27,36 +27,35 @@ export type LumaRawWorkerFilePayload = {
   fileBuffer: ArrayBuffer
   fileName: string
   fileSize: number
+  /**
+   * The browser worker builds its one core from the profile the first init
+   * or openSession names; the Node core is built with its profile.
+   */
   memoryProfile?: LumaRawRuntimeMemoryProfile
 }
 
 export type LumaRawWorkerSessionPayload = {
   sessionId: string
-  memoryProfile?: LumaRawRuntimeMemoryProfile
 }
 
 export type LumaRawWorkerProcessedWindowPayload = {
   sessionId: string
   request: LumaRawProcessedWindowRequest
-  memoryProfile?: LumaRawRuntimeMemoryProfile
 }
 
 export type LumaRawWorkerApplyCalibrationPayload = {
   sessionId: string
   cameraCalibration: LumaRawCameraCalibrationProfile
-  memoryProfile?: LumaRawRuntimeMemoryProfile
 }
 
 export type LumaRawWorkerQuickSessionPayload = {
   sessionId: string
   maxOutputPixels?: number
-  memoryProfile?: LumaRawRuntimeMemoryProfile
 }
 
 export type LumaRawWorkerBoundedHqSessionPayload = {
   sessionId: string
   maxOutputPixels: number
-  memoryProfile?: LumaRawRuntimeMemoryProfile
 }
 
 export type LumaRawWorkerRequestPayloadByType = {
@@ -72,10 +71,7 @@ export type LumaRawWorkerRequestPayloadByType = {
   readProcessedWindowFromSession: LumaRawWorkerProcessedWindowPayload
   applyCalibrationToSession: LumaRawWorkerApplyCalibrationPayload
   closeSession: LumaRawWorkerSessionPayload
-  cancel: {
-    targetJobId: string
-    memoryProfile?: LumaRawRuntimeMemoryProfile
-  }
+  cancel: { targetJobId: string }
 }
 
 export type LumaRawWorkerRequest<

@@ -649,9 +649,7 @@ export function createRuntimeCore(
               id: request.id,
               ok: true,
               type: request.type,
-              payload: getRuntimeInfo(
-                request.payload.memoryProfile ?? memoryProfile,
-              ),
+              payload: getRuntimeInfo(memoryProfile),
             }
           case 'cancel':
             if (!disposeSessionForOpenRequest(request.payload.targetJobId)) {

@@ -1,5 +1,4 @@
 import { LumaRawRuntimeError } from './errors'
-import type { LumaRawRuntimeMemoryProfile } from './types'
 import type {
   LumaRawWorkerPayloadByType,
   LumaRawWorkerRequest,
@@ -17,15 +16,6 @@ type PendingRequest = {
   abortListener?: () => void
 }
 
-type WorkerClientOptions = {
-  memoryProfile?: LumaRawRuntimeMemoryProfile
-}
-
-type WorkerPayload = LumaRawWorkerRequestPayloadByType[LumaRawWorkerRequestType]
-type MemoryProfilePayload = {
-  memoryProfile?: LumaRawRuntimeMemoryProfile
-}
-
 let requestCounter = 0
 
 function nextRequestId() {
@@ -38,10 +28,7 @@ export class LumaRawWorkerClient {
   private disposed = false
   private readonly pending = new Map<string, PendingRequest>()
 
-  constructor(
-    private readonly createWorker: () => Worker,
-    private readonly options: WorkerClientOptions = {},
-  ) {}
+  constructor(private readonly createWorker: () => Worker) {}
 
   request<T extends LumaRawWorkerRequestType>(
     type: T,
@@ -112,7 +99,7 @@ export class LumaRawWorkerClient {
           worker.postMessage({
             id: nextRequestId(),
             type: 'cancel',
-            payload: this.withMemoryProfile({ targetJobId: id }),
+            payload: { targetJobId: id },
           } satisfies LumaRawWorkerRequest<'cancel'>)
         } catch {
           // Cancellation best-effort only; the original request is already settled.
@@ -123,12 +110,7 @@ export class LumaRawWorkerClient {
       this.pending.set(id, pending)
 
       try {
-        const requestPayload = this.withMemoryProfile(payload)
-        const request = {
-          id,
-          type,
-          payload: requestPayload,
-        } satisfies LumaRawWorkerRequest<T>
+        const request = { id, type, payload } satisfies LumaRawWorkerRequest<T>
         worker.postMessage(request, transfer)
       } catch (error) {
         this.rejectPending(
@@ -176,17 +158,6 @@ export class LumaRawWorkerClient {
     }
     this.worker = worker
     return worker
-  }
-
-  private withMemoryProfile<T extends WorkerPayload>(payload: T): T {
-    const memoryProfile = this.options.memoryProfile
-    const currentMemoryProfile = (payload as MemoryProfilePayload).memoryProfile
-    if (!memoryProfile || currentMemoryProfile) return payload
-
-    return {
-      ...payload,
-      memoryProfile,
-    }
   }
 
   private handleResponse(response: LumaRawWorkerResponse) {

@@ -9,11 +9,9 @@ import { collectTransferables } from '../src/worker-protocol'
 import { loadNativeFactory } from './load-native-module'
 import { createRuntimeCore } from './runtime-core'
 
-const corePromises = new Map<
-  LumaRawRuntimeMemoryProfile,
-  ReturnType<typeof createCore>
->()
-let activeMemoryProfile: LumaRawRuntimeMemoryProfile = 'desktop'
+// One client owns this worker, so one core serves it: built for the profile
+// the first init or openSession names.
+let corePromise: ReturnType<typeof createCore> | undefined
 
 async function createCore(memoryProfile: LumaRawRuntimeMemoryProfile) {
   const nativeFactory = await loadNativeFactory({ memoryProfile })
@@ -38,30 +36,24 @@ function failureResponse(
   } as LumaRawWorkerResponse
 }
 
-function getRequestMemoryProfile(
+function requestMemoryProfile(
   request: LumaRawWorkerRequest,
 ): LumaRawRuntimeMemoryProfile {
-  return (
-    (request.payload as { memoryProfile?: LumaRawRuntimeMemoryProfile })
-      .memoryProfile ?? activeMemoryProfile
-  )
+  return request.type === 'init' || request.type === 'openSession'
+    ? (request.payload.memoryProfile ?? 'desktop')
+    : 'desktop'
 }
 
 self.onmessage = async (event: MessageEvent<LumaRawWorkerRequest>) => {
   const request = event.data
   let response: LumaRawWorkerResponse
-  const memoryProfile = getRequestMemoryProfile(request)
 
   let core: Awaited<ReturnType<typeof createCore>>
   try {
-    let corePromise = corePromises.get(memoryProfile)
-    if (!corePromise) {
-      corePromise = createCore(memoryProfile)
-      corePromises.set(memoryProfile, corePromise)
-    }
+    corePromise ??= createCore(requestMemoryProfile(request))
     core = await corePromise
   } catch (error) {
-    corePromises.delete(memoryProfile)
+    corePromise = undefined
     response = failureResponse(request, error, 'RAW_RUNTIME_UNAVAILABLE')
     postResponse(request, response)
     return
@@ -69,9 +61,6 @@ self.onmessage = async (event: MessageEvent<LumaRawWorkerRequest>) => {
 
   try {
     response = await core.handleRequest(request)
-    if (response.ok) {
-      activeMemoryProfile = memoryProfile
-    }
   } catch (error) {
     response = failureResponse(request, error, 'RAW_WORKER_PROTOCOL_ERROR')
   }

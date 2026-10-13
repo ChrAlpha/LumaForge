@@ -93,11 +93,10 @@ describe('lumaRawWorkerClient', () => {
     await expect(promise).resolves.toMatchObject({ runtime: 'luma' })
   })
 
-  it('tags cancel requests with the configured memory profile', async () => {
+  it('posts a cancel for the request its signal aborted', async () => {
     const fakeWorker = new FakeWorker()
     const client = new LumaRawWorkerClient(
       () => fakeWorker as unknown as Worker,
-      { memoryProfile: 'low-memory' },
     )
     const controller = new AbortController()
 
@@ -118,15 +117,10 @@ describe('lumaRawWorkerClient', () => {
     await expect(promise).rejects.toMatchObject({
       code: 'RAW_JOB_CANCELLED',
     })
-    expect(decodeRequest.payload).toMatchObject({
-      memoryProfile: 'low-memory',
-    })
-    expect(fakeWorker.requests[1]).toMatchObject({
+    expect(fakeWorker.requests[1]).toEqual({
+      id: expect.any(String),
       type: 'cancel',
-      payload: {
-        targetJobId: decodeRequest.id,
-        memoryProfile: 'low-memory',
-      },
+      payload: { targetJobId: decodeRequest.id },
     })
   })
 

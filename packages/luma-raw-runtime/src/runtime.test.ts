@@ -264,7 +264,7 @@ describe('createLumaRawRuntime', () => {
     runtime.dispose()
   })
 
-  it('tags direct low-memory session requests before explicit init', async () => {
+  it('names the low-memory profile on openSession before an explicit init', async () => {
     const { runtime, worker } = createRuntime(
       new RecordingWorker(),
       'low-memory',
@@ -640,7 +640,6 @@ describe('createLumaRawRuntime', () => {
     })
     expect(seenProcessedWindowRequests).toEqual([
       {
-        memoryProfile: 'desktop',
         sessionId: 's1',
         request: processedWindowRequest,
       },

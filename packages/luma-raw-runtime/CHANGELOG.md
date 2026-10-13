@@ -44,6 +44,11 @@ predate this file.
   `workerPoolSize`, and the `LumaRawMemoryTier` type is removed.
   `LumaRawTimings` drops `transferToWorker`, `process`, `makeMemImage`,
   `outputCopy`, and `transfer`, which no stage wrote.
+- Worker requests carry the memory profile only on `init` and `openSession`
+  (`LumaRawWorkerFilePayload.memoryProfile`); the session and `cancel`
+  payloads drop `memoryProfile`. The worker builds its one core from the
+  profile the first of those requests names, so a custom `workerFactory`
+  serves one profile per worker.
 
 ## 0.2.0 - 2026-10-12
 
