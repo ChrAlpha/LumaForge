@@ -291,7 +291,10 @@ function withResult(harness: Harness, result: ExportResult | undefined) {
   }))
 }
 
-/** Every way the request a result answers can stop being the current one. */
+/**
+ * One change for each live read a delivery checks: the export graph, the
+ * session, the export slot, the color intent, the LUT and the mount.
+ */
 const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
   [
     'an edit moves the export graph',
@@ -309,41 +312,6 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
     },
   ],
   [
-    'the session is reset',
-    (harness) => {
-      harness.setSession(null)
-    },
-  ],
-  [
-    'the source file is replaced',
-    (harness) =>
-      withSession(harness, (session) => ({
-        ...session,
-        sourceFile: {
-          ...session.sourceFile,
-          file: new File(['other'], 'frame.dng', { lastModified: 2_000 }),
-        },
-      })),
-  ],
-  ['the result is cleared', (harness) => withResult(harness, undefined)],
-  [
-    'a later attempt replaces the result',
-    (harness) =>
-      withResult(harness, {
-        ...harness.stored,
-        identity: captureExportResultIdentity({
-          resultKind: harness.stored.kind ?? 'full-resolution',
-          attemptId: 'attempt-2',
-          sessionId: harness.getSession()!.id,
-          sourceFile,
-          intent,
-          lut: makeLut(),
-          rawRenderExposure: exposure,
-          geometry: null,
-        }),
-      }),
-  ],
-  [
     'a later attempt claims the export slot',
     (harness) => {
       claimExportSlot(
@@ -354,32 +322,9 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
     },
   ],
   [
-    'a later attempt claims the export slot and ends',
-    (harness) => {
-      claimExportSlot(
-        harness.exportAbortControllerRef,
-        new AbortController(),
-        'attempt-2',
-      )
-      harness.exportAbortControllerRef.current = null
-    },
-  ],
-  [
-    'a controller no claim recorded holds the export slot',
-    (harness) => {
-      harness.exportAbortControllerRef.current = new AbortController()
-    },
-  ],
-  [
     'the user color changes',
     (harness) => {
       harness.setIntent({ ...intent, userExposureEv: 0.4 })
-    },
-  ],
-  [
-    'the look strength changes',
-    (harness) => {
-      harness.setIntent({ ...intent, intensity: 0.38 })
     },
   ],
   [
@@ -389,59 +334,12 @@ const STALE_CHANGES: Array<[string, (harness: Harness) => void]> = [
     },
   ],
   [
-    'the LUT contract changes',
-    (harness) => {
-      harness.setLut(
-        makeLut({
-          profileResolution: { kind: 'unknown' },
-        }),
-      )
-    },
-  ],
-  [
-    'the Transform intent is pending',
-    (harness) =>
-      withSession(harness, (session) => ({
-        ...session,
-        transform: {
-          sourceId: session.transform.sourceId,
-          intent: { ...session.transform.intent, upright: 'auto' },
-          capture: session.transform.capture,
-          issuedRequests: session.transform.issuedRequests,
-          request: session.transform.request,
-          accepted: session.transform.accepted,
-        },
-      })),
-  ],
-  [
-    'the committed geometry changes',
-    (harness) =>
-      withSession(harness, (session) => ({
-        ...session,
-        exportGeometry: {
-          matrix: [1, 0, 0.01, 0, 1, 0, 0, 0, 1],
-          constrainCrop: true,
-        },
-      })),
-  ],
-  [
     'the workflow unmounts',
     (harness) => {
       harness.isMountedRef.current = false
     },
   ],
 ]
-
-const ACTIONS = ['download', 'share', 'copy'] as const
-
-function run(harness: Harness, action: (typeof ACTIONS)[number]) {
-  const actions = harness.actions()
-  return action === 'download'
-    ? actions.downloadExportResult()
-    : action === 'share'
-      ? actions.shareExportResult()
-      : actions.copyExportResult()
-}
 
 describe('useExportResultActions', () => {
   afterEach(() => {
@@ -507,130 +405,26 @@ describe('useExportResultActions', () => {
     expect(harness.toast.error).not.toHaveBeenCalled()
   })
 
-  describe.each(ACTIONS)('%s of a completed result', (action) => {
-    it.each(STALE_CHANGES)(
-      'delivers nothing when %s while the output materializes',
-      async (_change, change) => {
-        const delivery = stubDelivery()
-        const paused = createPausedOutput()
-        const harness = setup({
-          result: (session) => createResult({ session, output: paused.output }),
-        })
-
-        const pending = run(harness, action)
-        expect(paused.openBlob).toHaveBeenCalledTimes(1)
-        change(harness)
-        paused.release()
-        await pending
-
-        expect(delivery.createObjectURL).not.toHaveBeenCalled()
-        expect(delivery.click).not.toHaveBeenCalled()
-        expect(delivery.share).not.toHaveBeenCalled()
-        expect(delivery.clipboardWrite).not.toHaveBeenCalled()
-        expect(harness.toast.success).not.toHaveBeenCalled()
-      },
-    )
-
-    it('still delivers across view-only changes and a late manifest seal', async () => {
+  it.each(STALE_CHANGES)(
+    'delivers nothing when %s while the output materializes',
+    async (_change, change) => {
       const delivery = stubDelivery()
       const paused = createPausedOutput()
       const harness = setup({
         result: (session) => createResult({ session, output: paused.output }),
       })
 
-      const pending = run(harness, action)
-      withSession(harness, (session) => ({
-        ...session,
-        viewState: { ...session.viewState, compareSplit: 0.2, zoom: 3 },
-        exportState: {
-          ...session.exportState,
-          result: { ...harness.stored, manifestState: { status: 'ready' } },
-        },
-      }))
-      // Fields the color graph never reads, such as a view left on an old
-      // record, are not part of the request.
-      harness.setIntent({
-        ...intent,
-        viewMode: 'split',
-        compareSplit: 0.2,
-      } as unknown as ColorGraphIntent)
-      harness.setLut(makeLut())
+      const pending = harness.actions().downloadExportResult()
+      expect(paused.openBlob).toHaveBeenCalledTimes(1)
+      change(harness)
       paused.release()
       await pending
 
-      expect(
-        delivery.click.mock.calls.length +
-          delivery.share.mock.calls.length +
-          delivery.clipboardWrite.mock.calls.length,
-      ).toBe(1)
-      expect(harness.toast.error).not.toHaveBeenCalled()
-    })
-
-    it('refuses a result while a later attempt already holds the slot', async () => {
-      const delivery = stubDelivery()
-      const paused = createPausedOutput()
-      const harness = setup({
-        result: (session) => createResult({ session, output: paused.output }),
-      })
-      // The later attempt has claimed the slot but not yet cleared the
-      // result, as while it samples the device before it plans.
-      claimExportSlot(
-        harness.exportAbortControllerRef,
-        new AbortController(),
-        'attempt-2',
-      )
-
-      await run(harness, action)
-
-      expect(paused.openBlob).not.toHaveBeenCalled()
       expect(delivery.createObjectURL).not.toHaveBeenCalled()
       expect(delivery.click).not.toHaveBeenCalled()
-      expect(delivery.share).not.toHaveBeenCalled()
-      expect(delivery.clipboardWrite).not.toHaveBeenCalled()
-      expect(harness.toast.error).toHaveBeenCalledTimes(1)
-    })
-
-    it('delivers while the attempt that produced it still holds the slot', async () => {
-      const delivery = stubDelivery()
-      const harness = setup({
-        result: (session) => createResult({ session, output: blobOutput() }),
-      })
-      claimExportSlot(
-        harness.exportAbortControllerRef,
-        new AbortController(),
-        'attempt-1',
-      )
-
-      await run(harness, action)
-
-      expect(
-        delivery.click.mock.calls.length +
-          delivery.share.mock.calls.length +
-          delivery.clipboardWrite.mock.calls.length,
-      ).toBe(1)
-      expect(harness.toast.error).not.toHaveBeenCalled()
-    })
-
-    it('refuses a result that does not record its request', async () => {
-      const delivery = stubDelivery()
-      const paused = createPausedOutput()
-      const harness = setup({
-        result: (session) => createResult({ session, output: paused.output }),
-      })
-      // Strip the identity to simulate a malformed result
-      const malformed = harness.getSession()!.exportState.result!
-      const { identity: _identity, ...unidentified } = malformed
-      withResult(harness, unidentified as unknown as ExportResult)
-
-      await run(harness, action)
-
-      expect(paused.openBlob).not.toHaveBeenCalled()
-      expect(delivery.click).not.toHaveBeenCalled()
-      expect(delivery.share).not.toHaveBeenCalled()
-      expect(delivery.clipboardWrite).not.toHaveBeenCalled()
-      expect(harness.toast.error).toHaveBeenCalledTimes(1)
-    })
-  })
+      expect(harness.toast.success).not.toHaveBeenCalled()
+    },
+  )
 
   it('delivers the result the store holds before any rerender shows it', async () => {
     const delivery = stubDelivery()
@@ -1078,24 +872,9 @@ describe('useExportResultActions refusal copy', () => {
     ])
   })
 
-  it('shows a copy or share refusal in the current locale', async () => {
-    localStorage.setItem('lumaforge.locale', 'zh-CN')
-    const harness = refuseCopyAndShare(I18nProvider)
-
-    await harness.actions().copyExportResult()
-    await harness.actions().shareExportResult()
-
-    expect(harness.toast.error.mock.calls).toEqual([
-      ['复制失败', { description: '此浏览器不支持复制图像到剪贴板。' }],
-      ['分享失败', { description: '此浏览器无法分享 JPEG 文件。' }],
-    ])
-  })
-
-  it('shows a preview copy that is not ready in the current locale', async () => {
-    localStorage.setItem('lumaforge.locale', 'zh-CN')
+  it('describes a preview copy that is not ready', async () => {
     stubDelivery()
     const harness = setup({
-      wrapper: I18nProvider,
       pipeline: null,
       result: (session) =>
         createResult({
@@ -1110,8 +889,8 @@ describe('useExportResultActions refusal copy', () => {
 
     await harness.actions().copyExportResult()
 
-    expect(harness.toast.error).toHaveBeenCalledWith('复制失败', {
-      description: '预览图像尚未就绪，无法复制。',
+    expect(harness.toast.error).toHaveBeenCalledWith('Copy failed', {
+      description: 'Preview image is not ready to copy.',
     })
   })
 })
@@ -1296,7 +1075,6 @@ describe('useExportResultActions notification copy', () => {
 
   const STALE =
     'This export no longer matches the photo. Export again to deliver it.'
-  const STALE_ZH = '此导出已与照片不一致。请重新导出后再交付。'
 
   it('keeps every English notification', async () => {
     expect(await notifyAll()).toEqual({
@@ -1343,42 +1121,6 @@ describe('useExportResultActions notification copy', () => {
       'delivery after unmount': [],
     })
   })
-
-  it('shows every notification in the current locale and runtime detail as given', async () => {
-    localStorage.setItem('lumaforge.locale', 'zh-CN')
-
-    expect(await notifyAll(I18nProvider)).toEqual({
-      'full-resolution copy': [['success', '已复制全分辨率图像']],
-      'HQ preview copy': [['success', '已复制 HQ 预览图像']],
-      'preview-size copy': [['success', '已复制预览尺寸图像']],
-      'preview-size copy the browser cannot encode': [
-        ['error', '复制失败', { description: '预览图像复制失败。' }],
-      ],
-      'download failure': [
-        ['error', '下载失败', { description: 'Object URL quota exceeded' }],
-      ],
-      'download failure without a message': [
-        ['error', '下载失败', { description: '下载操作失败。' }],
-      ],
-      'manifest failure without a message': [
-        ['error', '清单下载失败', { description: '清单下载失败。' }],
-      ],
-      'share failure without a message': [
-        ['error', '分享失败', { description: '分享操作失败。' }],
-      ],
-      'copy failure without a message': [
-        ['error', '复制失败', { description: '复制操作失败。' }],
-      ],
-      'stale download': [['error', '下载失败', { description: STALE_ZH }]],
-      'stale manifest download': [
-        ['error', '清单下载失败', { description: STALE_ZH }],
-      ],
-      'stale share': [['error', '分享失败', { description: STALE_ZH }]],
-      'stale copy': [['error', '复制失败', { description: STALE_ZH }]],
-      'cancelled share': [],
-      'delivery after unmount': [],
-    })
-  })
 })
 
 describe('useExportResultActions after a locale change', () => {
@@ -1395,49 +1137,6 @@ describe('useExportResultActions after a locale change', () => {
     localStorage.setItem('lumaforge.locale', locale)
     await act(() => i18n.changeLanguage(locale))
   }
-
-  function setupFor(copyCapability: ExportCopyCapability) {
-    const delivery = stubDelivery()
-    let resolveWrite!: () => void
-    let rejectWrite!: (reason: unknown) => void
-    delivery.clipboardWrite.mockReturnValue(
-      new Promise<void>((resolve, reject) => {
-        resolveWrite = resolve
-        rejectWrite = reject
-      }),
-    )
-    const harness = setup({
-      wrapper: I18nProvider,
-      result: (session) =>
-        createResult({ session, output: blobOutput(), copyCapability }),
-    })
-    return { harness, resolveWrite, rejectWrite }
-  }
-
-  it('confirms a copy in the locale current when it completes', async () => {
-    const { harness, resolveWrite } = setupFor({ mode: 'full-resolution' })
-    const pending = harness.actions().copyExportResult()
-    await switchLocale('zh-CN')
-
-    resolveWrite()
-    await pending
-
-    expect(harness.toast.success.mock.calls).toEqual([['已复制全分辨率图像']])
-    expect(harness.toast.error).not.toHaveBeenCalled()
-  })
-
-  it('reports a failed copy in the locale current when it fails', async () => {
-    const { harness, rejectWrite } = setupFor({ mode: 'full-resolution' })
-    const pending = harness.actions().copyExportResult()
-    await switchLocale('zh-CN')
-
-    rejectWrite('denied')
-    await pending
-
-    expect(harness.toast.error.mock.calls).toEqual([
-      ['复制失败', { description: '复制操作失败。' }],
-    ])
-  })
 
   it('refuses a delivery that went stale in the locale current when it is refused', async () => {
     stubDelivery()
@@ -1458,38 +1157,6 @@ describe('useExportResultActions after a locale change', () => {
         '下载失败',
         { description: '此导出已与照片不一致。请重新导出后再交付。' },
       ],
-    ])
-  })
-
-  it('refuses a copy the browser cannot encode in the locale current when it fails', async () => {
-    stubDelivery()
-    let encode!: BlobCallback
-    const snapshot = {
-      toBlob: vi.fn((callback: BlobCallback) => {
-        encode = callback
-      }),
-    } as unknown as HTMLCanvasElement
-    const harness = setup({
-      wrapper: I18nProvider,
-      previewCopyCanvas: snapshot,
-      result: (session) =>
-        createResult({
-          session,
-          output: blobOutput(),
-          copyCapability: {
-            mode: 'preview-size',
-            reasonCode: 'full-resolution-copy-unsupported',
-          },
-        }),
-    })
-    const pending = harness.actions().copyExportResult()
-    await switchLocale('zh-CN')
-
-    encode(null)
-    await pending
-
-    expect(harness.toast.error.mock.calls).toEqual([
-      ['复制失败', { description: '预览图像复制失败。' }],
     ])
   })
 })

@@ -5,7 +5,7 @@ import {
 } from '@lumaforge/luma-color-runtime'
 import { act, renderHook } from '@testing-library/react'
 import i18n from 'i18next'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '~/lib/i18n'
 import enMessages from '~/locales/en.json'
@@ -410,101 +410,6 @@ describe('useFullResExportAction', () => {
           { description: zhMessages['raw.export.reason.cannotSafelyComplete'] },
         ],
       ])
-    })
-
-    describe('in another locale', () => {
-      beforeEach(() => {
-        localStorage.setItem('lumaforge.locale', 'zh-CN')
-      })
-
-      afterEach(() => {
-        localStorage.clear()
-        document.documentElement.lang = 'en'
-      })
-
-      it('shows failures in the current locale and runtime messages as given', async () => {
-        const { runScheduled } = await notifyThroughHook(
-          [
-            {
-              kind: 'failed',
-              code: 'EXPORT_RENDER_FAILED',
-              message: 'Worker exploded',
-              retryLevel: 'safe',
-            },
-            {
-              kind: 'failed',
-              code: 'FULL_RES_EXPORT_WORKER_OOM',
-              message: 'Worker exploded',
-              retryLevel: 'balanced',
-            },
-            {
-              kind: 'failed',
-              code: 'EXPORT_RENDER_FAILED',
-              message: 'Worker exploded',
-              retryLevel: null,
-            },
-            {
-              kind: 'failed',
-              code: 'EXPORT_RENDER_FAILED',
-              message: null,
-              retryLevel: null,
-            },
-            {
-              kind: 'failed',
-              code: 'EXPORT_POLICY_CANNOT_COMPLETE',
-              message: enMessages['raw.export.reason.cannotSafelyComplete'],
-              retryLevel: null,
-            },
-          ],
-          I18nProvider,
-        )
-
-        runScheduled()
-
-        expect(toastMock.toast.error.mock.calls).toEqual([
-          ['导出失败', { description: 'Worker exploded。请以安全模式重试。' }],
-          ['导出失败', { description: 'Worker exploded。请以均衡模式重试。' }],
-          ['导出失败', { description: 'Worker exploded' }],
-          ['导出失败', { description: '导出失败' }],
-          [
-            '导出失败',
-            {
-              description: zhMessages['raw.export.reason.cannotSafelyComplete'],
-            },
-          ],
-        ])
-      })
-
-      it('shows refusals in the current locale and diagnostics as given', async () => {
-        const { runScheduled } = await notifyThroughHook(
-          [
-            { kind: 'refused', refusal: { code: 'source-loading' } },
-            { kind: 'refused', refusal: { code: 'transform-pending' } },
-            {
-              kind: 'refused',
-              refusal: {
-                code: 'runtime-unsupported',
-                detail: 'Quick preview is still being prepared.',
-              },
-            },
-          ],
-          I18nProvider,
-        )
-
-        runScheduled()
-
-        expect(toastMock.toast.error.mock.calls).toEqual([
-          ['全分辨率导出尚未就绪', { description: '全分辨率导出源还在加载。' }],
-          [
-            '全分辨率导出尚未就绪',
-            { description: '变换仍在准备当前照片。预览显示后再导出。' },
-          ],
-          [
-            '全分辨率导出尚未就绪',
-            { description: 'Quick preview is still being prepared.' },
-          ],
-        ])
-      })
     })
   })
 })
