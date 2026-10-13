@@ -3,6 +3,7 @@ import type {
   LUTContractResolution,
 } from '@lumaforge/luma-color-runtime'
 import { SlidersHorizontal } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useCallback, useId, useRef, useState } from 'react'
 
 import { Button } from '~/components/ui/button'
@@ -17,6 +18,44 @@ import {
 import type { PreviewLookReason } from '../../../services/surface/raw-reason'
 import { previewLookReasonMessageKey } from '../../../services/surface/raw-reason'
 import { LUTContractBrowser } from './LUTContractBrowser'
+
+/** One line of the contract: its term and what the contract says for it. */
+function ContractTerm({
+  term,
+  children,
+}: {
+  term: string
+  children: ReactNode
+}) {
+  return (
+    <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
+      <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
+        {term}
+      </span>
+      <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
+        {children}
+      </span>
+    </p>
+  )
+}
+
+/** A note on the colour contract, in the contract's amber. */
+function ContractNote({
+  children,
+  ...rest
+}: {
+  children: ReactNode
+  'data-raw-lut': string
+}) {
+  return (
+    <p
+      className="m-0 inline-flex w-full items-start gap-2 rounded-md bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)] px-2.5 py-2 text-lf-body leading-relaxed text-lf-on-surface/80"
+      {...rest}
+    >
+      {children}
+    </p>
+  )
+}
 
 export function LUTProfileStatus({
   selection,
@@ -78,94 +117,55 @@ export function LUTProfileStatus({
     <div className="space-y-2 pt-1">
       {view.status === 'confirmed' ? (
         <div className="grid min-w-0 gap-1.5 text-[0.78rem] leading-snug">
-          <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
-            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
-              {t('raw.lutContract.inputTerm')}
-            </span>
-            <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
-              {view.profile.label}
-            </span>
-          </p>
-          <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
-            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
-              {t('raw.lutContract.outputTerm')}
-            </span>
-            <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
-              {formatLUTContractOutput(view.output)}
-            </span>
-          </p>
+          <ContractTerm term={t('raw.lutContract.inputTerm')}>
+            {view.profile.label}
+          </ContractTerm>
+          <ContractTerm term={t('raw.lutContract.outputTerm')}>
+            {formatLUTContractOutput(view.output)}
+          </ContractTerm>
           {/* A confirmed contract the preview still leaves out says why,
               rather than reading as applied. */}
           {previewLookReason && (
-            <p
-              className="m-0 inline-flex w-full items-start gap-2 rounded-md bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)] px-2.5 py-2 text-lf-body leading-relaxed text-lf-on-surface/80"
-              data-raw-lut="preview-reason"
-            >
+            <ContractNote data-raw-lut="preview-reason">
               {t(previewLookReasonMessageKey(previewLookReason))}
-            </p>
+            </ContractNote>
           )}
         </div>
       ) : view.status === 'incomplete-output' ? (
         <div className="grid min-w-0 gap-1.5 text-[0.78rem] leading-snug">
-          <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
-            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
-              {t('raw.lutContract.inputTerm')}
-            </span>
-            <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
-              {view.profile.label}
-            </span>
-          </p>
-          <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
-            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
-              {t('raw.lutContract.outputTerm')}
-            </span>
-            <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
-              {getProfileOutputLabel(view.profile)}
-            </span>
-          </p>
-          <p
-            className="m-0 inline-flex w-full items-start gap-2 rounded-md bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)] px-2.5 py-2 text-lf-body leading-relaxed text-lf-on-surface/80"
-            data-raw-lut="contract-status"
-          >
+          <ContractTerm term={t('raw.lutContract.inputTerm')}>
+            {view.profile.label}
+          </ContractTerm>
+          <ContractTerm term={t('raw.lutContract.outputTerm')}>
+            {getProfileOutputLabel(view.profile)}
+          </ContractTerm>
+          <ContractNote data-raw-lut="contract-status">
             {t('raw.lutContract.needsOutput')}
-          </p>
+          </ContractNote>
         </div>
       ) : view.status === 'recommended' ? (
         <div className="grid min-w-0 gap-1.5 text-[0.78rem] leading-snug">
-          <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
-            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
-              {t('raw.lutContract.inputTerm')}
+          <ContractTerm term={t('raw.lutContract.inputTerm')}>
+            {view.recommendation.label}
+            <span className="ml-1 font-normal text-lf-on-surface/55">
+              · {t('raw.lutContract.recommendedBadge')}
             </span>
-            <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
-              {view.recommendation.label}
+          </ContractTerm>
+          <ContractTerm term={t('raw.lutContract.outputTerm')}>
+            {view.completesContract
+              ? getProfileOutputLabel(view.recommendation)
+              : t('raw.lutContract.chooseOutput')}
+            {view.completesContract && (
               <span className="ml-1 font-normal text-lf-on-surface/55">
                 · {t('raw.lutContract.recommendedBadge')}
               </span>
-            </span>
-          </p>
-          <p className="m-0 grid min-w-0 grid-cols-[4.2rem_minmax(0,1fr)] items-baseline gap-2">
-            <span className="text-[0.72rem] tracking-tight text-lf-on-surface/62">
-              {t('raw.lutContract.outputTerm')}
-            </span>
-            <span className="min-w-0 break-words font-medium text-lf-on-surface/85">
-              {view.completesContract
-                ? getProfileOutputLabel(view.recommendation)
-                : t('raw.lutContract.chooseOutput')}
-              {view.completesContract && (
-                <span className="ml-1 font-normal text-lf-on-surface/55">
-                  · {t('raw.lutContract.recommendedBadge')}
-                </span>
-              )}
-            </span>
-          </p>
-          <p
-            className="m-0 inline-flex w-full items-start gap-2 rounded-md bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)] px-2.5 py-2 text-lf-body leading-relaxed text-lf-on-surface/80"
-            data-raw-lut="contract-status"
-          >
+            )}
+          </ContractTerm>
+          <ContractNote data-raw-lut="contract-status">
             {view.completesContract
               ? t('raw.lutContract.recommendedNote')
               : t('raw.lutContract.recommendedInputOnlyNote')}
-          </p>
+          </ContractNote>
           {previewLookReason && (
             <p
               className="m-0 text-[0.72rem] leading-relaxed text-lf-on-surface/72"
@@ -197,19 +197,13 @@ export function LUTProfileStatus({
           )}
         </div>
       ) : view.status === 'unsupported-output' ? (
-        <p
-          className="m-0 inline-flex w-full items-start gap-2 rounded-md bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)] px-2.5 py-2 text-lf-body leading-relaxed text-lf-on-surface/80"
-          data-raw-lut="contract-status"
-        >
+        <ContractNote data-raw-lut="contract-status">
           {t('raw.lutContract.unsupportedOutput')}
-        </p>
+        </ContractNote>
       ) : (
-        <p
-          className="m-0 inline-flex w-full items-start gap-2 rounded-md bg-[oklch(from_var(--color-lf-amber)_l_c_h_/_0.10)] px-2.5 py-2 text-lf-body leading-relaxed text-lf-on-surface/80"
-          data-raw-lut="contract-status"
-        >
+        <ContractNote data-raw-lut="contract-status">
           {t('raw.lutContract.unknown')}
-        </p>
+        </ContractNote>
       )}
 
       <Button
