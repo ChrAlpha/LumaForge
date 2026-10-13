@@ -19,6 +19,10 @@ follows Keep a Changelog; versions follow semver.
 - The native build id is read only from the per-variant
   `native/provenance/raw-<variant>.json`; a lone `raw.json`, which no current
   artifact package ships, no longer counts.
+- The package entry no longer exports `LmfgError`, `LmfgErrorCode`,
+  `EXIT_CODES`, `listSchemas`, or `showSchema`. Hosts read errors, exit codes,
+  and schemas through the CLI protocol (`lmfg.error.v1`, `lmfg schema list`,
+  `lmfg schema show`).
 
 ### Changed
 
