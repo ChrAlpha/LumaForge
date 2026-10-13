@@ -79,7 +79,7 @@ export default defineConfig({
   },
   test: {
     name: '@lumaforge/luma-raw-runtime',
-    environment: 'jsdom',
+    environment: 'node',
     globals: true,
   },
 })

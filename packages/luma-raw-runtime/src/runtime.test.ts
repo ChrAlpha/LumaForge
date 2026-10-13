@@ -210,7 +210,6 @@ function createRuntime(
 
 afterEach(() => {
   vi.restoreAllMocks()
-  vi.unstubAllGlobals()
 })
 
 describe('createLumaRawRuntime', () => {
@@ -877,51 +876,6 @@ describe('createLumaRawRuntime', () => {
 
     expect(readFile).toHaveBeenCalledTimes(1)
     expect(worker.requests[0]?.type).toBe('openSession')
-
-    runtime.dispose()
-  })
-
-  it('rejects while reading through FileReader fallback and never posts the worker request', async () => {
-    const { runtime, worker } = createRuntime()
-    const file = {
-      name: 'sample.ARW',
-      size: 4,
-    } as unknown as File
-    const controller = new AbortController()
-    const fileReaderState = {
-      readCalls: 0,
-      aborted: 0,
-    }
-    class AbortableFileReader {
-      onload: ((event: ProgressEvent<FileReader>) => void) | null = null
-      onerror: ((event: ProgressEvent<FileReader>) => void) | null = null
-      onabort: ((event: ProgressEvent<FileReader>) => void) | null = null
-      result: string | ArrayBuffer | null = null
-      error: DOMException | null = null
-      readAsArrayBuffer(_blob: Blob) {
-        fileReaderState.readCalls += 1
-      }
-      abort() {
-        fileReaderState.aborted += 1
-      }
-      addEventListener() {}
-      removeEventListener() {}
-      dispatchEvent() {
-        return true
-      }
-    }
-    vi.stubGlobal('FileReader', AbortableFileReader)
-
-    const promise = runtime.openSession(file, undefined, controller.signal)
-    expect(fileReaderState.readCalls).toBe(1)
-
-    controller.abort()
-
-    await expect(promise).rejects.toMatchObject({
-      code: 'RAW_JOB_CANCELLED',
-    })
-    expect(fileReaderState.aborted).toBe(1)
-    expect(worker.postMessage).not.toHaveBeenCalled()
 
     runtime.dispose()
   })

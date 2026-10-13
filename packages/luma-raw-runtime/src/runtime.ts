@@ -82,73 +82,8 @@ function readFileBytes(file: File, signal?: AbortSignal): Promise<ArrayBuffer> {
     return Promise.reject(createJobCancelledError())
   }
 
-  if (typeof file.arrayBuffer === 'function') {
-    const readPromise = file.arrayBuffer()
-    return signal ? withAbortSignal(readPromise, signal) : readPromise
-  }
-
-  return readFileBytesWithReader(file, signal)
-}
-
-function readFileBytesWithReader(file: File, signal?: AbortSignal) {
-  if (typeof FileReader === 'undefined') {
-    return Promise.reject(
-      new LumaRawRuntimeError(
-        'RAW_WORKER_PROTOCOL_ERROR',
-        'RAW runtime failed to read file bytes.',
-      ),
-    )
-  }
-
-  return new Promise<ArrayBuffer>((resolve, reject) => {
-    const reader = new FileReader()
-    let settled = false
-
-    const cleanup = () => {
-      signal?.removeEventListener('abort', onAbort)
-    }
-
-    const onAbort = () => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reader.abort()
-      reject(createJobCancelledError())
-    }
-
-    reader.onload = () => {
-      if (settled) return
-      settled = true
-      const result = reader.result
-      cleanup()
-
-      if (result instanceof ArrayBuffer) {
-        resolve(result)
-        return
-      }
-
-      reject(
-        new LumaRawRuntimeError(
-          'RAW_WORKER_PROTOCOL_ERROR',
-          'RAW runtime failed to read file bytes.',
-        ),
-      )
-    }
-
-    reader.onerror = () => {
-      cleanup()
-      reject(
-        reader.error ??
-          new LumaRawRuntimeError(
-            'RAW_WORKER_PROTOCOL_ERROR',
-            'RAW runtime failed to read file bytes.',
-          ),
-      )
-    }
-
-    signal?.addEventListener('abort', onAbort, { once: true })
-    reader.readAsArrayBuffer(file)
-  })
+  const readPromise = file.arrayBuffer()
+  return signal ? withAbortSignal(readPromise, signal) : readPromise
 }
 
 function withAbortSignal<T>(promise: Promise<T>, signal: AbortSignal) {
