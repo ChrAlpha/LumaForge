@@ -9,11 +9,11 @@ import type {
 } from './preview-compare-readiness'
 import {
   derivePreviewCompareReadiness,
-  derivePreviewFrameStatusTransition,
   derivePreviewTrackReadinessTransition,
   EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   EMPTY_PREVIEW_FRAME_STATUS,
   getOriginalGpuGenerationKey,
+  isNewPreviewFrameStatus,
 } from './preview-compare-readiness'
 
 function frameDescriptor({
@@ -562,42 +562,16 @@ describe('derivePreviewTrackReadinessTransition', () => {
   })
 })
 
-describe('derivePreviewFrameStatusTransition', () => {
-  it('skips committing an unchanged processed frame status', () => {
+describe('isNewPreviewFrameStatus', () => {
+  it('commits a changed generation or a reset, never an unchanged status', () => {
     expect(
-      derivePreviewFrameStatusTransition({
-        currentStatus: quickProcessedFrame,
-        nextStatus: quickProcessedFrame,
-      }),
-    ).toEqual({
-      nextStatus: quickProcessedFrame,
-      shouldCommit: false,
-    })
-  })
-
-  it('commits a changed processed frame generation', () => {
-    const nextStatus = currentProcessedFrame
-
+      isNewPreviewFrameStatus(quickProcessedFrame, quickProcessedFrame),
+    ).toBe(false)
     expect(
-      derivePreviewFrameStatusTransition({
-        currentStatus: quickProcessedFrame,
-        nextStatus,
-      }),
-    ).toEqual({
-      nextStatus,
-      shouldCommit: true,
-    })
-  })
-
-  it('commits reset when the current status is not already empty', () => {
+      isNewPreviewFrameStatus(quickProcessedFrame, currentProcessedFrame),
+    ).toBe(true)
     expect(
-      derivePreviewFrameStatusTransition({
-        currentStatus: quickProcessedFrame,
-        nextStatus: EMPTY_PREVIEW_FRAME_STATUS,
-      }),
-    ).toEqual({
-      nextStatus: EMPTY_PREVIEW_FRAME_STATUS,
-      shouldCommit: true,
-    })
+      isNewPreviewFrameStatus(quickProcessedFrame, EMPTY_PREVIEW_FRAME_STATUS),
+    ).toBe(true)
   })
 })

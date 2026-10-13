@@ -36,21 +36,18 @@ export const EMPTY_ORIGINAL_GPU_FRAME_STATUS: OriginalGpuFrameStatus = {
   state: 'idle',
 }
 
-export function derivePreviewFrameStatusTransition({
-  currentStatus,
-  nextStatus,
-}: {
-  currentStatus: PreviewFrameStatus
-  nextStatus: PreviewFrameStatus
-}) {
-  return {
-    nextStatus,
-    // The generation key names the frame, so an equal key with an equal
-    // state is the same status.
-    shouldCommit:
-      currentStatus.generationKey !== nextStatus.generationKey ||
-      currentStatus.state !== nextStatus.state,
-  }
+/**
+ * Whether a processed frame status differs from the one committed. The
+ * generation key names the frame, so an equal key with an equal state is the
+ * same status.
+ */
+export function isNewPreviewFrameStatus(
+  current: PreviewFrameStatus,
+  next: PreviewFrameStatus,
+): boolean {
+  return (
+    current.generationKey !== next.generationKey || current.state !== next.state
+  )
 }
 
 type DerivePreviewCompareReadinessInput = {

@@ -35,10 +35,10 @@ import type {
 } from '../../services/preview/preview-compare-readiness'
 import {
   derivePreviewCompareReadiness,
-  derivePreviewFrameStatusTransition,
   derivePreviewTrackReadinessTransition,
   EMPTY_ORIGINAL_GPU_FRAME_STATUS,
   EMPTY_PREVIEW_FRAME_STATUS,
+  isNewPreviewFrameStatus,
 } from '../../services/preview/preview-compare-readiness'
 import type { PreviewPipelineHandle } from './usePreviewPipelineLifecycle'
 
@@ -280,16 +280,10 @@ export function useProcessedPreview<
 
   const commitProcessedFrameStatus = useCallback(
     (nextStatus: PreviewFrameStatus) => {
-      const transition = derivePreviewFrameStatusTransition({
-        currentStatus: processedFrameStatusRef.current,
-        nextStatus,
-      })
-      if (!transition.shouldCommit) {
+      if (!isNewPreviewFrameStatus(processedFrameStatusRef.current, nextStatus))
         return
-      }
-
-      processedFrameStatusRef.current = transition.nextStatus
-      setProcessedFrameStatus(transition.nextStatus)
+      processedFrameStatusRef.current = nextStatus
+      setProcessedFrameStatus(nextStatus)
     },
     [],
   )
