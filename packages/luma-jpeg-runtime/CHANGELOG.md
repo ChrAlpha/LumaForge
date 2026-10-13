@@ -4,6 +4,15 @@ All notable changes to `@lumaforge/luma-jpeg-runtime` are documented here.
 The format follows Keep a Changelog; versions follow semver. Releases up to
 0.1.1 predate this file.
 
+## Unreleased
+
+### Breaking
+
+- An encoder whose `finish()` produced no bytes rejects with
+  `JPEG_RUNTIME_NO_OUTPUT` in both finish modes. Chunks mode used to reject
+  with `JPEG_RUNTIME_CHUNKS_UNAVAILABLE`, and blob mode resolved with an empty
+  Blob.
+
 ## 0.2.0 - 2026-10-12
 
 The Node encoder's `abort()` changes its return type, a break that a 0.x

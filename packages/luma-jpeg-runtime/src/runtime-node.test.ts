@@ -1,5 +1,4 @@
 /// <reference types="node" />
-// @vitest-environment node
 
 import { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'

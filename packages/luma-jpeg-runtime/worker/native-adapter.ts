@@ -1,15 +1,13 @@
 import type { InternalJpegEncoder, JpegWorkerChunk } from './runtime-core'
 
-type NativeJpegChunk = {
-  bytes: Uint8Array
-  byteOffset: number
-  final: boolean
-}
-
+// Encoders built with chunk streaming return an empty array from finish and
+// hand out the stream, in JS-owned arrays, through drainChunks. The JPEG
+// artifact in luma-native-artifacts 0.0.5 predates streaming: it has no
+// drainChunks and returns the whole stream from finish.
 type NativeJpegEncoder = {
-  writeRows: (rows: Uint8Array, rowCount: number) => number | void
+  writeRows: (rows: Uint8Array, rowCount: number) => unknown
   finish: () => Uint8Array
-  drainChunks?: () => NativeJpegChunk[]
+  drainChunks?: () => JpegWorkerChunk[]
   abort: () => void
   delete?: () => void
 }
@@ -28,51 +26,6 @@ export type NativeJpegEncoderFactoryInput = {
   width: number
   height: number
   quality: number
-  finishMode?: 'blob' | 'chunks'
-}
-
-function createJpegBlob(bytes: Uint8Array) {
-  const byteBuffer = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer
-  const blob = new Blob([byteBuffer], { type: 'image/jpeg' })
-  if (typeof blob.arrayBuffer !== 'function') {
-    Object.defineProperty(blob, 'arrayBuffer', {
-      value: async () => byteBuffer.slice(0),
-    })
-  }
-  return blob
-}
-
-function createJpegBlobFromChunks(chunks: readonly JpegWorkerChunk[]) {
-  const parts = chunks.map((chunk) => {
-    const byteBuffer = chunk.bytes.buffer.slice(
-      chunk.bytes.byteOffset,
-      chunk.bytes.byteOffset + chunk.bytes.byteLength,
-    ) as ArrayBuffer
-    return byteBuffer
-  })
-  const blob = new Blob(parts, { type: 'image/jpeg' })
-  if (typeof blob.arrayBuffer !== 'function') {
-    Object.defineProperty(blob, 'arrayBuffer', {
-      value: async () => {
-        const buffers = parts.map((part) => new Uint8Array(part))
-        const byteLength = buffers.reduce(
-          (total, buffer) => total + buffer.byteLength,
-          0,
-        )
-        const bytes = new Uint8Array(byteLength)
-        let offset = 0
-        for (const buffer of buffers) {
-          bytes.set(buffer, offset)
-          offset += buffer.byteLength
-        }
-        return bytes.buffer
-      },
-    })
-  }
-  return blob
 }
 
 function normalizeNativeError(module: NativeJpegModule, error: unknown) {
@@ -105,15 +58,6 @@ function deleteNativeEncoder(encoder: NativeJpegEncoder) {
   }
 }
 
-function normalizeNativeChunks(encoder: NativeJpegEncoder): JpegWorkerChunk[] {
-  const chunks = encoder.drainChunks?.() ?? []
-  return chunks.map((chunk) => ({
-    bytes: new Uint8Array(chunk.bytes),
-    byteOffset: chunk.byteOffset,
-    final: chunk.final,
-  }))
-}
-
 export function createNativeJpegEncoderFactory(module: NativeJpegModule) {
   return (input: NativeJpegEncoderFactoryInput): InternalJpegEncoder => {
     let encoder: NativeJpegEncoder
@@ -129,7 +73,13 @@ export function createNativeJpegEncoderFactory(module: NativeJpegModule) {
 
     let aborted = false
     let finished = false
-    let pendingChunks: JpegWorkerChunk[] = []
+    let streamedBytes = 0
+
+    function drain(): JpegWorkerChunk[] {
+      const chunks = encoder.drainChunks?.() ?? []
+      for (const chunk of chunks) streamedBytes += chunk.bytes.byteLength
+      return chunks
+    }
 
     return {
       async writeRows(rows, rowCount) {
@@ -137,9 +87,7 @@ export function createNativeJpegEncoderFactory(module: NativeJpegModule) {
         if (finished) throw new Error('JPEG_RUNTIME_FINISHED')
         try {
           encoder.writeRows(rows, rowCount)
-          if (input.finishMode === 'chunks') {
-            pendingChunks.push(...normalizeNativeChunks(encoder))
-          }
+          return drain()
         } catch (error) {
           aborted = true
           deleteNativeEncoder(encoder)
@@ -149,10 +97,17 @@ export function createNativeJpegEncoderFactory(module: NativeJpegModule) {
       async finish() {
         if (aborted) throw new Error('JPEG_RUNTIME_ABORTED')
         if (finished) throw new Error('JPEG_RUNTIME_FINISHED')
-        let bytes: Uint8Array
+        let chunks: JpegWorkerChunk[]
         try {
-          bytes = encoder.finish()
-          pendingChunks.push(...normalizeNativeChunks(encoder))
+          const whole = encoder.finish()
+          chunks = drain()
+          if (whole.byteLength > 0) {
+            chunks.push({
+              bytes: whole,
+              byteOffset: streamedBytes,
+              final: true,
+            })
+          }
         } catch (error) {
           finished = true
           deleteNativeEncoder(encoder)
@@ -160,18 +115,6 @@ export function createNativeJpegEncoderFactory(module: NativeJpegModule) {
         }
         finished = true
         deleteNativeEncoder(encoder)
-        if (
-          input.finishMode !== 'chunks' &&
-          bytes.byteLength === 0 &&
-          pendingChunks.length > 0
-        ) {
-          return createJpegBlobFromChunks(pendingChunks)
-        }
-        return createJpegBlob(bytes)
-      },
-      drainChunks() {
-        const chunks = pendingChunks
-        pendingChunks = []
         return chunks
       },
       abort() {

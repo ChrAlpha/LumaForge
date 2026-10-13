@@ -1,4 +1,3 @@
-import { createBaselineJpegEncoder } from '../worker/baseline-encoder'
 import type {
   JpegWorkerRequest,
   JpegWorkerResponse,
@@ -24,9 +23,30 @@ type PostedMessage = {
 class CoreBackedWorker {
   onmessage: ((event: MessageEvent<WorkerResponse>) => void) | null = null
   onerror: ((event: ErrorEvent) => void) | null = null
-  private readonly core = createJpegRuntimeCore(
-    async () => createBaselineJpegEncoder,
-  )
+  // Streams the start-of-image marker with the first rows and the
+  // end-of-image marker from finish.
+  private readonly core = createJpegRuntimeCore(async () => () => {
+    let offset = 0
+    return {
+      async writeRows() {
+        if (offset > 0) return []
+        offset = 2
+        return [
+          { bytes: new Uint8Array([255, 216]), byteOffset: 0, final: false },
+        ]
+      },
+      async finish() {
+        return [
+          {
+            bytes: new Uint8Array([255, 217]),
+            byteOffset: offset,
+            final: true,
+          },
+        ]
+      },
+      abort() {},
+    }
+  })
 
   postMessage(request: JpegWorkerRequest) {
     void this.core
@@ -102,23 +122,6 @@ class ManualWorker {
   terminate() {}
 }
 
-function readWord(bytes: Uint8Array, offset: number) {
-  return (bytes[offset] << 8) | bytes[offset + 1]
-}
-
-function readBlobBytes(blob: Blob) {
-  if (typeof blob.arrayBuffer === 'function') {
-    return blob.arrayBuffer()
-  }
-
-  return new Promise<ArrayBuffer>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as ArrayBuffer)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsArrayBuffer(blob)
-  })
-}
-
 async function drainMicrotasks() {
   await Promise.resolve()
   await Promise.resolve()
@@ -135,49 +138,8 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-async function expectBaselineJpeg(
-  blob: Blob,
-  dimensions: { width: number; height: number },
-) {
-  const bytes = new Uint8Array(await readBlobBytes(blob))
-  const markers = new Set<number>()
-  let sof0: { width: number; height: number } | undefined
-  let offset = 2
-
-  expect(readWord(bytes, 0)).toBe(0xFFD8)
-  expect(readWord(bytes, bytes.length - 2)).toBe(0xFFD9)
-
-  while (offset < bytes.length - 2) {
-    if (bytes[offset] !== 0xFF) {
-      offset += 1
-      continue
-    }
-
-    const marker = bytes[offset + 1]
-    markers.add(marker)
-    if (marker === 0xDA) {
-      break
-    }
-
-    const segmentLength = readWord(bytes, offset + 2)
-    if (marker === 0xC0) {
-      sof0 = {
-        height: readWord(bytes, offset + 5),
-        width: readWord(bytes, offset + 7),
-      }
-    }
-    offset += 2 + segmentLength
-  }
-
-  expect(markers.has(0xDB)).toBe(true)
-  expect(markers.has(0xC0)).toBe(true)
-  expect(markers.has(0xC4)).toBe(true)
-  expect(markers.has(0xDA)).toBe(true)
-  expect(sof0).toEqual(dimensions)
-}
-
 describe('createLumaJpegRuntime', () => {
-  it('encodes ordered RGB8 rows through a worker-backed runtime', async () => {
+  it('returns the worker-assembled JPEG blob from finish', async () => {
     const runtime = createLumaJpegRuntime({
       workerFactory: () => new CoreBackedWorker() as unknown as Worker,
     })
@@ -200,8 +162,9 @@ describe('createLumaJpegRuntime', () => {
     const blob = await encoder.finish()
 
     expect(blob.type).toBe('image/jpeg')
-    expect(blob.size).toBeGreaterThan(0)
-    await expectBaselineJpeg(blob, { width: 3, height: 5 })
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(
+      new Uint8Array([255, 216, 255, 217]),
+    )
     runtime.dispose()
   })
 

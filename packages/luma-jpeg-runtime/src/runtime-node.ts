@@ -61,17 +61,6 @@ function makeRequestId(counter: { value: number }): string {
   return `jpeg-node-${counter.value}`
 }
 
-/**
- * Convert a runtime-core Blob into a Uint8Array.
- *
- * Requires Node 18+ (global Blob with `arrayBuffer()`). jsdom-flavored test
- * environments may lack `arrayBuffer` on their Blob polyfill; the Node-entry
- * test file therefore uses `@vitest-environment node`.
- */
-async function blobToUint8Array(blob: Blob): Promise<Uint8Array> {
-  return new Uint8Array(await blob.arrayBuffer())
-}
-
 export async function createLumaJpegRuntimeForNode(
   options: LumaJpegNodeRuntimeOptions = {},
 ): Promise<LumaJpegNodeRuntime> {
@@ -187,7 +176,7 @@ export async function createLumaJpegRuntimeForNode(
         await drainChunkQueue()
         state = 'finished'
         encoderActive = false
-        return blobToUint8Array(response.payload.blob)
+        return new Uint8Array(await response.payload.blob.arrayBuffer())
       },
 
       abort() {

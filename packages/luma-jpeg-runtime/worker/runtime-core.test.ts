@@ -1,85 +1,52 @@
-import { createBaselineJpegEncoder } from './baseline-encoder'
+import type { InternalJpegEncoder, JpegWorkerChunk } from './runtime-core'
 import { createJpegRuntimeCore } from './runtime-core'
 
-const JPEG_SOI_MARKER = 65_496
-const JPEG_EOI_MARKER = 65_497
-const JPEG_MARKER_PREFIX = 255
-const JPEG_SOS_MARKER = 218
-const JPEG_SOF0_MARKER = 192
-const JPEG_DQT_MARKER = 219
-const JPEG_DHT_MARKER = 196
+const ROW = new Uint8Array([255, 255, 255])
 
-function createBaselineRuntime() {
-  return createJpegRuntimeCore(async () => createBaselineJpegEncoder)
-}
-
-function readWord(bytes: Uint8Array, offset: number) {
-  return (bytes[offset] << 8) | bytes[offset + 1]
-}
-
-function readBlobBytes(blob: Blob) {
-  if (typeof blob.arrayBuffer === 'function') {
-    return blob.arrayBuffer()
+/**
+ * Streams the start-of-image marker with the first rows and the
+ * end-of-image marker, marked final, from finish.
+ */
+function createStreamingEncoder(
+  overrides: Partial<InternalJpegEncoder> = {},
+): InternalJpegEncoder {
+  let offset = 0
+  const chunk = (bytes: number[], final: boolean): JpegWorkerChunk => {
+    const next = { bytes: new Uint8Array(bytes), byteOffset: offset, final }
+    offset += bytes.length
+    return next
   }
-
-  return new Promise<ArrayBuffer>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as ArrayBuffer)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsArrayBuffer(blob)
-  })
+  return {
+    async writeRows() {
+      return offset === 0 ? [chunk([255, 216], false)] : []
+    },
+    async finish() {
+      return [chunk([255, 217], true)]
+    },
+    abort() {},
+    ...overrides,
+  }
 }
 
-async function expectBaselineJpeg(
-  blob: Blob,
-  dimensions: { width: number; height: number },
+function createRuntime(
+  overrides: Partial<InternalJpegEncoder> = {},
+  onResponse?: (response: unknown) => void,
 ) {
-  const bytes = new Uint8Array(await readBlobBytes(blob))
-  const markers = new Set<number>()
-  let sof0: { width: number; height: number } | undefined
-  let offset = 2
-
-  expect(readWord(bytes, 0)).toBe(JPEG_SOI_MARKER)
-  expect(readWord(bytes, bytes.length - 2)).toBe(JPEG_EOI_MARKER)
-
-  while (offset < bytes.length - 2) {
-    if (bytes[offset] !== JPEG_MARKER_PREFIX) {
-      offset += 1
-      continue
-    }
-
-    const marker = bytes[offset + 1]
-    markers.add(marker)
-    if (marker === JPEG_SOS_MARKER) {
-      break
-    }
-
-    const segmentLength = readWord(bytes, offset + 2)
-    if (marker === JPEG_SOF0_MARKER) {
-      sof0 = {
-        height: readWord(bytes, offset + 5),
-        width: readWord(bytes, offset + 7),
-      }
-    }
-    offset += 2 + segmentLength
-  }
-
-  expect(markers.has(JPEG_DQT_MARKER)).toBe(true)
-  expect(markers.has(JPEG_SOF0_MARKER)).toBe(true)
-  expect(markers.has(JPEG_DHT_MARKER)).toBe(true)
-  expect(markers.has(JPEG_SOS_MARKER)).toBe(true)
-  expect(sof0).toEqual(dimensions)
+  return createJpegRuntimeCore(
+    async () => () => createStreamingEncoder(overrides),
+    { onResponse },
+  )
 }
 
 describe('createJpegRuntimeCore', () => {
   it('tracks written rows after create', async () => {
-    const core = createBaselineRuntime()
+    const core = createRuntime()
 
     await expect(
       core.handleRequest({
         id: 'create-1',
         type: 'create',
-        payload: { width: 2, height: 2, quality: 0.9 },
+        payload: { width: 1, height: 2, quality: 0.9 },
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -91,10 +58,7 @@ describe('createJpegRuntimeCore', () => {
       core.handleRequest({
         id: 'rows-1',
         type: 'rows',
-        payload: {
-          rows: new Uint8Array([255, 0, 0, 0, 255, 0]),
-          rowCount: 1,
-        },
+        payload: { rows: ROW, rowCount: 1 },
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -103,404 +67,126 @@ describe('createJpegRuntimeCore', () => {
     })
   })
 
-  it('returns a baseline image/jpeg blob on finish', async () => {
-    const core = createBaselineRuntime()
+  it('assembles the finish blob from the streamed chunks in blob mode', async () => {
+    const emitted: unknown[] = []
+    const core = createRuntime({}, (response) => emitted.push(response))
 
     await core.handleRequest({
-      id: 'create-2',
+      id: 'create-blob',
       type: 'create',
-      payload: { width: 3, height: 5, quality: 0.9 },
+      payload: { width: 1, height: 2, quality: 0.9 },
     })
     await core.handleRequest({
-      id: 'rows-2',
+      id: 'rows-blob-1',
       type: 'rows',
-      payload: {
-        rows: new Uint8Array([
-          255, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0,
-          255, 0, 255, 0, 255, 255, 64, 64, 64,
-        ]),
-        rowCount: 3,
-      },
+      payload: { rows: ROW, rowCount: 1 },
     })
     await core.handleRequest({
-      id: 'rows-2b',
+      id: 'rows-blob-2',
       type: 'rows',
-      payload: {
-        rows: new Uint8Array([
-          128, 0, 0, 0, 128, 0, 0, 0, 128, 255, 128, 0, 0, 128, 255, 128, 128,
-          128,
-        ]),
-        rowCount: 2,
-      },
+      payload: { rows: ROW, rowCount: 1 },
     })
-
     const response = await core.handleRequest({
-      id: 'finish-1',
+      id: 'finish-blob',
       type: 'finish',
       payload: {},
     })
 
-    expect(response.ok).toBe(true)
-    expect(response.type).toBe('finish')
     if (response.type !== 'finish') {
       throw new Error('expected finish response')
     }
     expect(response.payload.blob.type).toBe('image/jpeg')
-    expect(response.payload.blob.size).toBeGreaterThan(0)
-    await expectBaselineJpeg(response.payload.blob, { width: 3, height: 5 })
+    expect(new Uint8Array(await response.payload.blob.arrayBuffer())).toEqual(
+      new Uint8Array([255, 216, 255, 217]),
+    )
+    expect(emitted).toEqual([])
   })
 
-  it('emits backend chunks before returning the finish response', async () => {
-    const chunk = {
-      bytes: new Uint8Array([255, 216]),
-      byteOffset: 0,
-      final: false,
-    }
+  it('posts each chunk under the request that produced it in chunks mode', async () => {
     const emitted: unknown[] = []
-    const core = createJpegRuntimeCore(
-      async () => () => ({
-        async writeRows() {},
-        async finish() {
-          return new Blob(['jpeg'], { type: 'image/jpeg' })
-        },
-        drainChunks() {
-          return [chunk]
-        },
-        abort() {},
-      }),
-      {
-        onResponse: (response) => {
-          emitted.push(response)
-        },
-      },
-    )
+    const core = createRuntime({}, (response) => emitted.push(response))
 
     await core.handleRequest({
-      id: 'create-chunked-finish',
+      id: 'create-chunks',
       type: 'create',
-      payload: { width: 1, height: 1, quality: 0.9 },
+      payload: { width: 1, height: 2, quality: 0.9, finishMode: 'chunks' },
     })
     await core.handleRequest({
-      id: 'rows-before-chunked-finish',
+      id: 'rows-chunks-1',
       type: 'rows',
-      payload: { rows: new Uint8Array([255, 255, 255]), rowCount: 1 },
+      payload: { rows: ROW, rowCount: 1 },
     })
-
+    expect(emitted).toHaveLength(1)
+    await core.handleRequest({
+      id: 'rows-chunks-2',
+      type: 'rows',
+      payload: { rows: ROW, rowCount: 1 },
+    })
     const response = await core.handleRequest({
-      id: 'finish-chunked',
+      id: 'finish-chunks',
       type: 'finish',
       payload: {},
     })
 
     expect(emitted).toEqual([
       {
-        id: 'finish-chunked',
-        ok: true,
-        type: 'chunk',
-        payload: chunk,
-      },
-    ])
-    expect(response).toMatchObject({
-      id: 'finish-chunked',
-      ok: true,
-      type: 'finish',
-    })
-  })
-
-  it('emits chunk-only backend chunks during row writes before finish', async () => {
-    const chunks = [
-      {
-        bytes: new Uint8Array([255, 216]),
-        byteOffset: 0,
-        final: false,
-      },
-      {
-        bytes: new Uint8Array([255, 217]),
-        byteOffset: 2,
-        final: true,
-      },
-    ]
-    const emitted: unknown[] = []
-    const core = createJpegRuntimeCore(
-      async () => () => {
-        let drainCount = 0
-        return {
-          async writeRows() {},
-          async finish() {
-            return new Blob([], { type: 'image/jpeg' })
-          },
-          drainChunks() {
-            return drainCount < chunks.length ? [chunks[drainCount++]] : []
-          },
-          abort() {},
-        }
-      },
-      {
-        onResponse: (response) => {
-          emitted.push(response)
-        },
-      },
-    )
-
-    await core.handleRequest({
-      id: 'create-row-chunks',
-      type: 'create',
-      payload: {
-        width: 1,
-        height: 2,
-        quality: 0.9,
-        finishMode: 'chunks',
-      },
-    })
-    await core.handleRequest({
-      id: 'rows-row-chunks-1',
-      type: 'rows',
-      payload: { rows: new Uint8Array([255, 255, 255]), rowCount: 1 },
-    })
-    await core.handleRequest({
-      id: 'rows-row-chunks-2',
-      type: 'rows',
-      payload: { rows: new Uint8Array([0, 0, 0]), rowCount: 1 },
-    })
-
-    expect(emitted).toEqual([
-      {
-        id: 'rows-row-chunks-1',
-        ok: true,
-        type: 'chunk',
-        payload: chunks[0],
-      },
-      {
-        id: 'rows-row-chunks-2',
-        ok: true,
-        type: 'chunk',
-        payload: chunks[1],
-      },
-    ])
-
-    const response = await core.handleRequest({
-      id: 'finish-row-chunks',
-      type: 'finish',
-      payload: {},
-    })
-
-    expect(response.type).toBe('finish')
-    if (response.type !== 'finish') {
-      throw new Error('expected finish response')
-    }
-    expect(response.payload.blob.size).toBe(0)
-  })
-
-  it('returns an empty finish blob in chunk-only mode after emitting chunks', async () => {
-    const chunk = {
-      bytes: new Uint8Array([255, 216, 255, 217]),
-      byteOffset: 0,
-      final: true,
-    }
-    const emitted: unknown[] = []
-    let drainCount = 0
-    const core = createJpegRuntimeCore(
-      async () => () => ({
-        async writeRows() {},
-        async finish() {
-          return new Blob([], { type: 'image/jpeg' })
-        },
-        drainChunks() {
-          drainCount += 1
-          return drainCount === 2 ? [chunk] : []
-        },
-        abort() {},
-      }),
-      {
-        onResponse: (response) => {
-          emitted.push(response)
-        },
-      },
-    )
-
-    await core.handleRequest({
-      id: 'create-chunk-only',
-      type: 'create',
-      payload: {
-        width: 1,
-        height: 1,
-        quality: 0.9,
-        finishMode: 'chunks',
-      },
-    })
-    await core.handleRequest({
-      id: 'rows-before-chunk-only',
-      type: 'rows',
-      payload: { rows: new Uint8Array([255, 255, 255]), rowCount: 1 },
-    })
-
-    const response = await core.handleRequest({
-      id: 'finish-chunk-only',
-      type: 'finish',
-      payload: {},
-    })
-
-    expect(emitted).toEqual([
-      {
-        id: 'finish-chunk-only',
-        ok: true,
-        type: 'chunk',
-        payload: chunk,
-      },
-    ])
-    expect(response.type).toBe('finish')
-    if (response.type !== 'finish') {
-      throw new Error('expected finish response')
-    }
-    expect(response.payload.blob.size).toBe(0)
-  })
-
-  it('assembles a blob from backend chunks when blob mode receives an empty finish blob', async () => {
-    const chunks = [
-      {
-        bytes: new Uint8Array([255, 216]),
-        byteOffset: 0,
-        final: false,
-      },
-      {
-        bytes: new Uint8Array([255, 217]),
-        byteOffset: 2,
-        final: true,
-      },
-    ]
-    const core = createJpegRuntimeCore(async () => () => ({
-      async writeRows() {},
-      async finish() {
-        return new Blob([], { type: 'image/jpeg' })
-      },
-      drainChunks() {
-        return chunks
-      },
-      abort() {},
-    }))
-
-    await core.handleRequest({
-      id: 'create-blob-from-chunks',
-      type: 'create',
-      payload: { width: 1, height: 1, quality: 0.9 },
-    })
-    await core.handleRequest({
-      id: 'rows-before-blob-from-chunks',
-      type: 'rows',
-      payload: { rows: new Uint8Array([255, 255, 255]), rowCount: 1 },
-    })
-
-    const response = await core.handleRequest({
-      id: 'finish-blob-from-chunks',
-      type: 'finish',
-      payload: {},
-    })
-
-    expect(response.type).toBe('finish')
-    if (response.type !== 'finish') {
-      throw new Error('expected finish response')
-    }
-    await expect(readBlobBytes(response.payload.blob)).resolves.toEqual(
-      new Uint8Array([255, 216, 255, 217]).buffer,
-    )
-  })
-
-  it('emits a final chunk from the finish blob when chunk mode has no backend chunks', async () => {
-    const emitted: unknown[] = []
-    const core = createJpegRuntimeCore(
-      async () => () => ({
-        async writeRows() {},
-        async finish() {
-          return new Blob([new Uint8Array([255, 216, 255, 217])], {
-            type: 'image/jpeg',
-          })
-        },
-        abort() {},
-      }),
-      {
-        onResponse: (response) => {
-          emitted.push(response)
-        },
-      },
-    )
-
-    await core.handleRequest({
-      id: 'create-final-blob-chunk',
-      type: 'create',
-      payload: {
-        width: 1,
-        height: 1,
-        quality: 0.9,
-        finishMode: 'chunks',
-      },
-    })
-    await core.handleRequest({
-      id: 'rows-before-final-blob-chunk',
-      type: 'rows',
-      payload: { rows: new Uint8Array([255, 255, 255]), rowCount: 1 },
-    })
-
-    const response = await core.handleRequest({
-      id: 'finish-final-blob-chunk',
-      type: 'finish',
-      payload: {},
-    })
-
-    expect(emitted).toEqual([
-      {
-        id: 'finish-final-blob-chunk',
+        id: 'rows-chunks-1',
         ok: true,
         type: 'chunk',
         payload: {
-          bytes: new Uint8Array([255, 216, 255, 217]),
+          bytes: new Uint8Array([255, 216]),
           byteOffset: 0,
+          final: false,
+        },
+      },
+      {
+        id: 'finish-chunks',
+        ok: true,
+        type: 'chunk',
+        payload: {
+          bytes: new Uint8Array([255, 217]),
+          byteOffset: 2,
           final: true,
         },
       },
     ])
-    expect(response.type).toBe('finish')
     if (response.type !== 'finish') {
       throw new Error('expected finish response')
     }
     expect(response.payload.blob.size).toBe(0)
   })
 
-  it('rejects chunk-only finish when the backend emits no chunks or blob', async () => {
-    const core = createJpegRuntimeCore(async () => () => ({
-      async writeRows() {},
-      async finish() {
-        return new Blob([], { type: 'image/jpeg' })
+  it('fails the encoder when finish completes without any output', async () => {
+    const core = createRuntime({
+      async writeRows() {
+        return []
       },
-      abort() {},
-    }))
-
-    await core.handleRequest({
-      id: 'create-missing-chunks',
-      type: 'create',
-      payload: {
-        width: 1,
-        height: 1,
-        quality: 0.9,
-        finishMode: 'chunks',
+      async finish() {
+        return []
       },
     })
+
     await core.handleRequest({
-      id: 'rows-before-missing-chunks',
+      id: 'create-empty',
+      type: 'create',
+      payload: { width: 1, height: 1, quality: 0.9, finishMode: 'chunks' },
+    })
+    await core.handleRequest({
+      id: 'rows-empty',
       type: 'rows',
-      payload: { rows: new Uint8Array([255, 255, 255]), rowCount: 1 },
+      payload: { rows: ROW, rowCount: 1 },
     })
 
     await expect(
-      core.handleRequest({
-        id: 'finish-missing-chunks',
-        type: 'finish',
-        payload: {},
-      }),
-    ).rejects.toThrow('JPEG_RUNTIME_CHUNKS_UNAVAILABLE')
+      core.handleRequest({ id: 'finish-empty', type: 'finish', payload: {} }),
+    ).rejects.toThrow('JPEG_RUNTIME_NO_OUTPUT')
+    await expect(
+      core.handleRequest({ id: 'finish-again', type: 'finish', payload: {} }),
+    ).rejects.toThrow('JPEG_RUNTIME_ABORTED')
   })
 
   it('rejects finish before create', async () => {
-    const core = createBaselineRuntime()
+    const core = createRuntime()
 
     await expect(
       core.handleRequest({
@@ -512,7 +198,7 @@ describe('createJpegRuntimeCore', () => {
   })
 
   it('rejects rows before create', async () => {
-    const core = createBaselineRuntime()
+    const core = createRuntime()
 
     await expect(
       core.handleRequest({
@@ -527,7 +213,7 @@ describe('createJpegRuntimeCore', () => {
   })
 
   it('rejects non-positive row counts', async () => {
-    const core = createBaselineRuntime()
+    const core = createRuntime()
 
     await core.handleRequest({
       id: 'create-3',
@@ -549,15 +235,12 @@ describe('createJpegRuntimeCore', () => {
 
   it('rejects row length mismatches before writing to the backend', async () => {
     let wroteRows = false
-    const core = createJpegRuntimeCore(async () => () => ({
+    const core = createRuntime({
       async writeRows() {
         wroteRows = true
+        return []
       },
-      async finish() {
-        return new Blob([], { type: 'image/jpeg' })
-      },
-      abort() {},
-    }))
+    })
 
     await core.handleRequest({
       id: 'create-length-mismatch',
@@ -579,7 +262,7 @@ describe('createJpegRuntimeCore', () => {
   })
 
   it('rejects rows after abort', async () => {
-    const core = createBaselineRuntime()
+    const core = createRuntime()
 
     await core.handleRequest({
       id: 'create-4',
@@ -605,7 +288,7 @@ describe('createJpegRuntimeCore', () => {
   })
 
   it('rejects invalid JPEG quality at create time', async () => {
-    const core = createBaselineRuntime()
+    const core = createRuntime()
 
     await expect(
       core.handleRequest({
@@ -617,7 +300,7 @@ describe('createJpegRuntimeCore', () => {
   })
 
   it('rejects create while an encoder is ready', async () => {
-    const core = createBaselineRuntime()
+    const core = createRuntime()
 
     await core.handleRequest({
       id: 'create-active',
@@ -636,16 +319,12 @@ describe('createJpegRuntimeCore', () => {
 
   it('rejects in-flight rows when abort wins the worker boundary', async () => {
     let resolveWriteRows: (() => void) | undefined
-    const core = createJpegRuntimeCore(async () => () => ({
+    const core = createRuntime({
       writeRows: () =>
-        new Promise<void>((resolve) => {
-          resolveWriteRows = resolve
+        new Promise<readonly JpegWorkerChunk[]>((resolve) => {
+          resolveWriteRows = () => resolve([])
         }),
-      async finish() {
-        return new Blob([], { type: 'image/jpeg' })
-      },
-      abort() {},
-    }))
+    })
 
     await core.handleRequest({
       id: 'create-in-flight-rows',
@@ -670,14 +349,12 @@ describe('createJpegRuntimeCore', () => {
 
   it('rejects in-flight finish when abort wins the worker boundary', async () => {
     let resolveFinish: (() => void) | undefined
-    const core = createJpegRuntimeCore(async () => () => ({
-      async writeRows() {},
+    const core = createRuntime({
       finish: () =>
-        new Promise<Blob>((resolve) => {
-          resolveFinish = () => resolve(new Blob([], { type: 'image/jpeg' }))
+        new Promise<readonly JpegWorkerChunk[]>((resolve) => {
+          resolveFinish = () => resolve([])
         }),
-      abort() {},
-    }))
+    })
 
     await core.handleRequest({
       id: 'create-in-flight-finish',
@@ -712,17 +389,16 @@ describe('createJpegRuntimeCore', () => {
     const core = createJpegRuntimeCore(async () => () => {
       createCalls += 1
 
-      return {
+      return createStreamingEncoder({
         async writeRows() {
           writeRowsCalls += 1
           throw new Error('JPEG_NATIVE_WRITE_FAILED')
         },
         async finish() {
           finishCalls += 1
-          return new Blob([], { type: 'image/jpeg' })
+          return []
         },
-        abort() {},
-      }
+      })
     })
 
     await core.handleRequest({
@@ -772,16 +448,16 @@ describe('createJpegRuntimeCore', () => {
     const core = createJpegRuntimeCore(async () => () => {
       createCalls += 1
 
-      return {
+      return createStreamingEncoder({
         async writeRows() {
           writeRowsCalls += 1
+          return []
         },
         async finish() {
           finishCalls += 1
           throw new Error('JPEG_NATIVE_FINISH_FAILED')
         },
-        abort() {},
-      }
+      })
     })
 
     await core.handleRequest({

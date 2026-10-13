@@ -14,7 +14,11 @@ class FakeNativeEncoder {
   writeRows() {}
 
   finish() {
-    return new Uint8Array([0xFF, 0xD8, 0xFF, 0xD9])
+    return new Uint8Array()
+  }
+
+  drainChunks() {
+    return []
   }
 
   abort() {}
@@ -86,9 +90,8 @@ describe('loadNativeJpegEncoderFactoryWithImporter', () => {
     )
 
     const encoder = factory({ width: 1, height: 1, quality: 0.92 })
-    const blob = await encoder.finish()
 
     expect(locatedWasm).toBe('https://example.test/dist/native/luma_jpeg.wasm')
-    expect(blob.type).toBe('image/jpeg')
+    await expect(encoder.finish()).resolves.toEqual([])
   })
 })

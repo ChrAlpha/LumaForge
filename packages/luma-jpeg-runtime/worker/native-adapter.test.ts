@@ -1,9 +1,17 @@
 import { createNativeJpegEncoderFactory } from './native-adapter'
 
+// Mirrors the native encoder: finish returns no bytes, and each call's
+// output waits in drainChunks.
 class FakeNativeEncoder {
   rows: Uint8Array[] = []
   aborted = false
   deleted = false
+  private pending: Array<{
+    bytes: Uint8Array
+    byteOffset: number
+    final: boolean
+  }> = []
+  private offset = 0
 
   constructor(
     readonly width: number,
@@ -11,13 +19,28 @@ class FakeNativeEncoder {
     readonly quality: number,
   ) {}
 
+  private emit(bytes: number[], final: boolean) {
+    this.pending.push({
+      bytes: new Uint8Array(bytes),
+      byteOffset: this.offset,
+      final,
+    })
+    this.offset += bytes.length
+  }
+
   writeRows(rows: Uint8Array, rowCount: number) {
     this.rows.push(new Uint8Array(rows))
+    this.emit([rowCount], false)
     return rowCount
   }
 
   finish() {
-    return new Uint8Array([255, 216, 255, 217])
+    this.emit([255, 217], true)
+    return new Uint8Array()
+  }
+
+  drainChunks() {
+    return this.pending.splice(0)
   }
 
   abort() {
@@ -30,7 +53,7 @@ class FakeNativeEncoder {
 }
 
 describe('createNativeJpegEncoderFactory', () => {
-  it('normalizes native bytes into an image/jpeg blob', async () => {
+  it('returns the chunks each call drained and deletes the encoder after finish', async () => {
     let deleted = false
     const factory = createNativeJpegEncoderFactory({
       LumaJpegEncoder: class extends FakeNativeEncoder {
@@ -40,76 +63,42 @@ describe('createNativeJpegEncoderFactory', () => {
         }
       },
     })
-    const encoder = factory({ width: 2, height: 1, quality: 0.92 })
+    const encoder = factory({ width: 1, height: 2, quality: 0.92 })
 
-    await encoder.writeRows(new Uint8Array([255, 0, 0, 0, 255, 0]), 1)
-    const blob = await encoder.finish()
-
-    expect(blob.type).toBe('image/jpeg')
-    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(
-      new Uint8Array([255, 216, 255, 217]),
-    )
+    await expect(
+      encoder.writeRows(new Uint8Array([255, 0, 0]), 1),
+    ).resolves.toEqual([
+      { bytes: new Uint8Array([1]), byteOffset: 0, final: false },
+    ])
+    await expect(encoder.finish()).resolves.toEqual([
+      { bytes: new Uint8Array([255, 217]), byteOffset: 1, final: true },
+    ])
     expect(deleted).toBe(true)
     await expect(
-      encoder.writeRows(new Uint8Array([255, 0, 0, 0, 255, 0]), 1),
+      encoder.writeRows(new Uint8Array([255, 0, 0]), 1),
     ).rejects.toThrow('JPEG_RUNTIME_FINISHED')
     await expect(encoder.finish()).rejects.toThrow('JPEG_RUNTIME_FINISHED')
   })
 
-  it('drains chunk-mode native chunks after row writes before finish', async () => {
-    const drainedOffsets: number[] = []
+  it('streams the whole finish output of an artifact without drainChunks as one final chunk', async () => {
+    const whole = new Uint8Array([255, 216, 255, 217])
     const factory = createNativeJpegEncoderFactory({
-      LumaJpegEncoder: class extends FakeNativeEncoder {
-        private nextOffset = 0
-        private readonly chunks: Array<{
-          bytes: Uint8Array
-          byteOffset: number
-          final: boolean
-        }> = []
-
-        override writeRows(rows: Uint8Array, rowCount: number) {
-          const result = super.writeRows(rows, rowCount)
-          this.chunks.push({
-            bytes: new Uint8Array([rowCount]),
-            byteOffset: this.nextOffset,
-            final: false,
-          })
-          this.nextOffset += 1
-          return result
+      LumaJpegEncoder: class {
+        writeRows() {}
+        finish() {
+          return whole
         }
-
-        drainChunks() {
-          const chunks = this.chunks.splice(0)
-          drainedOffsets.push(...chunks.map((chunk) => chunk.byteOffset))
-          return chunks
-        }
+        abort() {}
       },
     })
-    const encoder = factory({
-      width: 1,
-      height: 2,
-      quality: 0.92,
-      finishMode: 'chunks',
-    })
+    const encoder = factory({ width: 1, height: 1, quality: 0.92 })
 
-    await encoder.writeRows(new Uint8Array([255, 0, 0]), 1)
-    expect(encoder.drainChunks?.()).toEqual([
-      {
-        bytes: new Uint8Array([1]),
-        byteOffset: 0,
-        final: false,
-      },
+    await expect(
+      encoder.writeRows(new Uint8Array([255, 0, 0]), 1),
+    ).resolves.toEqual([])
+    await expect(encoder.finish()).resolves.toEqual([
+      { bytes: whole, byteOffset: 0, final: true },
     ])
-
-    await encoder.writeRows(new Uint8Array([0, 255, 0]), 1)
-    expect(encoder.drainChunks?.()).toEqual([
-      {
-        bytes: new Uint8Array([1]),
-        byteOffset: 1,
-        final: false,
-      },
-    ])
-    expect(drainedOffsets).toEqual([0, 1])
   })
 
   it('aborts the native encoder', async () => {

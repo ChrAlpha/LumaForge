@@ -57,12 +57,16 @@ export type JpegWorkerResponse =
       payload: { aborted: true }
     }
 
+/**
+ * An encoder hands back the JPEG bytes each call completed, in stream order;
+ * the last chunk `finish` returns is marked final.
+ */
 export type InternalJpegEncoder = {
-  writeRows: (rows: Uint8Array, rowCount: number) => Promise<void>
-  finish: () => Promise<Blob>
-  drainChunks?: () =>
-    | readonly JpegWorkerChunk[]
-    | Promise<readonly JpegWorkerChunk[]>
+  writeRows: (
+    rows: Uint8Array,
+    rowCount: number,
+  ) => Promise<readonly JpegWorkerChunk[]>
+  finish: () => Promise<readonly JpegWorkerChunk[]>
   abort: () => void
 }
 
@@ -70,7 +74,6 @@ export type InternalJpegEncoderFactory = (input: {
   width: number
   height: number
   quality: number
-  finishMode?: JpegWorkerFinishMode
 }) => InternalJpegEncoder
 
 export type InternalJpegEncoderFactoryLoader =
@@ -97,7 +100,10 @@ export function createJpegRuntimeCore(
   let writtenRows = 0
   let state: 'idle' | 'ready' | 'finished' | 'aborted' | 'failed' = 'idle'
   let finishMode: JpegWorkerFinishMode = 'blob'
-  let emittedChunk = false
+  // Blob mode keeps the bytes in the worker and posts them once, as the
+  // finish Blob; chunks mode posts each chunk as it completes.
+  let blobParts: Uint8Array[] = []
+  let outputBytes = 0
   let encoderFactoryPromise: Promise<InternalJpegEncoderFactory> | null = null
   let encoder: InternalJpegEncoder | null = null
 
@@ -131,17 +137,18 @@ export function createJpegRuntimeCore(
     writtenRows = 0
     state = 'failed'
     encoder = null
+    blobParts = []
   }
 
-  async function collectChunks(
+  async function deliver(
     requestId: string,
-    activeEncoder: InternalJpegEncoder,
+    chunks: readonly JpegWorkerChunk[],
   ) {
-    const chunks = (await activeEncoder.drainChunks?.()) ?? []
-    if (chunks.length > 0) {
-      emittedChunk = true
+    for (const { bytes } of chunks) outputBytes += bytes.byteLength
+    if (finishMode === 'blob') {
+      for (const { bytes } of chunks) blobParts.push(bytes)
+      return
     }
-
     for (const chunk of chunks) {
       await options.onResponse?.({
         id: requestId,
@@ -150,56 +157,6 @@ export function createJpegRuntimeCore(
         payload: chunk,
       })
     }
-
-    return chunks
-  }
-
-  function createBlobFromChunks(chunks: readonly JpegWorkerChunk[]) {
-    const parts = chunks.map((chunk) => {
-      const byteBuffer = chunk.bytes.buffer.slice(
-        chunk.bytes.byteOffset,
-        chunk.bytes.byteOffset + chunk.bytes.byteLength,
-      ) as ArrayBuffer
-      return byteBuffer
-    })
-
-    return new Blob(parts, { type: 'image/jpeg' })
-  }
-
-  async function readBlobBytes(blob: Blob) {
-    if (typeof blob.arrayBuffer === 'function') {
-      return new Uint8Array(await blob.arrayBuffer())
-    }
-
-    if (typeof FileReader !== 'undefined') {
-      return await new Promise<Uint8Array>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () =>
-          resolve(new Uint8Array(reader.result as ArrayBuffer))
-        reader.onerror = () =>
-          reject(reader.error ?? new Error('JPEG_RUNTIME_BLOB_READ_FAILED'))
-        reader.readAsArrayBuffer(blob)
-      })
-    }
-
-    return new Uint8Array(await new Response(blob).arrayBuffer())
-  }
-
-  async function emitBlobAsFinalChunk(requestId: string, blob: Blob) {
-    const bytes = await readBlobBytes(blob)
-    const chunk: JpegWorkerChunk = {
-      bytes,
-      byteOffset: 0,
-      final: true,
-    }
-
-    await options.onResponse?.({
-      id: requestId,
-      ok: true,
-      type: 'chunk',
-      payload: chunk,
-    })
-    emittedChunk = true
   }
 
   return {
@@ -228,8 +185,13 @@ export function createJpegRuntimeCore(
         height = request.payload.height
         writtenRows = 0
         finishMode = request.payload.finishMode ?? 'blob'
-        emittedChunk = false
-        encoder = encoderFactory(request.payload)
+        blobParts = []
+        outputBytes = 0
+        encoder = encoderFactory({
+          width,
+          height,
+          quality: request.payload.quality,
+        })
         state = 'ready'
 
         return {
@@ -256,8 +218,9 @@ export function createJpegRuntimeCore(
           throw new Error('JPEG_ROW_COUNT_EXCEEDED')
         }
 
+        let chunks: readonly JpegWorkerChunk[]
         try {
-          await activeEncoder.writeRows(
+          chunks = await activeEncoder.writeRows(
             request.payload.rows,
             request.payload.rowCount,
           )
@@ -269,10 +232,8 @@ export function createJpegRuntimeCore(
         }
         assertReady()
         writtenRows += request.payload.rowCount
-        if (finishMode === 'chunks') {
-          await collectChunks(request.id, activeEncoder)
-          assertReady()
-        }
+        await deliver(request.id, chunks)
+        assertReady()
 
         return {
           id: request.id,
@@ -289,9 +250,9 @@ export function createJpegRuntimeCore(
           throw new Error('JPEG_INCOMPLETE_IMAGE')
         }
 
-        let blob: Blob
+        let chunks: readonly JpegWorkerChunk[]
         try {
-          blob = await activeEncoder.finish()
+          chunks = await activeEncoder.finish()
         } catch (error) {
           if (state === 'ready') {
             markBackendFailure()
@@ -299,22 +260,15 @@ export function createJpegRuntimeCore(
           throw error
         }
         assertReady()
-        const chunks = await collectChunks(request.id, activeEncoder)
+        await deliver(request.id, chunks)
         assertReady()
-        if (finishMode === 'chunks') {
-          if (!emittedChunk && blob.size > 0) {
-            await emitBlobAsFinalChunk(request.id, blob)
-            assertReady()
-          }
-          if (!emittedChunk) {
-            state = 'failed'
-            encoder = null
-            throw new Error('JPEG_RUNTIME_CHUNKS_UNAVAILABLE')
-          }
-          blob = new Blob([], { type: 'image/jpeg' })
-        } else if (blob.size === 0 && chunks.length > 0) {
-          blob = createBlobFromChunks(chunks)
+        if (outputBytes === 0) {
+          markBackendFailure()
+          throw new Error('JPEG_RUNTIME_NO_OUTPUT')
         }
+        // Encoder chunks own plain ArrayBuffers, never shared memory.
+        const blob = new Blob(blobParts as BlobPart[], { type: 'image/jpeg' })
+        blobParts = []
         state = 'finished'
         encoder = null
 
@@ -344,6 +298,7 @@ export function createJpegRuntimeCore(
         writtenRows = 0
         state = 'aborted'
         encoder = null
+        blobParts = []
       }
 
       return {

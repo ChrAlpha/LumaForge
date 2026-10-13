@@ -64,7 +64,7 @@ export default defineConfig({
   },
   test: {
     name: '@lumaforge/luma-jpeg-runtime',
-    environment: 'jsdom',
+    environment: 'node',
     globals: true,
   },
 })
