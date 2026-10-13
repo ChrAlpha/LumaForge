@@ -11,7 +11,6 @@ import type {
   LumaRawDecodeSession,
   LumaRawExportCapability,
   LumaRawFrame,
-  LumaRawProbe,
   LumaRawProcessedWindow,
   LumaRawProcessedWindowRequest,
   LumaRawQuickOptions,
@@ -47,8 +46,8 @@ export type LumaRawNodeRuntimeOptions = {
 }
 
 /**
- * Node-side LumaRaw runtime. Single-thread by design (v1 of the
- * render-engine spec). Multi-thread Node mode is a future phase.
+ * Node-side LumaRaw runtime. Single-thread: native decode runs on the
+ * calling JS thread.
  *
  * **AbortSignal semantics**: signals are checked once at the entry of each
  * call. The underlying native decode runs synchronously inside the JS
@@ -60,24 +59,6 @@ export type LumaRawNodeRuntimeOptions = {
  */
 export type LumaRawNodeRuntime = {
   init: () => Promise<LumaRawRuntimeInfo>
-  probe: (
-    input: LumaRawNodeSourceInput,
-    signal?: AbortSignal,
-  ) => Promise<LumaRawProbe>
-  extractEmbeddedPreview: (
-    input: LumaRawNodeSourceInput,
-    signal?: AbortSignal,
-  ) => Promise<LumaEmbeddedPreview | null>
-  decodeQuick: (
-    input: LumaRawNodeSourceInput,
-    options?: LumaRawQuickOptions,
-    signal?: AbortSignal,
-  ) => Promise<LumaRawFrame>
-  decodeBoundedHq: (
-    input: LumaRawNodeSourceInput,
-    options: LumaRawBoundedHqOptions,
-    signal?: AbortSignal,
-  ) => Promise<LumaRawFrame>
   openSession: (
     input: LumaRawNodeSourceInput,
     options?: LumaRawQuickOptions,
@@ -304,42 +285,6 @@ export async function createLumaRawRuntimeForNode(
     },
 
     openSession,
-
-    async probe(input, signal) {
-      const session = await openSession(input, {}, signal)
-      try {
-        return session.probe
-      } finally {
-        session.dispose()
-      }
-    },
-
-    async extractEmbeddedPreview(input, signal) {
-      const session = await openSession(input, {}, signal)
-      try {
-        return await session.extractEmbeddedPreview(signal)
-      } finally {
-        session.dispose()
-      }
-    },
-
-    async decodeQuick(input, options, signal) {
-      const session = await openSession(input, options, signal)
-      try {
-        return await session.decodeQuick(options, signal)
-      } finally {
-        session.dispose()
-      }
-    },
-
-    async decodeBoundedHq(input, options, signal) {
-      const session = await openSession(input, {}, signal)
-      try {
-        return await session.decodeBoundedHq(options, signal)
-      } finally {
-        session.dispose()
-      }
-    },
 
     dispose() {
       if (disposed) return

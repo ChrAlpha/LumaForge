@@ -29,7 +29,6 @@ type EmbindCalibrationParams = {
 type EmbindProcessor = {
   loadBuffer?: (data: Uint8Array) => unknown
   openWithSettings?: (settings: LumaRawNativeOpenSettings) => unknown
-  openBuffer: (data: Uint8Array, settings: LumaRawNativeOpenSettings) => unknown
   readMetadata: () => unknown
   extractThumbnail: () => unknown
   probeExportCapability?: () => unknown
@@ -879,9 +878,6 @@ export function createNativeFactory(
           return normalizeRequiredOpenTimings(
             processor.openWithSettings(settings),
           )
-        },
-        openBuffer(data, settings) {
-          return normalizeOpenTimings(processor.openBuffer(data, settings))
         },
         readMetadata() {
           return normalizeMetadata(processor.readMetadata())

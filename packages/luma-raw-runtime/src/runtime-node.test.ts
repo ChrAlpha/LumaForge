@@ -66,51 +66,7 @@ describeWithNative('createLumaRawRuntimeForNode (input validation)', () => {
 })
 
 describeWithFixture('createLumaRawRuntimeForNode (live decode)', () => {
-  it('probes a DNG and returns metadata', async () => {
-    const runtime = await createLumaRawRuntimeForNode()
-    try {
-      const input = await loadFixture()
-      const probe = await runtime.probe(input)
-      expect(probe.make).toMatch(/apple/i)
-      expect(probe.width).toBeGreaterThan(0)
-      expect(probe.height).toBeGreaterThan(0)
-      expect(probe.supportLevel).not.toBe('unsupported')
-    } finally {
-      runtime.dispose()
-    }
-  }, 60_000)
-
-  it('extracts an embedded preview from the DNG', async () => {
-    const runtime = await createLumaRawRuntimeForNode()
-    try {
-      const input = await loadFixture()
-      const preview = await runtime.extractEmbeddedPreview(input)
-      expect(preview).not.toBeNull()
-      expect(preview!.width).toBeGreaterThan(0)
-      expect(preview!.height).toBeGreaterThan(0)
-      expect(preview!.data).toBeInstanceOf(Uint8Array)
-      expect(preview!.data.length).toBeGreaterThan(0)
-    } finally {
-      runtime.dispose()
-    }
-  }, 60_000)
-
-  it('decodes a quick preview to RGB16', async () => {
-    const runtime = await createLumaRawRuntimeForNode()
-    try {
-      const input = await loadFixture()
-      const frame = await runtime.decodeQuick(input)
-      expect(frame.layout).toBe('rgb')
-      expect(frame.bitDepth).toBe(16)
-      expect(frame.colorSpace).toBe('linear-prophoto-rgb')
-      expect(frame.data).toBeInstanceOf(Uint16Array)
-      expect(frame.data.length).toBe(frame.width * frame.height * 3)
-    } finally {
-      runtime.dispose()
-    }
-  }, 60_000)
-
-  it('openSession exposes a session API and reports metadata up front', async () => {
+  it('opens a DNG session that reports metadata, the embedded preview, and a quick RGB16 frame', async () => {
     const runtime = await createLumaRawRuntimeForNode()
     try {
       const input = await loadFixture()
@@ -118,9 +74,23 @@ describeWithFixture('createLumaRawRuntimeForNode (live decode)', () => {
       try {
         expect(session.sessionId).toMatch(/^raw-session-/)
         expect(session.probe.make).toMatch(/apple/i)
+        expect(session.probe.width).toBeGreaterThan(0)
+        expect(session.probe.height).toBeGreaterThan(0)
         expect(session.probe.supportLevel).not.toBe('unsupported')
-        expect(typeof session.decodeQuick).toBe('function')
-        expect(typeof session.extractEmbeddedPreview).toBe('function')
+
+        const preview = await session.extractEmbeddedPreview()
+        expect(preview).not.toBeNull()
+        expect(preview!.sessionId).toBe(session.sessionId)
+        expect(preview!.width).toBeGreaterThan(0)
+        expect(preview!.data.length).toBeGreaterThan(0)
+
+        const frame = await session.decodeQuick()
+        expect(frame.sessionId).toBe(session.sessionId)
+        expect(frame.layout).toBe('rgb')
+        expect(frame.bitDepth).toBe(16)
+        expect(frame.colorSpace).toBe('linear-prophoto-rgb')
+        expect(frame.data).toBeInstanceOf(Uint16Array)
+        expect(frame.data.length).toBe(frame.width * frame.height * 3)
       } finally {
         session.dispose()
       }
@@ -169,7 +139,7 @@ describeWithFixture('createLumaRawRuntimeForNode (live decode)', () => {
     const runtime = await createLumaRawRuntimeForNode()
     try {
       await expect(
-        runtime.probe({ data: new Uint8Array(0), name: 'empty.bin' }),
+        runtime.openSession({ data: new Uint8Array(0), name: 'empty.bin' }),
       ).rejects.toBeInstanceOf(LumaRawRuntimeError)
     } finally {
       runtime.dispose()
@@ -183,7 +153,7 @@ describeWithFixture('createLumaRawRuntimeForNode (live decode)', () => {
       const controller = new AbortController()
       controller.abort()
       await expect(
-        runtime.probe(input, controller.signal),
+        runtime.openSession(input, undefined, controller.signal),
       ).rejects.toBeInstanceOf(LumaRawRuntimeError)
     } finally {
       runtime.dispose()

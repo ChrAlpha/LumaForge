@@ -185,11 +185,17 @@ export async function runFullResolutionExport(
   let exposure = input.exposure
   if (!exposure) {
     const exposureStart = performance.now()
-    const frame = await raw.decodeQuick(
+    const exposureSession = await raw.openSession(
       input.source.input,
       { maxOutputPixels: QUICK_PREVIEW_MAX_PIXELS },
       input.signal,
     )
+    let frame
+    try {
+      frame = await exposureSession.decodeQuick(undefined, input.signal)
+    } finally {
+      exposureSession.dispose()
+    }
     exposure = resolveExposure(input.params, {
       baselineExposure: frame.metadata.baselineExposure,
       frame,

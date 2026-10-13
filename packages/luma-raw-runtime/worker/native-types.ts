@@ -84,10 +84,6 @@ export type LumaRawNativeProcessor = {
   openWithSettings: (
     settings: LumaRawNativeOpenSettings,
   ) => LumaRawNativeOpenTimings
-  openBuffer: (
-    data: Uint8Array,
-    settings: LumaRawNativeOpenSettings,
-  ) => LumaRawNativeOpenTimings | undefined
   readMetadata: () => LumaRawNativeMetadata
   extractThumbnail: () => LumaRawNativeThumbnail | undefined
   probeExportCapability?: () => LumaRawNativeExportCapability

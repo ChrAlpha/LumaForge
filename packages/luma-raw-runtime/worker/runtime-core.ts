@@ -2,7 +2,6 @@ import { version as runtimeVersion } from '../package.json'
 import type { LumaRawErrorCode } from '../src/errors'
 import { LumaRawRuntimeError, normalizeRawRuntimeError } from '../src/errors'
 import type {
-  LumaEmbeddedPreview,
   LumaRawExportCapability,
   LumaRawFrame,
   LumaRawHeapStats,
@@ -249,12 +248,8 @@ export const rawRequestFailureFallbackCodes = {
   cancel: 'RAW_RUNTIME_UNAVAILABLE',
   openSession: 'RAW_OPEN_FAILED',
   closeSession: 'RAW_RUNTIME_UNAVAILABLE',
-  probe: 'RAW_OPEN_FAILED',
-  extractEmbeddedPreview: 'RAW_THUMBNAIL_UNAVAILABLE',
   extractEmbeddedPreviewFromSession: 'RAW_THUMBNAIL_UNAVAILABLE',
-  decodeQuick: 'RAW_QUICK_DECODE_FAILED',
   decodeQuickFromSession: 'RAW_QUICK_DECODE_FAILED',
-  decodeBoundedHq: 'RAW_HQ_DECODE_FAILED',
   decodeBoundedHqFromSession: 'RAW_HQ_DECODE_FAILED',
   probeExportCapabilityFromSession: 'RAW_METADATA_FAILED',
   readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
@@ -307,10 +302,7 @@ function createProbePayload(
 
 function createFramePayload(
   request: LumaRawWorkerRequest<
-    | 'decodeQuick'
-    | 'decodeBoundedHq'
-    | 'decodeQuickFromSession'
-    | 'decodeBoundedHqFromSession'
+    'decodeQuickFromSession' | 'decodeBoundedHqFromSession'
   >,
   nativeMetadata: LumaRawNativeMetadata,
   image: LumaRawNativeImage,
@@ -341,19 +333,12 @@ function createFramePayload(
 
 function isBoundedHqRequest(
   request: LumaRawWorkerRequest,
-): request is LumaRawWorkerRequest<
-  'decodeBoundedHq' | 'decodeBoundedHqFromSession'
-> {
-  return (
-    request.type === 'decodeBoundedHq' ||
-    request.type === 'decodeBoundedHqFromSession'
-  )
+): request is LumaRawWorkerRequest<'decodeBoundedHqFromSession'> {
+  return request.type === 'decodeBoundedHqFromSession'
 }
 
 function requireBoundedHqMaxOutputPixels(
-  request: LumaRawWorkerRequest<
-    'decodeBoundedHq' | 'decodeBoundedHqFromSession'
-  >,
+  request: LumaRawWorkerRequest<'decodeBoundedHqFromSession'>,
 ) {
   const maxOutputPixels = (request.payload as { maxOutputPixels?: unknown })
     .maxOutputPixels
@@ -524,138 +509,6 @@ export function createRuntimeCore(
     consumeCancellation,
     requireSession,
     cancelledResponse,
-  }
-
-  function handleFileRequest(
-    request: LumaRawWorkerRequest<
-      'probe' | 'extractEmbeddedPreview' | 'decodeQuick' | 'decodeBoundedHq'
-    >,
-  ): LumaRawWorkerResponse {
-    if (consumeCancellation(request)) {
-      return cancelledResponse(request)
-    }
-
-    const boundedHqMaxOutputPixels = isBoundedHqRequest(request)
-      ? requireBoundedHqMaxOutputPixels(request)
-      : undefined
-    const timer = createTimer()
-    const settings = isBoundedHqRequest(request) ? hqSettings : quickSettings
-    const heapBefore =
-      request.type === 'probe' ? undefined : captureHeap(nativeFactory)
-    const processor = nativeFactory.createProcessor()
-    let response: LumaRawWorkerResponse | undefined
-    let primaryError: unknown
-    let disposeError: unknown
-
-    try {
-      const openStart = now()
-      const openTimings = normalizeOpenTimings(
-        processor.openBuffer(
-          new Uint8Array(request.payload.fileBuffer),
-          settings,
-        ),
-      )
-      const openElapsed = now() - openStart
-      timer.assign(
-        openTimings
-          ? {
-              copyToWasm: openTimings.copyToWasm,
-              librawOpen: openTimings.librawOpen,
-              openBuffer: openTimings.copyToWasm + openTimings.librawOpen,
-            }
-          : {
-              openBuffer: openElapsed,
-            },
-      )
-
-      const nativeMetadata = processor.readMetadata()
-      timer.mark('metadata')
-
-      if (request.type === 'probe') {
-        response = {
-          id: request.id,
-          ok: true,
-          type: request.type,
-          payload: createProbePayload(
-            request.id,
-            nativeMetadata,
-            timer.finish(),
-          ),
-        }
-      } else if (request.type === 'extractEmbeddedPreview') {
-        const thumbnail = processor.extractThumbnail()
-        timer.mark('thumbnail')
-        const heapAfter = captureHeap(nativeFactory)
-        const heap = heapStats(heapBefore, heapAfter)
-
-        const payload: LumaEmbeddedPreview | null = thumbnail
-          ? {
-              jobId: request.id,
-              sessionId: request.payload.sessionId,
-              source: 'embedded',
-              width: thumbnail.width,
-              height: thumbnail.height,
-              data: thumbnail.data,
-              mimeType: toMimeType(thumbnail),
-              colorSpace: 'display-srgb-preview',
-              orientation: nativeMetadata.orientation ?? 1,
-              timings: timer.finish(),
-              ...(heap ? { heap } : {}),
-            }
-          : null
-
-        response = {
-          id: request.id,
-          ok: true,
-          type: request.type,
-          payload,
-        }
-      } else {
-        const image = isBoundedHqRequest(request)
-          ? processor.decodeHq({
-              maxOutputPixels: boundedHqMaxOutputPixels,
-            })
-          : processor.decodePreview({
-              maxOutputPixels: defaultQuickMaxOutputPixels,
-            })
-        timer.mark('unpack')
-        const heapAfter = captureHeap(nativeFactory)
-
-        response = {
-          id: request.id,
-          ok: true,
-          type: request.type,
-          payload: createFramePayload(
-            request,
-            nativeMetadata,
-            image,
-            timer.finish(),
-            heapStats(heapBefore, heapAfter),
-          ),
-        }
-      }
-    } catch (error) {
-      primaryError = error
-    } finally {
-      try {
-        processor.dispose()
-      } catch (error) {
-        disposeError = error
-      }
-
-      if (!primaryError && response?.ok && consumeCancellation(request)) {
-        response = cancelledResponse(request)
-      }
-    }
-
-    if (primaryError) {
-      throw primaryError
-    }
-    if (disposeError) {
-      throw disposeError
-    }
-
-    return response ?? cancelledResponse(request)
   }
 
   function disposeSession(session: RuntimeSession) {
@@ -948,11 +801,6 @@ export function createRuntimeCore(
           case 'decodeQuickFromSession':
           case 'decodeBoundedHqFromSession':
             return handleDecodeFromSession(request)
-          case 'probe':
-          case 'extractEmbeddedPreview':
-          case 'decodeQuick':
-          case 'decodeBoundedHq':
-            return handleFileRequest(request)
         }
       } catch (error) {
         return failureResponse(request, error)

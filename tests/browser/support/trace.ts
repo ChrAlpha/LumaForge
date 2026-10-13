@@ -316,10 +316,6 @@ export function installPageTrace({
     'decodeBoundedHqFromSession',
     'probeExportCapabilityFromSession',
     'closeSession',
-    'probe',
-    'extractEmbeddedPreview',
-    'decodeQuick',
-    'decodeBoundedHq',
   ])
   const records = new WeakMap<Worker, TracedWorker>()
   class TracedPageWorker extends NativeWorker {

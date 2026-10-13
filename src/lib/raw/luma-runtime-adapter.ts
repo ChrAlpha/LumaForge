@@ -1,5 +1,4 @@
 import type {
-  LumaEmbeddedPreview,
   LumaRawCameraCalibrationProfile,
   LumaRawErrorCode,
   LumaRawExportCapability,
@@ -21,26 +20,12 @@ import {
 import type { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 
 import { frameToDecodedImage } from './decoded-image'
-import type {
-  DecodedImage,
-  DecodeExposureOptions,
-  ProgressCallback,
-} from './decoder'
+import type { DecodeExposureOptions, ProgressCallback } from './decoder'
 import type {
   JpegRuntimeAvailabilityProbe,
   PrewarmOutcome,
   RawRuntimeSession,
 } from './runtime-adapter'
-
-/** The decode bridge operations a RAW stage runs on. */
-export type RawDecodeBridgePort = Pick<
-  RawDecodeBridge,
-  | 'prewarm'
-  | 'openSession'
-  | 'decodeEmbedded'
-  | 'decodeQuick'
-  | 'decodeBoundedHq'
->
 
 export class RawAdapterError extends Error {
   readonly code: LumaRawErrorCode
@@ -64,10 +49,6 @@ export async function createDefaultLumaRawRuntime(): Promise<LumaRawRuntime> {
     requireCrossOriginIsolation:
       policy.previewWorkerMemoryProfile === 'desktop',
   })
-}
-
-export function createRuntimeSignal(signal?: AbortSignal) {
-  return signal ?? new AbortController().signal
 }
 
 function getRawErrorCode(error: unknown): LumaRawErrorCode | undefined {
@@ -212,96 +193,25 @@ export function toPrewarmFailureOutcome(error: unknown): PrewarmOutcome {
   return { status: 'failed', reason, recoverable: true }
 }
 
-export async function extractEmbeddedPreviewOnBridge(
-  bridge: RawDecodeBridgePort,
-  file: File,
-  signal?: AbortSignal,
-): Promise<LumaEmbeddedPreview | null> {
-  const runtimeSignal = createRuntimeSignal(signal)
-  try {
-    await bridge.prewarm(runtimeSignal)
-    return await bridge.decodeEmbedded(runtimeSignal, file, runtimeSignal)
-  } catch (error) {
-    throw normalizeRawAdapterError(
-      error,
-      'RAW_THUMBNAIL_UNAVAILABLE',
-      runtimeSignal,
-    )
-  }
-}
-
-export async function decodeQuickRawOnBridge(
-  bridge: RawDecodeBridgePort,
-  file: File,
-  onProgress?: ProgressCallback,
-  signal?: AbortSignal,
-): Promise<DecodedImage> {
-  const runtimeSignal = createRuntimeSignal(signal)
-  try {
-    onProgress?.({ phase: 'loading', progress: 0 })
-
-    await bridge.prewarm(runtimeSignal)
-
-    onProgress?.({ phase: 'decoding', progress: 50 })
-
-    const frame = await bridge.decodeQuick(runtimeSignal, file, runtimeSignal)
-
-    onProgress?.({ phase: 'complete', progress: 100 })
-
-    return frameToDecodedImage(frame)
-  } catch (error) {
-    throw normalizeRawAdapterError(
-      error,
-      'RAW_QUICK_DECODE_FAILED',
-      runtimeSignal,
-    )
-  }
-}
-
-export async function decodeBoundedHqRawOnBridge(
-  bridge: RawDecodeBridgePort,
-  file: File,
-  options: { maxOutputPixels: number },
-  onProgress?: ProgressCallback,
-  signal?: AbortSignal,
-): Promise<DecodedImage> {
-  const runtimeSignal = createRuntimeSignal(signal)
-  try {
-    onProgress?.({ phase: 'decoding', progress: 0 })
-    await bridge.prewarm(runtimeSignal)
-    const frame = await bridge.decodeBoundedHq(
-      runtimeSignal,
-      file,
-      options,
-      runtimeSignal,
-    )
-    onProgress?.({ phase: 'complete', progress: 100 })
-    return frameToDecodedImage(frame)
-  } catch (error) {
-    throw normalizeRawAdapterError(error, 'RAW_HQ_DECODE_FAILED', runtimeSignal)
-  }
-}
-
 export async function openRawSessionOnBridge(
-  bridge: RawDecodeBridgePort,
+  bridge: Pick<RawDecodeBridge, 'prewarm' | 'openSession'>,
   file: File,
-  signal?: AbortSignal,
+  signal: AbortSignal,
   jpegRuntimeAvailabilityProbe?: JpegRuntimeAvailabilityProbe,
 ): Promise<RawRuntimeSession> {
   let session: Awaited<ReturnType<LumaRawRuntime['openSession']>>
-  const runtimeSignal = createRuntimeSignal(signal)
   try {
-    await bridge.prewarm(runtimeSignal)
+    await bridge.prewarm(signal)
     session = await bridge.openSession(
-      runtimeSignal,
+      signal,
       file,
       {
         maxOutputPixels: QUICK_PREVIEW_MAX_PIXELS,
       },
-      runtimeSignal,
+      signal,
     )
   } catch (error) {
-    throw normalizeRawAdapterError(error, 'RAW_OPEN_FAILED', runtimeSignal)
+    throw normalizeRawAdapterError(error, 'RAW_OPEN_FAILED', signal)
   }
 
   return {

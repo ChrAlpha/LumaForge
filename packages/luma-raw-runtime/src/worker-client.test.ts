@@ -97,36 +97,6 @@ describe('lumaRawWorkerClient', () => {
     await expect(promise).resolves.toMatchObject({ runtime: 'luma' })
   })
 
-  it('posts cancel and rejects when AbortSignal fires', async () => {
-    const fakeWorker = new FakeWorker()
-    const client = new LumaRawWorkerClient(
-      () => fakeWorker as unknown as Worker,
-    )
-    const controller = new AbortController()
-
-    const promise = client.request(
-      'decodeQuick',
-      {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-      [new ArrayBuffer(1)],
-      controller.signal,
-    )
-
-    const decodeRequest = fakeWorker.requests[0]
-    controller.abort()
-
-    await expect(promise).rejects.toMatchObject({
-      code: 'RAW_JOB_CANCELLED',
-    })
-    expect(fakeWorker.requests[1]).toMatchObject({
-      type: 'cancel',
-      payload: { targetJobId: decodeRequest.id },
-    })
-  })
-
   it('tags cancel requests with the configured memory profile', async () => {
     const fakeWorker = new FakeWorker()
     const client = new LumaRawWorkerClient(
@@ -136,7 +106,7 @@ describe('lumaRawWorkerClient', () => {
     const controller = new AbortController()
 
     const promise = client.request(
-      'decodeQuick',
+      'openSession',
       {
         fileBuffer: new ArrayBuffer(4),
         fileName: 'sample.ARW',
@@ -170,7 +140,7 @@ describe('lumaRawWorkerClient', () => {
       () => fakeWorker as unknown as Worker,
     )
 
-    const promise = client.request('probe', {
+    const promise = client.request('openSession', {
       fileBuffer: new ArrayBuffer(4),
       fileName: 'bad.ARW',
       fileSize: 4,
@@ -180,7 +150,7 @@ describe('lumaRawWorkerClient', () => {
     fakeWorker.emit({
       id: request.id,
       ok: false,
-      type: 'probe',
+      type: 'openSession',
       error: {
         code: 'RAW_OPEN_FAILED',
         message: 'LibRaw open_buffer failed.',
@@ -199,7 +169,7 @@ describe('lumaRawWorkerClient', () => {
     const controller = new AbortController()
 
     const promise = client.request(
-      'probe',
+      'openSession',
       {
         fileBuffer: new ArrayBuffer(4),
         fileName: 'sample.ARW',
@@ -226,7 +196,7 @@ describe('lumaRawWorkerClient', () => {
     const controller = new AbortController()
 
     const promise = client.request(
-      'decodeBoundedHq',
+      'openSession',
       {
         fileBuffer: new ArrayBuffer(4),
         fileName: 'sample.ARW',
@@ -254,7 +224,7 @@ describe('lumaRawWorkerClient', () => {
     const controller = new AbortController()
 
     const promise = client.request(
-      'extractEmbeddedPreview',
+      'openSession',
       {
         fileBuffer: new ArrayBuffer(4),
         fileName: 'sample.ARW',

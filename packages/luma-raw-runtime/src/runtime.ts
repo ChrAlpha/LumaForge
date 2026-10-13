@@ -1,12 +1,9 @@
 import { LumaRawRuntimeError } from './errors'
 import type {
-  LumaEmbeddedPreview,
   LumaRawBoundedHqOptions,
   LumaRawCameraCalibrationProfile,
   LumaRawDecodeSession,
   LumaRawExportCapability,
-  LumaRawFrame,
-  LumaRawProbe,
   LumaRawQuickOptions,
   LumaRawRuntime,
   LumaRawRuntimeInfo,
@@ -59,21 +56,6 @@ function mergeSessionReadTimings(
       ...sessionInfo.timings,
       readFile,
       total: sessionInfo.timings.total + readFile,
-    },
-  }
-}
-
-function mergeSessionStageTimings<T extends { timings: LumaRawTimings }>(
-  result: T,
-  sessionInfo: LumaRawSessionInfo,
-): T {
-  return {
-    ...result,
-    timings: {
-      ...sessionInfo.timings,
-      ...result.timings,
-      readFile: sessionInfo.timings.readFile,
-      total: sessionInfo.timings.total + result.timings.total,
     },
   }
 }
@@ -350,56 +332,6 @@ export function createLumaRawRuntime(
     },
 
     openSession,
-
-    async probe(file: File, signal?: AbortSignal): Promise<LumaRawProbe> {
-      const session = await openSession(file, {}, signal)
-      try {
-        return session.probe
-      } finally {
-        session.dispose()
-      }
-    },
-
-    async extractEmbeddedPreview(
-      file: File,
-      signal?: AbortSignal,
-    ): Promise<LumaEmbeddedPreview | null> {
-      const session = await openSession(file, {}, signal)
-      try {
-        const preview = await session.extractEmbeddedPreview(signal)
-        return preview ? mergeSessionStageTimings(preview, session) : null
-      } finally {
-        session.dispose()
-      }
-    },
-
-    async decodeQuick(file: File, signal?: AbortSignal): Promise<LumaRawFrame> {
-      const session = await openSession(file, {}, signal)
-      try {
-        return mergeSessionStageTimings(
-          await session.decodeQuick(undefined, signal),
-          session,
-        )
-      } finally {
-        session.dispose()
-      }
-    },
-
-    async decodeBoundedHq(
-      file: File,
-      options: LumaRawBoundedHqOptions,
-      signal?: AbortSignal,
-    ): Promise<LumaRawFrame> {
-      const session = await openSession(file, {}, signal)
-      try {
-        return mergeSessionStageTimings(
-          await session.decodeBoundedHq(options, signal),
-          session,
-        )
-      } finally {
-        session.dispose()
-      }
-    },
 
     dispose() {
       client.dispose()

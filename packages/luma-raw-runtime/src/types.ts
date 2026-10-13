@@ -270,7 +270,7 @@ export type LumaRawCameraCalibrationProfile = {
 
 export type LumaRawFrame = {
   jobId: string
-  sessionId?: string
+  sessionId: string
   source: 'quick' | 'bounded-hq'
   width: number
   height: number
@@ -288,7 +288,7 @@ export type LumaRawFrame = {
 
 export type LumaEmbeddedPreview = {
   jobId: string
-  sessionId?: string
+  sessionId: string
   source: 'embedded'
   width: number
   height: number
@@ -333,16 +333,5 @@ export type LumaRawRuntime = {
     options?: LumaRawQuickOptions,
     signal?: AbortSignal,
   ) => Promise<LumaRawDecodeSession>
-  probe: (file: File, signal?: AbortSignal) => Promise<LumaRawProbe>
-  extractEmbeddedPreview: (
-    file: File,
-    signal?: AbortSignal,
-  ) => Promise<LumaEmbeddedPreview | null>
-  decodeQuick: (file: File, signal?: AbortSignal) => Promise<LumaRawFrame>
-  decodeBoundedHq: (
-    file: File,
-    options: LumaRawBoundedHqOptions,
-    signal?: AbortSignal,
-  ) => Promise<LumaRawFrame>
   dispose: () => void
 }

@@ -5,10 +5,11 @@ import type {
   LumaRawRuntime,
   LumaRawRuntimeInfo,
 } from '@lumaforge/luma-raw-runtime'
-import { QUICK_PREVIEW_MAX_PIXELS } from '@lumaforge/render-engine/preview'
+import {
+  BOUNDED_HQ_PREVIEW_MAX_PIXELS,
+  QUICK_PREVIEW_MAX_PIXELS,
+} from '@lumaforge/render-engine/preview'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-
-import { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 
 import type {
   RawRuntimeHostOptions,
@@ -35,6 +36,7 @@ function makeFrame(
 ): LumaRawFrame {
   return {
     jobId: `${source}-1`,
+    sessionId: 'session-1',
     source,
     width: 1,
     height: 1,
@@ -131,16 +133,6 @@ function makeSession(
 function makeRuntime(overrides: Partial<LumaRawRuntime> = {}) {
   return {
     init: vi.fn<LumaRawRuntime['init']>().mockResolvedValue(makeRuntimeInfo()),
-    probe: vi.fn<LumaRawRuntime['probe']>(),
-    extractEmbeddedPreview: vi
-      .fn<LumaRawRuntime['extractEmbeddedPreview']>()
-      .mockResolvedValue(null),
-    decodeQuick: vi
-      .fn<LumaRawRuntime['decodeQuick']>()
-      .mockResolvedValue(makeFrame('quick')),
-    decodeBoundedHq: vi
-      .fn<LumaRawRuntime['decodeBoundedHq']>()
-      .mockResolvedValue(makeFrame('bounded-hq')),
     openSession: vi
       .fn<LumaRawRuntime['openSession']>()
       .mockResolvedValue(makeSession()),
@@ -291,7 +283,7 @@ describe('raw runtime host', () => {
     })
     expect(runtimeB.init).not.toHaveBeenCalled()
 
-    await hostB.decodeQuickRaw(new File(['raw'], 'b.ARW'))
+    await hostB.prewarm()
     await hostA.terminateDecodeBridge()
 
     expect(runtimeA.dispose).toHaveBeenCalledTimes(1)
@@ -568,25 +560,6 @@ describe('raw runtime host', () => {
     }
   })
 
-  it('builds its bridge through the injected bridge factory', async () => {
-    const runtime = makeRuntime()
-    const createBridge = vi.fn(
-      (options: ConstructorParameters<typeof RawDecodeBridge>[0]) =>
-        new RawDecodeBridge(options),
-    )
-    const host = createRawRuntimeHost({
-      runtimeFactory: () => runtime,
-      idleMs: 1_234,
-      createBridge,
-    })
-
-    await host.prewarm()
-
-    expect(createBridge).toHaveBeenCalledTimes(1)
-    expect(createBridge.mock.calls[0]?.[0]).toMatchObject({ idleMs: 1_234 })
-    expect(runtime.init).toHaveBeenCalledTimes(1)
-  })
-
   it('opens sessions with the shared conversion and export capability gate', async () => {
     const session = makeSession({
       decodeQuick: vi
@@ -604,15 +577,15 @@ describe('raw runtime host', () => {
       jpegRuntimeAvailabilityProbe,
     })
     const file = new File(['raw'], 'a.DNG')
-    const signal = new AbortController().signal
+    const lease = host.beginSession()
 
-    const opened = await host.openSession(file, signal)
-    const image = await opened.decodeQuickRaw(undefined, signal)
+    const opened = await lease.open(file)
+    const image = await opened.decodeQuickRaw(undefined, lease.signal)
 
     expect(runtime.openSession).toHaveBeenCalledWith(
       file,
       { maxOutputPixels: QUICK_PREVIEW_MAX_PIXELS },
-      signal,
+      lease.signal,
     )
     expect(opened.sourceDimensions).toEqual({ width: 6240, height: 4168 })
     expect(image).toMatchObject({
@@ -627,6 +600,166 @@ describe('raw runtime host', () => {
 
     opened.dispose()
     expect(session.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens one session and runs every stage with the caller signal', async () => {
+    const session = makeSession()
+    const runtime = makeRuntime({
+      openSession: vi
+        .fn<LumaRawRuntime['openSession']>()
+        .mockResolvedValue(session),
+    })
+    const host = createRawRuntimeHost({
+      runtimeFactory: () => runtime,
+      jpegRuntimeAvailabilityProbe: () => true,
+    })
+    const stageSignal = new AbortController().signal
+
+    const opened = await host.beginSession().open(new File(['raw'], 'a.ARW'))
+    await opened.extractEmbeddedPreview(stageSignal)
+    await opened.decodeQuickRaw(undefined, stageSignal)
+    await opened.decodeBoundedHqRaw(
+      { maxOutputPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS },
+      undefined,
+      stageSignal,
+    )
+
+    expect(session.extractEmbeddedPreview).toHaveBeenCalledWith(stageSignal)
+    expect(session.decodeQuick).toHaveBeenCalledWith(
+      { maxOutputPixels: QUICK_PREVIEW_MAX_PIXELS },
+      stageSignal,
+    )
+    expect(session.decodeBoundedHq).toHaveBeenCalledWith(
+      { maxOutputPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS },
+      stageSignal,
+    )
+  })
+
+  it('carries a pinned exposure on the app side without changing the runtime request', async () => {
+    const session = makeSession()
+    const runtime = makeRuntime({
+      openSession: vi
+        .fn<LumaRawRuntime['openSession']>()
+        .mockResolvedValue(session),
+    })
+    const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+    const pinnedExposure = {
+      ev: 0.75,
+      multiplier: Math.pow(2, 0.75),
+      source: 'image-statistics',
+    } as const
+
+    const opened = await host.beginSession().open(new File(['raw'], 'a.ARW'))
+    const hq = await opened.decodeBoundedHqRaw({
+      maxOutputPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS,
+      pinnedExposure,
+    })
+
+    expect(hq.renderExposure).toEqual(pinnedExposure)
+    expect(session.decodeBoundedHq).toHaveBeenCalledWith(
+      { maxOutputPixels: BOUNDED_HQ_PREVIEW_MAX_PIXELS },
+      undefined,
+    )
+  })
+
+  describe('export capability gate', () => {
+    async function probe(capability: LumaRawExportCapability) {
+      const jpegRuntimeAvailabilityProbe = vi.fn().mockReturnValue(true)
+      const runtime = makeRuntime({
+        openSession: vi.fn<LumaRawRuntime['openSession']>().mockResolvedValue(
+          makeSession({
+            probeExportCapability: vi.fn().mockResolvedValue(capability),
+          }),
+        ),
+      })
+      const host = createRawRuntimeHost({
+        runtimeFactory: () => runtime,
+        jpegRuntimeAvailabilityProbe,
+      })
+      const opened = await host.beginSession().open(new File(['raw'], 'a.ARW'))
+      return {
+        result: await opened.probeExportCapability?.(),
+        jpegRuntimeAvailabilityProbe,
+      }
+    }
+
+    it('keeps the processed-window facts once the JPEG runtime is available', async () => {
+      const { result, jpegRuntimeAvailabilityProbe } =
+        await probe(makeCapability())
+
+      expect(result).toEqual(makeCapability())
+      expect(jpegRuntimeAvailabilityProbe).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([
+      ['missing color facts', { color: undefined }, 'missing-color-transform'],
+      [
+        'no processed window',
+        { windows: { librawProcessed: false } },
+        'processed-window-unavailable',
+      ],
+      [
+        'a camera matrix the runtime did not apply',
+        {
+          color: {
+            ...makeCapability().color!,
+            cameraMatrixAppliedByRuntime: false,
+          },
+        },
+        'missing-color-transform',
+      ],
+    ] as const)(
+      'fails closed for %s before probing the JPEG runtime',
+      async (_name, overrides, reason) => {
+        const { result, jpegRuntimeAvailabilityProbe } = await probe({
+          ...makeCapability(),
+          ...overrides,
+        } as LumaRawExportCapability)
+
+        expect(result).toMatchObject({ supported: false, reasons: [reason] })
+        expect(jpegRuntimeAvailabilityProbe).not.toHaveBeenCalled()
+      },
+    )
+  })
+
+  it('builds one default runtime, sized by the interactive policy', async () => {
+    vi.resetModules()
+    const runtime = makeRuntime()
+    const createLumaRawRuntime = vi.fn(() => runtime)
+    vi.doMock('@lumaforge/luma-raw-runtime', () => ({ createLumaRawRuntime }))
+    try {
+      const capability = await import('~/lib/runtime/capability-vector')
+      capability.setCapabilityVectorForTest({
+        coi: true,
+        pthread: true,
+        deviceMemoryGB: 4,
+        hwConcurrency: 4,
+        webKitClass: 'webkit-mobile',
+        deviceFormFactor: 'mobile',
+        maybeOpfsSupported: true,
+      })
+      const { createRawRuntimeHost: createDefaultHost } =
+        await import('./raw-runtime-host')
+      const host = createDefaultHost({
+        jpegRuntimeAvailabilityProbe: () => true,
+      })
+
+      await Promise.all([
+        host.prewarm(),
+        host.beginSession().open(new File(['raw'], 'a.ARW')),
+      ])
+
+      expect(createLumaRawRuntime).toHaveBeenCalledTimes(1)
+      expect(createLumaRawRuntime).toHaveBeenCalledWith({
+        memoryProfile: 'low-memory',
+        requireCrossOriginIsolation: false,
+      })
+      host.dispose()
+      capability.resetCapabilityVectorForTest()
+    } finally {
+      vi.doUnmock('@lumaforge/luma-raw-runtime')
+      vi.resetModules()
+    }
   })
 
   describe('session leases', () => {
@@ -1134,57 +1267,64 @@ describe('raw runtime host', () => {
   })
 
   describe('failure normalization', () => {
-    it('normalizes an asynchronous embedded-preview rejection to RAW_THUMBNAIL_UNAVAILABLE', async () => {
+    async function openOnLease(session: LumaRawDecodeSession) {
       const runtime = makeRuntime({
-        extractEmbeddedPreview: vi
-          .fn<LumaRawRuntime['extractEmbeddedPreview']>()
-          .mockImplementationOnce(async () => {
-            await Promise.resolve()
-            throw new Error('thumbnail exploded')
-          })
-          .mockImplementationOnce(async () => {
-            await Promise.resolve()
-            throw Object.assign(new Error('out of memory'), {
-              code: 'RAW_MEMORY_LIMIT',
-            })
-          }),
+        openSession: vi
+          .fn<LumaRawRuntime['openSession']>()
+          .mockResolvedValue(session),
       })
       const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
-      const file = new File(['raw'], 'a.ARW')
+      return host.beginSession().open(new File(['raw'], 'a.ARW'))
+    }
 
-      await expect(host.extractEmbeddedPreview(file)).rejects.toMatchObject({
+    it('normalizes an asynchronous embedded-preview rejection to RAW_THUMBNAIL_UNAVAILABLE', async () => {
+      const opened = await openOnLease(
+        makeSession({
+          extractEmbeddedPreview: vi
+            .fn()
+            .mockImplementationOnce(async () => {
+              await Promise.resolve()
+              throw new Error('thumbnail exploded')
+            })
+            .mockImplementationOnce(async () => {
+              await Promise.resolve()
+              throw Object.assign(new Error('out of memory'), {
+                code: 'RAW_MEMORY_LIMIT',
+              })
+            }),
+        }),
+      )
+
+      await expect(opened.extractEmbeddedPreview()).rejects.toMatchObject({
         name: 'RawAdapterError',
         code: 'RAW_THUMBNAIL_UNAVAILABLE',
         message: 'thumbnail exploded',
       })
-      await expect(host.extractEmbeddedPreview(file)).rejects.toMatchObject({
+      await expect(opened.extractEmbeddedPreview()).rejects.toMatchObject({
         name: 'RawAdapterError',
         code: 'RAW_MEMORY_LIMIT',
       })
     })
 
     it('reports an aborted decode as RAW_JOB_CANCELLED, not a decode failure', async () => {
-      const decode = deferred<LumaRawFrame>()
-      const runtime = makeRuntime({
-        decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(() => decode.promise),
-        // Terminating the worker rejects its pending request.
-        dispose: vi.fn(() => {
-          decode.reject(
-            Object.assign(new Error('RAW runtime worker was disposed.'), {
-              code: 'RAW_RUNTIME_UNAVAILABLE',
-            }),
-          )
-        }),
-      })
-      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+      const decodeQuick = vi.fn(
+        (_options?: unknown, signal?: AbortSignal) =>
+          new Promise<LumaRawFrame>((_resolve, reject) => {
+            // The worker client rejects a cancelled request with its own code.
+            signal?.addEventListener('abort', () =>
+              reject(
+                Object.assign(new Error('RAW runtime worker was disposed.'), {
+                  code: 'RAW_RUNTIME_UNAVAILABLE',
+                }),
+              ),
+            )
+          }),
+      )
+      const opened = await openOnLease(makeSession({ decodeQuick }))
       const controller = new AbortController()
 
-      const quick = host.decodeQuickRaw(
-        new File(['raw'], 'a.ARW'),
-        undefined,
-        controller.signal,
-      )
-      await vi.waitFor(() => expect(runtime.decodeQuick).toHaveBeenCalled())
+      const quick = opened.decodeQuickRaw(undefined, controller.signal)
+      await vi.waitFor(() => expect(decodeQuick).toHaveBeenCalled())
       controller.abort()
 
       await expect(quick).rejects.toMatchObject({
@@ -1193,67 +1333,40 @@ describe('raw runtime host', () => {
       })
     })
 
-    it('reports a decode its runtime termination cut short as RAW_JOB_CANCELLED', async () => {
-      const stalledStart = deferred<LumaRawRuntime>()
-      const host = createRawRuntimeHost({
-        runtimeFactory: () => stalledStart.promise,
-      })
-
-      const boundedHq = host.decodeBoundedHqRaw(new File(['raw'], 'a.ARW'), {
-        maxOutputPixels: 4_000_000,
-      })
-      await host.terminateDecodeBridge()
-
-      await expect(boundedHq).rejects.toMatchObject({
-        name: 'RawAdapterError',
-        code: 'RAW_JOB_CANCELLED',
-      })
-    })
-
-    it('reports a bounded HQ failure under the published RAW_HQ_DECODE_FAILED code', async () => {
-      const runtime = makeRuntime({
-        decodeBoundedHq: vi
-          .fn<LumaRawRuntime['decodeBoundedHq']>()
-          .mockRejectedValue(new Error('hq exploded')),
-      })
-      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
-
-      await expect(
-        host.decodeBoundedHqRaw(new File(['raw'], 'a.ARW'), {
-          maxOutputPixels: 4_000_000,
+    it('normalizes stage failures to RAW adapter error codes', async () => {
+      const opened = await openOnLease(
+        makeSession({
+          decodeQuick: vi.fn().mockRejectedValue(new Error('quick exploded')),
+          decodeBoundedHq: vi.fn().mockRejectedValue(new Error('hq exploded')),
         }),
+      )
+
+      await expect(opened.decodeQuickRaw()).rejects.toMatchObject({
+        name: 'RawAdapterError',
+        code: 'RAW_QUICK_DECODE_FAILED',
+        message: 'quick exploded',
+      })
+      await expect(
+        opened.decodeBoundedHqRaw({ maxOutputPixels: 4_000_000 }),
       ).rejects.toMatchObject({
         name: 'RawAdapterError',
         code: 'RAW_HQ_DECODE_FAILED',
         message: 'hq exploded',
       })
-    })
-  })
 
-  it('normalizes stage failures to RAW adapter error codes', async () => {
-    const runtime = makeRuntime({
-      decodeQuick: vi
-        .fn<LumaRawRuntime['decodeQuick']>()
-        .mockRejectedValue(new Error('quick exploded')),
-      openSession: vi
-        .fn<LumaRawRuntime['openSession']>()
-        .mockRejectedValue(new Error('open exploded')),
-    })
-    const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
-
-    await expect(
-      host.decodeQuickRaw(new File(['raw'], 'a.ARW')),
-    ).rejects.toMatchObject({
-      name: 'RawAdapterError',
-      code: 'RAW_QUICK_DECODE_FAILED',
-      message: 'quick exploded',
-    })
-    await expect(
-      host.openSession(new File(['raw'], 'a.ARW')),
-    ).rejects.toMatchObject({
-      name: 'RawAdapterError',
-      code: 'RAW_OPEN_FAILED',
-      message: 'open exploded',
+      const runtime = makeRuntime({
+        openSession: vi
+          .fn<LumaRawRuntime['openSession']>()
+          .mockRejectedValue(new Error('open exploded')),
+      })
+      const host = createRawRuntimeHost({ runtimeFactory: () => runtime })
+      await expect(
+        host.beginSession().open(new File(['raw'], 'a.ARW')),
+      ).rejects.toMatchObject({
+        name: 'RawAdapterError',
+        code: 'RAW_OPEN_FAILED',
+        message: 'open exploded',
+      })
     })
   })
 })

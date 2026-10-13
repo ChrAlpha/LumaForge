@@ -18,6 +18,13 @@ predate this file.
   the `'raw-mosaic-window'` member of `LumaRawFullResInputStrategy`, and
   `LumaRawExportWindowFacts.rawMosaic`. Full-resolution export reads only
   LibRaw processed windows, and nothing read a raw mosaic window.
+- The one-shot file decodes are removed: `LumaRawRuntime` and
+  `LumaRawNodeRuntime` keep only `init`, `openSession`, and `dispose`
+  (`probe`, `extractEmbeddedPreview`, `decodeQuick`, and `decodeBoundedHq`
+  are gone), and the `probe`, `extractEmbeddedPreview`, `decodeQuick`, and
+  `decodeBoundedHq` worker requests with them. Open a session and run the
+  stage on it. `LumaRawWorkerFilePayload.sessionId` is removed, and
+  `LumaRawFrame.sessionId` and `LumaEmbeddedPreview.sessionId` are required.
 
 ## 0.2.0 - 2026-10-12
 
@@ -68,7 +75,7 @@ this exact version.
   orientation and unsupported (`unsupported-orientation`).
   `LumaRawExportCapability.color` is only `LumaRawExportColorFacts`: it is
   present only when the native facts record `workingSpace:
-  'linear-prophoto-rgb'`, `librawOutputColor: 'prophoto'`, `gamma: 'linear'`,
+'linear-prophoto-rgb'`, `librawOutputColor: 'prophoto'`, `gamma: 'linear'`,
   both `cameraWhiteBalanceAppliedByRuntime` and
   `cameraMatrixAppliedByRuntime` as booleans, a positive four-value
   `whiteBalance` and a usable 3x3 `cameraToWorkingRgb`; otherwise the

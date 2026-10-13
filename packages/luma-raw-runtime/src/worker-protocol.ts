@@ -4,7 +4,6 @@ import type {
   LumaRawCameraCalibrationProfile,
   LumaRawExportCapability,
   LumaRawFrame,
-  LumaRawProbe,
   LumaRawProcessedWindow,
   LumaRawProcessedWindowRequest,
   LumaRawRuntimeInfo,
@@ -22,17 +21,12 @@ export type LumaRawWorkerRequestType =
   | 'readProcessedWindowFromSession'
   | 'applyCalibrationToSession'
   | 'closeSession'
-  | 'probe'
-  | 'extractEmbeddedPreview'
-  | 'decodeQuick'
-  | 'decodeBoundedHq'
   | 'cancel'
 
 export type LumaRawWorkerFilePayload = {
   fileBuffer: ArrayBuffer
   fileName: string
   fileSize: number
-  sessionId?: string
   memoryProfile?: LumaRawRuntimeMemoryProfile
 }
 
@@ -78,10 +72,6 @@ export type LumaRawWorkerRequestPayloadByType = {
   readProcessedWindowFromSession: LumaRawWorkerProcessedWindowPayload
   applyCalibrationToSession: LumaRawWorkerApplyCalibrationPayload
   closeSession: LumaRawWorkerSessionPayload
-  probe: LumaRawWorkerFilePayload
-  extractEmbeddedPreview: LumaRawWorkerFilePayload
-  decodeQuick: LumaRawWorkerFilePayload
-  decodeBoundedHq: LumaRawWorkerFilePayload & { maxOutputPixels: number }
   cancel: {
     targetJobId: string
     memoryProfile?: LumaRawRuntimeMemoryProfile
@@ -108,10 +98,6 @@ export type LumaRawWorkerPayloadByType = {
   readProcessedWindowFromSession: LumaRawProcessedWindow
   applyCalibrationToSession: { applied: true }
   closeSession: { closed: true }
-  probe: LumaRawProbe
-  extractEmbeddedPreview: LumaEmbeddedPreview | null
-  decodeQuick: LumaRawFrame
-  decodeBoundedHq: LumaRawFrame
   cancel: { cancelled: true }
 }
 

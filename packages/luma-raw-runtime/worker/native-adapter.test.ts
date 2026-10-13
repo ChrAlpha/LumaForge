@@ -48,13 +48,7 @@ function createProcessor(values: ProcessorValues) {
         return { copyToWasm: 0 }
       }
       openWithSettings(_settings: LumaRawNativeOpenSettings) {
-        return {
-          copyToWasm: 0,
-          librawOpen: 0,
-        }
-      }
-      openBuffer(_data: Uint8Array, _settings: LumaRawNativeOpenSettings) {
-        return values.openTimings
+        return values.openTimings ?? { copyToWasm: 0, librawOpen: 0 }
       }
       readMetadata() {
         return values.metadata ?? {}
@@ -97,9 +91,6 @@ function createFactoryWithHeap(heap?: Uint8Array) {
         return { copyToWasm: 0 }
       }
       openWithSettings() {
-        return { copyToWasm: 0, librawOpen: 0 }
-      }
-      openBuffer() {
         return { copyToWasm: 0, librawOpen: 0 }
       }
       readMetadata() {
@@ -216,9 +207,6 @@ describe('native-adapter', () => {
           return { copyToWasm: 0 }
         }
         openWithSettings() {
-          return { copyToWasm: 0, librawOpen: 0 }
-        }
-        openBuffer() {
           return { copyToWasm: 0, librawOpen: 0 }
         }
         readMetadata() {
@@ -557,9 +545,6 @@ describe('native-adapter', () => {
             librawOpen: 0,
           }
         }
-        openBuffer(_data: Uint8Array, _settings: LumaRawNativeOpenSettings) {
-          return undefined
-        }
         readMetadata() {
           return {}
         }
@@ -601,9 +586,6 @@ describe('native-adapter', () => {
             copyToWasm: 0,
             librawOpen: 0,
           }
-        }
-        openBuffer(_data: Uint8Array, _settings: LumaRawNativeOpenSettings) {
-          return undefined
         }
         readMetadata() {
           return {}
@@ -1063,9 +1045,6 @@ describe('native-adapter', () => {
   it('normalizes JPEG thumbnail dimensions from metadata fallback fields', () => {
     const module = {
       LumaRawProcessor: class {
-        openBuffer() {
-          return { copyToWasm: 1, librawOpen: 2 }
-        }
         loadBuffer() {
           return { copyToWasm: 1 }
         }
@@ -1215,7 +1194,6 @@ describe('native-adapter', () => {
       bits: 16,
     })
     expect(processor.decodePreview().data).toBe(imageData)
-    processor.openBuffer(new Uint8Array([1]), settings)
     processor.dispose()
   })
 
@@ -1279,12 +1257,6 @@ describe('native-adapter', () => {
     )
   })
 
-  it('preserves undefined open timing returns for runtime fallback timing', () => {
-    const processor = createProcessor({ openTimings: undefined })
-
-    expect(processor.openBuffer(new Uint8Array([1]), settings)).toBeUndefined()
-  })
-
   it('normalizes valid open timing objects', () => {
     const processor = createProcessor({
       openTimings: {
@@ -1293,7 +1265,7 @@ describe('native-adapter', () => {
       },
     })
 
-    expect(processor.openBuffer(new Uint8Array([1]), settings)).toEqual({
+    expect(processor.openWithSettings(settings)).toEqual({
       copyToWasm: 7,
       librawOpen: 11,
     })
@@ -1376,7 +1348,7 @@ describe('native-adapter', () => {
     expect(nativeCallCount).toBe(0)
   })
 
-  it('drops open timing objects when they are malformed', () => {
+  it('rejects malformed open timing objects', () => {
     const negativeTiming = createProcessor({
       openTimings: {
         copyToWasm: -1,
@@ -1392,15 +1364,11 @@ describe('native-adapter', () => {
       openTimings: 12,
     })
 
-    expect(negativeTiming.openBuffer(new Uint8Array([1]), settings)).toBe(
-      undefined,
-    )
-    expect(missingTiming.openBuffer(new Uint8Array([1]), settings)).toBe(
-      undefined,
-    )
-    expect(nonObjectTiming.openBuffer(new Uint8Array([1]), settings)).toBe(
-      undefined,
-    )
+    for (const processor of [negativeTiming, missingTiming, nonObjectTiming]) {
+      expect(() => processor.openWithSettings(settings)).toThrow(
+        'Native RAW openBuffer returned invalid timing data.',
+      )
+    }
   })
 })
 

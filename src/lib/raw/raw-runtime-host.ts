@@ -1,4 +1,3 @@
-import type { LumaEmbeddedPreview } from '@lumaforge/luma-raw-runtime'
 import { isWasmJpegRuntimeAvailable } from '@lumaforge/render-engine/export'
 
 import type {
@@ -9,13 +8,8 @@ import { RawDecodeBridge } from '~/lib/workers/raw-decode-bridge'
 import type { WorkerBridgeLifecycleListener } from '~/lib/workers/worker-bridge'
 import { notifyLifecycleListeners } from '~/lib/workers/worker-bridge'
 
-import type { DecodedImage, ProgressCallback } from './decoder'
-import type { RawDecodeBridgePort } from './luma-runtime-adapter'
 import {
   createDefaultLumaRawRuntime,
-  decodeBoundedHqRawOnBridge,
-  decodeQuickRawOnBridge,
-  extractEmbeddedPreviewOnBridge,
   isAbortError,
   openRawSessionOnBridge,
   rawJobCancelledError,
@@ -28,21 +22,9 @@ import type {
   RawRuntimeSession,
 } from './runtime-adapter'
 
-/** The bridge surface a host drives and observes. */
-export type RawRuntimeHostBridge = RawDecodeBridgePort &
-  Pick<
-    RawDecodeBridge,
-    'terminate' | 'getLifecycleSnapshot' | 'subscribeLifecycle'
-  >
-
 export interface RawRuntimeHostOptions {
   /** Builds the RAW runtime for each worker generation. */
   runtimeFactory?: RawDecodeBridgeOptions['runtimeFactory']
-  /**
-   * Builds a decode bridge. The host owns one at a time and builds the next
-   * when it hard-cancels work on the current one.
-   */
-  createBridge?: (options: RawDecodeBridgeOptions) => RawRuntimeHostBridge
   idleMs?: number
   jpegRuntimeAvailabilityProbe?: JpegRuntimeAvailabilityProbe
 }
@@ -97,22 +79,6 @@ export interface RawRuntimeHost {
   subscribe: (listener: () => void) => () => void
   prewarm: () => Promise<PrewarmOutcome>
   getPrewarmState: () => PrewarmState
-  openSession: (file: File, signal?: AbortSignal) => Promise<RawRuntimeSession>
-  extractEmbeddedPreview: (
-    file: File,
-    signal?: AbortSignal,
-  ) => Promise<LumaEmbeddedPreview | null>
-  decodeQuickRaw: (
-    file: File,
-    onProgress?: ProgressCallback,
-    signal?: AbortSignal,
-  ) => Promise<DecodedImage>
-  decodeBoundedHqRaw: (
-    file: File,
-    options: { maxOutputPixels: number },
-    onProgress?: ProgressCallback,
-    signal?: AbortSignal,
-  ) => Promise<DecodedImage>
   /**
    * Cancels the active session lease and ends the current runtime
    * generation; the next call starts a fresh one.
@@ -278,7 +244,7 @@ export function createRawRuntimeSessionLeases(
 
 /** A decode bridge the host owns until it ends that bridge's generation. */
 interface OwnedBridge {
-  readonly bridge: RawRuntimeHostBridge
+  readonly bridge: RawDecodeBridge
   /** Aborts once the host ended this bridge's generation. */
   readonly retirement: AbortController
   readonly unsubscribe: () => void
@@ -301,7 +267,6 @@ interface PrewarmAttempt {
  */
 export function createRawRuntimeHost({
   runtimeFactory = createDefaultLumaRawRuntime,
-  createBridge = (options) => new RawDecodeBridge(options),
   idleMs,
   jpegRuntimeAvailabilityProbe = isWasmJpegRuntimeAvailable,
 }: RawRuntimeHostOptions = {}): RawRuntimeHost {
@@ -321,7 +286,7 @@ export function createRawRuntimeHost({
   let snapshot = deriveSnapshot()
 
   function ownBridge(): OwnedBridge {
-    const bridge = createBridge({ runtimeFactory, idleMs })
+    const bridge = new RawDecodeBridge({ runtimeFactory, idleMs })
     return {
       bridge,
       retirement: new AbortController(),
@@ -388,32 +353,6 @@ export function createRawRuntimeHost({
     }
     publish()
     return owner.terminated
-  }
-
-  /**
-   * Runs a request on the current generation. It aborts with the caller's
-   * signal or with the generation, and settles at once when the generation
-   * ends.
-   */
-  function onCurrentGeneration<T>(
-    signal: AbortSignal | undefined,
-    run: (bridge: RawRuntimeHostBridge, signal: AbortSignal) => Promise<T>,
-  ): Promise<T> {
-    const owner = owned
-    const retirement = owner.retirement.signal
-    const controller = new AbortController()
-    const abort = () => controller.abort()
-    signal?.addEventListener('abort', abort, { once: true })
-    retirement.addEventListener('abort', abort, { once: true })
-    if (signal?.aborted || retirement.aborted) abort()
-    return untilAborted(
-      retirement,
-      run(owner.bridge, controller.signal),
-      generationEndedError,
-    ).finally(() => {
-      signal?.removeEventListener('abort', abort)
-      retirement.removeEventListener('abort', abort)
-    })
   }
 
   const sessions = createRawRuntimeSessionLeases(
@@ -503,37 +442,6 @@ export function createRawRuntimeHost({
     },
     prewarm,
     getPrewarmState: () => snapshot.initialization,
-    openSession(file, signal) {
-      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
-        openRawSessionOnBridge(
-          bridge,
-          file,
-          runtimeSignal,
-          jpegRuntimeAvailabilityProbe,
-        ),
-      )
-    },
-    extractEmbeddedPreview(file, signal) {
-      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
-        extractEmbeddedPreviewOnBridge(bridge, file, runtimeSignal),
-      )
-    },
-    decodeQuickRaw(file, onProgress, signal) {
-      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
-        decodeQuickRawOnBridge(bridge, file, onProgress, runtimeSignal),
-      )
-    },
-    decodeBoundedHqRaw(file, options, onProgress, signal) {
-      return onCurrentGeneration(signal, (bridge, runtimeSignal) =>
-        decodeBoundedHqRawOnBridge(
-          bridge,
-          file,
-          options,
-          onProgress,
-          runtimeSignal,
-        ),
-      )
-    },
     terminateDecodeBridge() {
       const owner = owned
       sessions.cancel()

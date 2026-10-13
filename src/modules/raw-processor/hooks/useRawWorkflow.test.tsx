@@ -155,19 +155,6 @@ vi.mock('~/lib/raw/raw-runtime-host', async (importOriginal) => {
       subscribe: () => () => {},
       prewarm: vi.fn(() => rawRuntimeMock.prewarm()),
       getPrewarmState: vi.fn(() => rawRuntimeMock.getPrewarmState()),
-      openSession: vi.fn((file: File, signal?: AbortSignal) =>
-        rawRuntimeMock.openSession(file, signal),
-      ),
-      extractEmbeddedPreview: vi.fn((file: File) =>
-        rawRuntimeMock.extractEmbeddedPreview(file),
-      ),
-      decodeQuickRaw: vi.fn((file: File) =>
-        rawRuntimeMock.decodeQuickRaw(file),
-      ),
-      decodeBoundedHqRaw: vi.fn(
-        (file: File, options: { maxOutputPixels: number }) =>
-          rawRuntimeMock.decodeBoundedHqRaw(file, options),
-      ),
       terminateDecodeBridge: vi.fn(async () => {}),
       beginSession: vi.fn(sessions.begin),
       cancelSession: vi.fn(sessions.cancel),
@@ -723,11 +710,6 @@ describe('useRawWorkflow embedded preview state', () => {
       return {
         info,
         init: vi.fn<LumaRawRuntime['init']>().mockResolvedValue(info),
-        probe: vi.fn<LumaRawRuntime['probe']>(),
-        extractEmbeddedPreview:
-          vi.fn<LumaRawRuntime['extractEmbeddedPreview']>(),
-        decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(),
-        decodeBoundedHq: vi.fn<LumaRawRuntime['decodeBoundedHq']>(),
         openSession: vi.fn<LumaRawRuntime['openSession']>(),
         dispose: vi.fn<LumaRawRuntime['dispose']>(),
       }
@@ -836,6 +818,7 @@ describe('useRawWorkflow embedded preview state', () => {
       ): LumaRawFrame {
         return {
           jobId: `${source}-${make}`,
+          sessionId: make,
           source,
           width: 1,
           height: 1,
@@ -880,11 +863,6 @@ describe('useRawWorkflow embedded preview state', () => {
         const sessions: LumaRawDecodeSession[] = []
         const runtime = {
           init: vi.fn<LumaRawRuntime['init']>(() => run('init', () => info)),
-          probe: vi.fn<LumaRawRuntime['probe']>(),
-          extractEmbeddedPreview:
-            vi.fn<LumaRawRuntime['extractEmbeddedPreview']>(),
-          decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(),
-          decodeBoundedHq: vi.fn<LumaRawRuntime['decodeBoundedHq']>(),
           openSession: vi.fn<LumaRawRuntime['openSession']>((file) =>
             run('openSession', () => {
               const session: LumaRawDecodeSession = {

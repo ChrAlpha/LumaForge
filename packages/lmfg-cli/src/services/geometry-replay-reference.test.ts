@@ -184,9 +184,6 @@ describe('geometry replay against a synthetic engine reference', () => {
       memoryProfile: 'desktop',
       raw: async () => ({
         openSession: async () => session,
-        decodeQuick: async () => {
-          throw new Error('a pinned exposure never quick-decodes')
-        },
       }),
       jpeg: async () => {
         throw new Error('the export streams through its own JPEG runtime')

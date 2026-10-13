@@ -3,10 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { version as packageVersion } from '../package.json'
 import { LumaRawRuntimeError } from '../src/errors'
 import type { LumaRawExportCapability } from '../src/types'
-import type {
-  LumaRawWorkerRequest,
-  LumaRawWorkerRequestType,
-} from '../src/worker-protocol'
+import type { LumaRawWorkerRequest } from '../src/worker-protocol'
 import type { LumaRawNativeFactory } from './native-types'
 import {
   createRuntimeCore,
@@ -37,10 +34,6 @@ const makeNativeFactory = (): LumaRawNativeFactory => ({
           copyToWasm: 0,
           librawOpen: 0,
         }
-      },
-      openBuffer(data, settings) {
-        this.loadBuffer(data)
-        return this.openWithSettings(settings)
       },
       readMetadata() {
         return {
@@ -90,6 +83,42 @@ const makeNativeFactory = (): LumaRawNativeFactory => ({
     }
   },
 })
+
+const sourcePayload = {
+  fileBuffer: new ArrayBuffer(4),
+  fileName: 'sample.ARW',
+  fileSize: 4,
+}
+
+async function openTestSession(
+  core: ReturnType<typeof createRuntimeCore>,
+  id = 'open-session',
+) {
+  const opened = await core.handleRequest({
+    id,
+    type: 'openSession',
+    payload: { ...sourcePayload, fileBuffer: new ArrayBuffer(4) },
+  })
+  if (!opened.ok || opened.type !== 'openSession') {
+    throw new Error('Expected an open session.')
+  }
+  return opened.payload
+}
+
+function thumbnailFactory(
+  thumbnail: ReturnType<
+    ReturnType<LumaRawNativeFactory['createProcessor']>['extractThumbnail']
+  >,
+): LumaRawNativeFactory {
+  return {
+    createProcessor() {
+      return {
+        ...makeNativeFactory().createProcessor(),
+        extractThumbnail: () => thumbnail,
+      }
+    },
+  }
+}
 
 type SessionRequestType =
   | 'extractEmbeddedPreviewFromSession'
@@ -183,233 +212,102 @@ describe('runtime-core', () => {
   })
 
   it('returns probe metadata without maker-note bulk', async () => {
-    const core = createRuntimeCore(makeNativeFactory())
+    const session = await openTestSession(
+      createRuntimeCore(makeNativeFactory()),
+    )
 
-    const response = await core.handleRequest({
-      id: 'job-1',
-      type: 'probe',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(response).toMatchObject({
-      ok: true,
-      type: 'probe',
-      payload: {
-        width: 4000,
-        height: 3000,
-        make: 'Sony',
-        baselineExposure: 1.25,
-        supportLevel: 'experimental',
-      },
+    expect(session.probe).toMatchObject({
+      width: 4000,
+      height: 3000,
+      make: 'Sony',
+      baselineExposure: 1.25,
+      supportLevel: 'experimental',
     })
   })
 
-  it('returns embedded JPEG preview bytes', async () => {
-    const core = createRuntimeCore(makeNativeFactory())
+  it.each([
+    ['jpeg', new Uint8Array([1, 2, 3, 4]), 'image/jpeg'],
+    ['bitmap', new Uint8Array([255, 0, 128, 255]), 'application/octet-stream'],
+    // PNG signature bytes without an encoded native format stay octet-stream.
+    [
+      'unknown',
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      'application/octet-stream',
+    ],
+  ] as const)(
+    'returns %s embedded preview bytes uncloned with their MIME type',
+    async (format, data, mimeType) => {
+      const core = createRuntimeCore(
+        thumbnailFactory({ data, width: 2, height: 2, format }),
+      )
+      const { sessionId } = await openTestSession(core)
 
-    const response = await core.handleRequest({
-      id: 'job-2',
-      type: 'extractEmbeddedPreview',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
+      const response = await core.handleRequest({
+        id: `job-${format}-preview`,
+        type: 'extractEmbeddedPreviewFromSession',
+        payload: { sessionId },
+      })
 
-    expect(response).toMatchObject({
-      ok: true,
-      type: 'extractEmbeddedPreview',
-      payload: {
-        width: 1600,
-        height: 1067,
-        mimeType: 'image/jpeg',
-        colorSpace: 'display-srgb-preview',
-      },
-    })
-  })
-
-  it('keeps embedded preview buffers without cloning in runtime-core', async () => {
-    const source = new Uint8Array([1, 2, 3, 4])
-    const core = createRuntimeCore({
-      createProcessor() {
-        const processor = makeNativeFactory().createProcessor()
-        return {
-          ...processor,
-          extractThumbnail() {
-            return {
-              data: source,
-              width: 2,
-              height: 2,
-              format: 'jpeg',
-            }
-          },
-        }
-      },
-    })
-
-    const response = await core.handleRequest({
-      id: 'job-preview-subarray',
-      type: 'extractEmbeddedPreview',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(response.ok && response.type === 'extractEmbeddedPreview').toBe(true)
-    if (!response.ok || response.type !== 'extractEmbeddedPreview') return
-
-    expect(response.payload?.data).toBe(source)
-  })
-
-  it('keeps bitmap embedded preview bytes as octet-stream', async () => {
-    const core = createRuntimeCore({
-      createProcessor() {
-        const processor = makeNativeFactory().createProcessor()
-        return {
-          ...processor,
-          extractThumbnail() {
-            return {
-              data: new Uint8Array([255, 0, 128, 255]),
-              width: 1,
-              height: 1,
-              format: 'bitmap',
-            }
-          },
-        }
-      },
-    })
-
-    const response = await core.handleRequest({
-      id: 'job-bitmap-preview',
-      type: 'extractEmbeddedPreview',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(response).toMatchObject({
-      ok: true,
-      type: 'extractEmbeddedPreview',
-      payload: {
-        mimeType: 'application/octet-stream',
-      },
-    })
-  })
-
-  it('does not infer PNG MIME from bytes without an encoded native format', async () => {
-    const core = createRuntimeCore({
-      createProcessor() {
-        const processor = makeNativeFactory().createProcessor()
-        return {
-          ...processor,
-          extractThumbnail() {
-            return {
-              data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-              width: 1,
-              height: 1,
-              format: 'unknown',
-            }
-          },
-        }
-      },
-    })
-
-    const response = await core.handleRequest({
-      id: 'job-unknown-preview',
-      type: 'extractEmbeddedPreview',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(response).toMatchObject({
-      ok: true,
-      type: 'extractEmbeddedPreview',
-      payload: {
-        mimeType: 'application/octet-stream',
-      },
-    })
-  })
+      expect(response).toMatchObject({
+        ok: true,
+        payload: {
+          sessionId,
+          width: 2,
+          height: 2,
+          mimeType,
+          colorSpace: 'display-srgb-preview',
+        },
+      })
+      if (
+        response.ok &&
+        response.type === 'extractEmbeddedPreviewFromSession'
+      ) {
+        expect(response.payload?.data).toBe(data)
+      }
+    },
+  )
 
   it('returns null when embedded thumbnail is unavailable', async () => {
-    const core = createRuntimeCore({
-      createProcessor() {
-        const processor = makeNativeFactory().createProcessor()
-        return {
-          ...processor,
-          extractThumbnail: () => undefined,
-        }
-      },
-    })
+    const core = createRuntimeCore(thumbnailFactory(undefined))
+    const { sessionId } = await openTestSession(core)
 
     const response = await core.handleRequest({
       id: 'job-no-thumb',
-      type: 'extractEmbeddedPreview',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
+      type: 'extractEmbeddedPreviewFromSession',
+      payload: { sessionId },
     })
 
-    expect(response).toMatchObject({
-      ok: true,
-      type: 'extractEmbeddedPreview',
-      payload: null,
-    })
+    expect(response).toMatchObject({ ok: true, payload: null })
   })
 
   it('returns quick and bounded HQ RGB16 Linear ProPhoto frames', async () => {
     const core = createRuntimeCore(makeNativeFactory())
+    const { sessionId } = await openTestSession(core)
 
     const quick = await core.handleRequest({
       id: 'job-3',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
+      type: 'decodeQuickFromSession',
+      payload: { sessionId },
     })
     const hq = await core.handleRequest({
       id: 'job-4',
-      type: 'decodeBoundedHq',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-        maxOutputPixels: 12_000_000,
-      },
+      type: 'decodeBoundedHqFromSession',
+      payload: { sessionId, maxOutputPixels: 12_000_000 },
     })
 
+    const frame = {
+      sessionId,
+      layout: 'rgb',
+      bitDepth: 16,
+      colorSpace: 'linear-prophoto-rgb',
+    }
     expect(quick).toMatchObject({
       ok: true,
-      payload: {
-        source: 'quick',
-        layout: 'rgb',
-        bitDepth: 16,
-        colorSpace: 'linear-prophoto-rgb',
-      },
+      payload: { ...frame, source: 'quick' },
     })
     expect(hq).toMatchObject({
       ok: true,
-      payload: {
-        source: 'bounded-hq',
-        layout: 'rgb',
-        bitDepth: 16,
-        colorSpace: 'linear-prophoto-rgb',
-      },
+      payload: { ...frame, source: 'bounded-hq' },
     })
   })
 
@@ -706,7 +604,7 @@ describe('runtime-core', () => {
     expect(decodeHq).not.toHaveBeenCalled()
   })
 
-  it('rejects file bounded HQ requests with a non-finite output cap', async () => {
+  it('rejects session bounded HQ requests with a non-finite output cap', async () => {
     const decodeHq = vi.fn(() => ({
       data: new Uint16Array(1),
       width: 1,
@@ -721,21 +619,17 @@ describe('runtime-core', () => {
         }
       },
     })
+    const { sessionId } = await openTestSession(core)
 
     const response = await core.handleRequest({
       id: 'bounded-non-finite-cap',
-      type: 'decodeBoundedHq',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.RAF',
-        fileSize: 4,
-        maxOutputPixels: Number.POSITIVE_INFINITY,
-      },
+      type: 'decodeBoundedHqFromSession',
+      payload: { sessionId, maxOutputPixels: Number.POSITIVE_INFINITY },
     })
 
     expect(response).toMatchObject({
       ok: false,
-      type: 'decodeBoundedHq',
+      type: 'decodeBoundedHqFromSession',
       error: {
         code: 'RAW_WORKER_PROTOCOL_ERROR',
       },
@@ -898,9 +792,6 @@ describe('runtime-core', () => {
     const core = createRuntimeCore({
       createProcessor() {
         return {
-          openBuffer() {
-            return { copyToWasm: 1, librawOpen: 1 }
-          },
           loadBuffer() {
             return { copyToWasm: 1 }
           },
@@ -1107,15 +998,6 @@ describe('runtime-core', () => {
       },
     })
 
-    const quick = await core.handleRequest({
-      id: 'job-default-quick-cap',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
     const opened = await core.handleRequest({
       id: 'job-default-session-cap-open',
       type: 'openSession',
@@ -1144,15 +1026,11 @@ describe('runtime-core', () => {
       },
     })
 
-    expect(quick.ok && quick.type === 'decodeQuick').toBe(true)
     expect(
       sessionQuick.ok && sessionQuick.type === 'decodeQuickFromSession',
     ).toBe(true)
     expect(hq.ok && hq.type === 'decodeBoundedHqFromSession').toBe(true)
-    expect(previewOptions).toEqual([
-      { maxOutputPixels: 2_500_000 },
-      { maxOutputPixels: 2_500_000 },
-    ])
+    expect(previewOptions).toEqual([{ maxOutputPixels: 2_500_000 }])
     expect(hqOptions).toEqual([{ maxOutputPixels: 12_000_000 }])
   })
 
@@ -1214,109 +1092,30 @@ describe('runtime-core', () => {
     })
   })
 
-  it('reports copyToWasm and librawOpen timings separately when native provides them', async () => {
+  it('reports copyToWasm and librawOpen timings separately on session open', async () => {
     const core = createRuntimeCore({
       createProcessor() {
         const processor = makeNativeFactory().createProcessor()
 
         return {
           ...processor,
-          openBuffer(data, settings) {
-            processor.openBuffer(data, settings)
-            return {
-              copyToWasm: 7,
-              librawOpen: 11,
-            }
+          loadBuffer(data) {
+            processor.loadBuffer(data)
+            return { copyToWasm: 3 }
+          },
+          openWithSettings(settings) {
+            processor.openWithSettings(settings)
+            return { copyToWasm: 4, librawOpen: 11 }
           },
         }
       },
     })
 
-    const response = await core.handleRequest({
-      id: 'job-open-timings',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
+    const { timings } = await openTestSession(core)
 
-    expect(response.ok && response.type === 'decodeQuick').toBe(true)
-    if (!response.ok || response.type !== 'decodeQuick') return
-
-    expect(response.payload.timings.copyToWasm).toBe(7)
-    expect(response.payload.timings.librawOpen).toBe(11)
-    expect(response.payload.timings.openBuffer).toBe(18)
-  })
-
-  it('uses measured openBuffer timing when native open timings are unavailable', async () => {
-    const core = createRuntimeCore({
-      createProcessor() {
-        const processor = makeNativeFactory().createProcessor()
-
-        return {
-          ...processor,
-          openBuffer(data, settings) {
-            processor.openBuffer(data, settings)
-            return undefined
-          },
-        }
-      },
-    })
-
-    const response = await core.handleRequest({
-      id: 'job-open-fallback-timing',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(response.ok && response.type === 'decodeQuick').toBe(true)
-    if (!response.ok || response.type !== 'decodeQuick') return
-
-    expect(response.payload.timings.openBuffer).toBeGreaterThanOrEqual(0)
-    expect(response.payload.timings.copyToWasm).toBeUndefined()
-    expect(response.payload.timings.librawOpen).toBeUndefined()
-  })
-
-  it('uses measured openBuffer timing when native open timings are malformed', async () => {
-    const core = createRuntimeCore({
-      createProcessor() {
-        const processor = makeNativeFactory().createProcessor()
-
-        return {
-          ...processor,
-          openBuffer(data, settings) {
-            processor.openBuffer(data, settings)
-            return {
-              copyToWasm: -1,
-              librawOpen: 11,
-            }
-          },
-        }
-      },
-    })
-
-    const response = await core.handleRequest({
-      id: 'job-bad-open-timings',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(response.ok && response.type === 'decodeQuick').toBe(true)
-    if (!response.ok || response.type !== 'decodeQuick') return
-
-    expect(response.payload.timings.openBuffer).toBeGreaterThanOrEqual(0)
-    expect(response.payload.timings.copyToWasm).toBeUndefined()
-    expect(response.payload.timings.librawOpen).toBeUndefined()
+    expect(timings.copyToWasm).toBe(7)
+    expect(timings.librawOpen).toBe(11)
+    expect(timings.openBuffer).toBe(18)
   })
 
   it('keeps native-owned output buffers without cloning in runtime-core', async () => {
@@ -1324,9 +1123,6 @@ describe('runtime-core', () => {
     const core = createRuntimeCore({
       createProcessor() {
         return {
-          openBuffer() {
-            return { copyToWasm: 1, librawOpen: 1 }
-          },
           loadBuffer() {
             return { copyToWasm: 1 }
           },
@@ -1360,18 +1156,15 @@ describe('runtime-core', () => {
       },
     })
 
+    const { sessionId } = await openTestSession(core)
     const response = await core.handleRequest({
       id: 'job-no-clone',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
+      type: 'decodeQuickFromSession',
+      payload: { sessionId },
     })
 
-    expect(response.ok && response.type === 'decodeQuick').toBe(true)
-    if (!response.ok || response.type !== 'decodeQuick') return
+    expect(response.ok && response.type === 'decodeQuickFromSession').toBe(true)
+    if (!response.ok || response.type !== 'decodeQuickFromSession') return
 
     expect(response.payload.data).toBe(nativeData)
   })
@@ -1383,32 +1176,19 @@ describe('runtime-core', () => {
         const processor = makeNativeFactory().createProcessor()
         return {
           ...processor,
-          openBuffer(data, settings) {
+          openWithSettings(settings) {
             openSettings.push(settings)
-            return processor.openBuffer(data, settings)
+            return processor.openWithSettings(settings)
           },
         }
       },
     })
+    const { sessionId } = await openTestSession(core)
 
     await core.handleRequest({
-      id: 'job-settings-quick',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
-    })
-    await core.handleRequest({
       id: 'job-settings-hq',
-      type: 'decodeBoundedHq',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-        maxOutputPixels: 12_000_000,
-      },
+      type: 'decodeBoundedHqFromSession',
+      payload: { sessionId, maxOutputPixels: 12_000_000 },
     })
 
     expect(openSettings).toEqual([
@@ -1441,36 +1221,6 @@ describe('runtime-core', () => {
     ])
   })
 
-  it('reopens each file with fresh per-image native state', async () => {
-    const core = createRuntimeCore(makeNativeFactory())
-
-    const first = await core.handleRequest({
-      id: 'job-5',
-      type: 'probe',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'first.ARW',
-        fileSize: 4,
-      },
-    })
-    const second = await core.handleRequest({
-      id: 'job-6',
-      type: 'probe',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'second.ARW',
-        fileSize: 4,
-      },
-    })
-
-    expect(first.ok && first.type === 'probe' && first.payload.model).toBe(
-      'A7-1',
-    )
-    expect(second.ok && second.type === 'probe' && second.payload.model).toBe(
-      'A7-1',
-    )
-  })
-
   it('preserves primary native failure when dispose also fails', async () => {
     const core = createRuntimeCore({
       createProcessor() {
@@ -1495,17 +1245,13 @@ describe('runtime-core', () => {
 
     const response = await core.handleRequest({
       id: 'job-primary-failure',
-      type: 'probe',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
+      type: 'openSession',
+      payload: sourcePayload,
     })
 
     expect(response).toMatchObject({
       ok: false,
-      type: 'probe',
+      type: 'openSession',
       error: {
         code: 'RAW_METADATA_FAILED',
         message: 'metadata failed',
@@ -1520,9 +1266,9 @@ describe('runtime-core', () => {
         const processor = makeNativeFactory().createProcessor()
         return {
           ...processor,
-          openBuffer(data, settings) {
+          loadBuffer(data) {
             openCount += 1
-            return processor.openBuffer(data, settings)
+            return processor.loadBuffer(data)
           },
         }
       },
@@ -1537,12 +1283,8 @@ describe('runtime-core', () => {
     })
     const cancelled = await core.handleRequest({
       id: 'job-cancelled',
-      type: 'decodeQuick',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'sample.ARW',
-        fileSize: 4,
-      },
+      type: 'openSession',
+      payload: sourcePayload,
     })
 
     expect(cancel).toMatchObject({
@@ -1552,7 +1294,7 @@ describe('runtime-core', () => {
     })
     expect(cancelled).toMatchObject({
       ok: false,
-      type: 'decodeQuick',
+      type: 'openSession',
       error: {
         code: 'RAW_JOB_CANCELLED',
       },
@@ -1891,30 +1633,22 @@ describe('runtime-core', () => {
 
     const evicted = await core.handleRequest({
       id: 'cancelled-0',
-      type: 'probe',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'evicted.ARW',
-        fileSize: 4,
-      },
+      type: 'openSession',
+      payload: { ...sourcePayload, fileName: 'evicted.ARW' },
     })
     const retained = await core.handleRequest({
       id: 'cancelled-128',
-      type: 'probe',
-      payload: {
-        fileBuffer: new ArrayBuffer(4),
-        fileName: 'retained.ARW',
-        fileSize: 4,
-      },
+      type: 'openSession',
+      payload: { ...sourcePayload, fileName: 'retained.ARW' },
     })
 
     expect(evicted).toMatchObject({
       ok: true,
-      type: 'probe',
+      type: 'openSession',
     })
     expect(retained).toMatchObject({
       ok: false,
-      type: 'probe',
+      type: 'openSession',
       error: {
         code: 'RAW_JOB_CANCELLED',
       },
@@ -1924,7 +1658,6 @@ describe('runtime-core', () => {
 
 describe('runtime-core request failure classification', () => {
   type FailingMethod =
-    | 'openBuffer'
     | 'loadBuffer'
     | 'extractThumbnail'
     | 'decodePreview'
@@ -2001,36 +1734,6 @@ describe('runtime-core request failure classification', () => {
     }
     return opened.payload.sessionId
   }
-
-  it.each([
-    ['probe', 'openBuffer', 'RAW_OPEN_FAILED'],
-    ['extractEmbeddedPreview', 'extractThumbnail', 'RAW_THUMBNAIL_UNAVAILABLE'],
-    ['decodeQuick', 'decodePreview', 'RAW_QUICK_DECODE_FAILED'],
-    ['decodeBoundedHq', 'decodeHq', 'RAW_HQ_DECODE_FAILED'],
-  ] as const)(
-    'classifies unexpected %s file failures by operation',
-    async (type, method, code) => {
-      const core = createRuntimeCore(
-        makeFailingFactory(method, new Error(`${method} exploded`)),
-      )
-      const request = (
-        type === 'decodeBoundedHq'
-          ? {
-              id: `classify-${type}`,
-              type,
-              payload: { ...filePayload, maxOutputPixels: 1_000_000 },
-            }
-          : { id: `classify-${type}`, type, payload: filePayload }
-      ) as LumaRawWorkerRequest
-
-      await expect(core.handleRequest(request)).resolves.toEqual({
-        id: `classify-${type}`,
-        ok: false,
-        type,
-        error: { code, message: `${method} exploded` },
-      })
-    },
-  )
 
   it('classifies unexpected session open failures as source-open failures', async () => {
     const core = createRuntimeCore(
@@ -2166,35 +1869,6 @@ describe('runtime-core request failure classification', () => {
       })
     },
   )
-
-  it('assigns a fallback code to every worker request operation', () => {
-    const requestTypes = [
-      'init',
-      'openSession',
-      'extractEmbeddedPreviewFromSession',
-      'decodeQuickFromSession',
-      'decodeBoundedHqFromSession',
-      'probeExportCapabilityFromSession',
-      'readProcessedWindowFromSession',
-      'applyCalibrationToSession',
-      'closeSession',
-      'probe',
-      'extractEmbeddedPreview',
-      'decodeQuick',
-      'decodeBoundedHq',
-      'cancel',
-    ] satisfies LumaRawWorkerRequestType[]
-
-    expect(Object.keys(rawRequestFailureFallbackCodes).sort()).toEqual(
-      [...requestTypes].sort(),
-    )
-    expect(rawRequestFailureFallbackCodes).toMatchObject({
-      openSession: 'RAW_OPEN_FAILED',
-      probe: 'RAW_OPEN_FAILED',
-      readProcessedWindowFromSession: 'RAW_WINDOW_READ_FAILED',
-      applyCalibrationToSession: 'RAW_CALIBRATION_FAILED',
-    })
-  })
 })
 
 describe('runtime-core session jobs', () => {

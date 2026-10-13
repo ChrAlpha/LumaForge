@@ -40,10 +40,6 @@ function makeRuntime() {
   }
   return {
     init: vi.fn<LumaRawRuntime['init']>().mockResolvedValue(info),
-    probe: vi.fn<LumaRawRuntime['probe']>(),
-    extractEmbeddedPreview: vi.fn<LumaRawRuntime['extractEmbeddedPreview']>(),
-    decodeQuick: vi.fn<LumaRawRuntime['decodeQuick']>(),
-    decodeBoundedHq: vi.fn<LumaRawRuntime['decodeBoundedHq']>(),
     openSession: vi.fn<LumaRawRuntime['openSession']>(),
     dispose: vi.fn<LumaRawRuntime['dispose']>(),
   } satisfies LumaRawRuntime

@@ -152,94 +152,6 @@ class RecordingWorker {
             },
           } as MessageEvent<LumaRawWorkerResponse>)
         }
-
-        if (request.type === 'probe') {
-          this.onmessage?.({
-            data: {
-              id: request.id,
-              ok: true,
-              type: 'probe',
-              payload: {
-                jobId: request.id,
-                width: 1,
-                height: 1,
-                supportLevel: 'experimental',
-                timings: {
-                  total: 7,
-                },
-              },
-            },
-          } as MessageEvent<LumaRawWorkerResponse>)
-        }
-
-        if (request.type === 'extractEmbeddedPreview') {
-          this.onmessage?.({
-            data: {
-              id: request.id,
-              ok: true,
-              type: 'extractEmbeddedPreview',
-              payload: null,
-            },
-          } as MessageEvent<LumaRawWorkerResponse>)
-        }
-
-        if (request.type === 'decodeQuick') {
-          this.onmessage?.({
-            data: {
-              id: request.id,
-              ok: true,
-              type: 'decodeQuick',
-              payload: {
-                jobId: request.id,
-                source: 'quick',
-                width: 1,
-                height: 1,
-                data: new Uint16Array([1, 2, 3]),
-                layout: 'rgb',
-                bitDepth: 16,
-                colorSpace: 'linear-prophoto-rgb',
-                orientation: 1,
-                metadata: {
-                  width: 1,
-                  height: 1,
-                  supportLevel: 'experimental',
-                },
-                timings: {
-                  total: 9,
-                },
-              },
-            },
-          } as MessageEvent<LumaRawWorkerResponse>)
-        }
-
-        if (request.type === 'decodeBoundedHq') {
-          this.onmessage?.({
-            data: {
-              id: request.id,
-              ok: true,
-              type: 'decodeBoundedHq',
-              payload: {
-                jobId: request.id,
-                source: 'bounded-hq',
-                width: 2,
-                height: 2,
-                data: new Uint16Array([4, 5, 6, 7]),
-                layout: 'rgb',
-                bitDepth: 16,
-                colorSpace: 'linear-prophoto-rgb',
-                orientation: 1,
-                metadata: {
-                  width: 2,
-                  height: 2,
-                  supportLevel: 'official',
-                },
-                timings: {
-                  total: 11,
-                },
-              },
-            },
-          } as MessageEvent<LumaRawWorkerResponse>)
-        }
       })
     },
   )
@@ -369,7 +281,8 @@ describe('createLumaRawRuntime', () => {
       'low-memory',
     )
 
-    await runtime.probe(new File(['raw'], 'sample.ARW'))
+    const session = await runtime.openSession(new File(['raw'], 'sample.ARW'))
+    session.dispose()
 
     expect(worker.requests[0]).toMatchObject({
       type: 'openSession',
@@ -381,7 +294,7 @@ describe('createLumaRawRuntime', () => {
     runtime.dispose()
   })
 
-  it('passes file metadata, transferables, and read timings into probe results', async () => {
+  it('passes file metadata, transferables, and read timings into the session probe', async () => {
     const { runtime, worker } = createRuntime()
     const timingSpy = vi.spyOn(performance, 'now')
     let now = 100
@@ -392,7 +305,8 @@ describe('createLumaRawRuntime', () => {
     })
 
     const file = new File(['raw'], 'sample.ARW')
-    const probe = await runtime.probe(file)
+    const session = await runtime.openSession(file)
+    const probe = session.probe
 
     expect(worker.requests[0]).toMatchObject({
       type: 'openSession',
@@ -422,9 +336,8 @@ describe('createLumaRawRuntime', () => {
   it('passes through null embedded previews', async () => {
     const { runtime, worker } = createRuntime()
 
-    const preview = await runtime.extractEmbeddedPreview(
-      new File(['raw'], 'sample.ARW'),
-    )
+    const session = await runtime.openSession(new File(['raw'], 'sample.ARW'))
+    const preview = await session.extractEmbeddedPreview()
 
     expect(preview).toBeNull()
     expect(worker.requests[0]).toMatchObject({
@@ -437,47 +350,6 @@ describe('createLumaRawRuntime', () => {
       type: 'extractEmbeddedPreviewFromSession',
       payload: {
         sessionId: 'session-1',
-      },
-    })
-
-    runtime.dispose()
-  })
-
-  it('returns bounded HQ decode frames through a temporary session', async () => {
-    const { runtime, worker } = createRuntime()
-    const timingSpy = vi.spyOn(performance, 'now')
-    let now = 200
-    timingSpy.mockImplementation(() => {
-      const value = now
-      now += 10
-      return value
-    })
-
-    const frame = await runtime.decodeBoundedHq(
-      new File(['raw'], 'sample.ARW'),
-      { maxOutputPixels: 12_000_000 },
-    )
-
-    expect(frame).toMatchObject({
-      source: 'bounded-hq',
-      colorSpace: 'linear-prophoto-rgb',
-      timings: {
-        total: 28,
-        readFile: 10,
-      },
-    })
-    expect(worker.requests[0]).toMatchObject({
-      type: 'openSession',
-      payload: {
-        fileName: 'sample.ARW',
-        fileSize: 3,
-      },
-    })
-    expect(worker.requests[1]).toMatchObject({
-      type: 'decodeBoundedHqFromSession',
-      payload: {
-        sessionId: 'session-1',
-        maxOutputPixels: 12_000_000,
       },
     })
 
@@ -981,7 +853,7 @@ describe('createLumaRawRuntime', () => {
     controller.abort()
 
     await expect(
-      runtime.decodeQuick(file, controller.signal),
+      runtime.openSession(file, undefined, controller.signal),
     ).rejects.toMatchObject({
       code: 'RAW_JOB_CANCELLED',
     })
@@ -1001,7 +873,7 @@ describe('createLumaRawRuntime', () => {
     } as unknown as File
     const controller = new AbortController()
 
-    await runtime.decodeQuick(file, controller.signal)
+    await runtime.openSession(file, undefined, controller.signal)
 
     expect(readFile).toHaveBeenCalledTimes(1)
     expect(worker.requests[0]?.type).toBe('openSession')
@@ -1040,7 +912,7 @@ describe('createLumaRawRuntime', () => {
     }
     vi.stubGlobal('FileReader', AbortableFileReader)
 
-    const promise = runtime.decodeQuick(file, controller.signal)
+    const promise = runtime.openSession(file, undefined, controller.signal)
     expect(fileReaderState.readCalls).toBe(1)
 
     controller.abort()
@@ -1063,7 +935,7 @@ describe('createLumaRawRuntime', () => {
       arrayBuffer: readFile,
     } as unknown as File
 
-    const promise = runtime.decodeQuick(file)
+    const promise = runtime.openSession(file)
 
     await Promise.resolve()
     await Promise.resolve()

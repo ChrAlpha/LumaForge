@@ -6,15 +6,7 @@ import type {
 } from './worker-bridge'
 import { notifyLifecycleListeners, WorkerBridge } from './worker-bridge'
 
-type RuntimeApi = Pick<
-  LumaRawRuntime,
-  | 'init'
-  | 'openSession'
-  | 'probe'
-  | 'extractEmbeddedPreview'
-  | 'decodeQuick'
-  | 'decodeBoundedHq'
->
+type RuntimeApi = Pick<LumaRawRuntime, 'init' | 'openSession'>
 
 export interface RawDecodeBridgeOptions {
   runtimeFactory: () => LumaRawRuntime | Promise<LumaRawRuntime>
@@ -55,10 +47,6 @@ export class RawDecodeBridge {
             return result
           },
           openSession: runtime.openSession.bind(runtime),
-          probe: runtime.probe.bind(runtime),
-          extractEmbeddedPreview: runtime.extractEmbeddedPreview.bind(runtime),
-          decodeQuick: runtime.decodeQuick.bind(runtime),
-          decodeBoundedHq: runtime.decodeBoundedHq.bind(runtime),
         }
 
         return {
@@ -117,34 +105,6 @@ export class RawDecodeBridge {
         }
       },
     }
-  }
-
-  probe(
-    signal: AbortSignal,
-    ...args: Parameters<LumaRawRuntime['probe']>
-  ): ReturnType<LumaRawRuntime['probe']> {
-    return this.bridge.call('probe', signal, ...args)
-  }
-
-  decodeEmbedded(
-    signal: AbortSignal,
-    ...args: Parameters<LumaRawRuntime['extractEmbeddedPreview']>
-  ): ReturnType<LumaRawRuntime['extractEmbeddedPreview']> {
-    return this.bridge.call('extractEmbeddedPreview', signal, ...args)
-  }
-
-  decodeQuick(
-    signal: AbortSignal,
-    ...args: Parameters<LumaRawRuntime['decodeQuick']>
-  ): ReturnType<LumaRawRuntime['decodeQuick']> {
-    return this.bridge.call('decodeQuick', signal, ...args)
-  }
-
-  decodeBoundedHq(
-    signal: AbortSignal,
-    ...args: Parameters<LumaRawRuntime['decodeBoundedHq']>
-  ): ReturnType<LumaRawRuntime['decodeBoundedHq']> {
-    return this.bridge.call('decodeBoundedHq', signal, ...args)
   }
 
   terminate(): Promise<void> {
