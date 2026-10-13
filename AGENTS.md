@@ -59,8 +59,7 @@ image-editor assumptions.
 - There is no `/transform-demo` route and no demo module; `/raw` Transform is
   production code (see Retained And Scheduled Slices).
 - `src/providers/root-providers.tsx` owns `LazyMotion`, React Query, Jotai,
-  i18n, error boundary, router stability, settings sync, context menu, and
-  toasts. Preserve provider order unless a concrete bug requires changing it.
+  i18n, error boundary, router stability, settings sync, and toasts. Preserve provider order unless a concrete bug requires changing it.
 - `src/modules/raw-processor/RawProcessorView.tsx` is a thin composition layer.
   Keep orchestration in hooks/controllers and domain logic in services.
 - `src/modules/raw-processor/hooks/useRawProcessorViewController.ts` bridges

@@ -11,7 +11,6 @@ import { jotaiStore } from '~/lib/jotai'
 import { queryClient } from '~/lib/query-client'
 import { Spring } from '~/lib/spring'
 
-import { ContextMenuProvider } from './context-menu-provider'
 import { EventProvider } from './event-provider'
 import { SettingSync } from './setting-sync'
 import { StableRouterProvider } from './stable-router-provider'
@@ -41,7 +40,6 @@ export const RootProviders: FC<PropsWithChildren> = ({ children }) => (
               <EventProvider />
               <StableRouterProvider />
               <SettingSync />
-              <ContextMenuProvider />
               {children}
             </ErrorBoundary>
           </I18nProvider>
