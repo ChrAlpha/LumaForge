@@ -1,7 +1,5 @@
 import { access } from 'node:fs/promises'
 import { join } from 'node:path'
-import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 
 import { createDeployConfig } from './config.mjs'
 
@@ -31,6 +29,6 @@ export async function checkDeployArtifact(config = createDeployConfig()) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (import.meta.main) {
   await checkDeployArtifact()
 }

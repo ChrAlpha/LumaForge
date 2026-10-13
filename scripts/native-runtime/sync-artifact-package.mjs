@@ -1,7 +1,6 @@
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 
 import {
   assertNativeRuntimeAssets,
@@ -132,10 +131,7 @@ export async function syncNativeArtifactPackage({
   await copyComplianceFiles(rootDir)
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (import.meta.main) {
   syncNativeArtifactPackage().catch((error) => {
     console.error(error)
     process.exitCode = 1

@@ -1,5 +1,4 @@
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 
 const REQUIRED_ISOLATION_HEADERS = {
   'cross-origin-opener-policy': 'same-origin',
@@ -116,7 +115,7 @@ export async function smokeDeployUrl(
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (import.meta.main) {
   await smokeDeployUrl(process.env.DEPLOY_URL)
   console.log('Deploy smoke checks passed.')
 }

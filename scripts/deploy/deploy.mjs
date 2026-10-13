@@ -1,5 +1,4 @@
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 
 import { checkDeployArtifact } from './check.mjs'
 import { createDeployConfig, resolveDeployOptions } from './config.mjs'
@@ -13,6 +12,6 @@ export async function deploy(config = createDeployConfig(), env = process.env) {
   await publishDeployTarget(config, options, env)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (import.meta.main) {
   await deploy()
 }

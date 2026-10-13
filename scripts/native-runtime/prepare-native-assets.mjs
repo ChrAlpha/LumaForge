@@ -2,7 +2,6 @@ import { exec, execFile } from 'node:child_process'
 import { cp, mkdir, readFile, rm } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 
 import {
@@ -108,10 +107,7 @@ export async function prepareNativeRuntimeAssets({
   return assetSets
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (import.meta.main) {
   try {
     const assetSets = await prepareNativeRuntimeAssets()
     const sources = [...new Set(assetSets.map((assetSet) => assetSet.source))]

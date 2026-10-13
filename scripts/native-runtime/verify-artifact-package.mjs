@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs'
 import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
 
 import {
   assertNativeRuntimeAssets,
@@ -48,10 +47,7 @@ export async function verifyNativeArtifactPackage({
   }
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (import.meta.main) {
   verifyNativeArtifactPackage().catch((error) => {
     console.error(error)
     process.exitCode = 1
