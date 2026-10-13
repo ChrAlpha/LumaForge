@@ -12,7 +12,7 @@
 
 <p align="center">
   拖入一张相机 RAW 文件，本地预览，选择风格或声明
-  <code>.cube</code> LUT 合约，对比效果，导出全分辨率 JPEG。
+  <code>.cube</code> LUT 契约，对比效果，导出全分辨率 JPEG。
 </p>
 
 <p align="center">
@@ -50,7 +50,7 @@
 单张 RAW 文件 -> 预览 -> 风格或 LUT -> 对比 -> JPEG 导出
 ```
 
-源图像留在你的设备上，应用将 LUT 所需的色彩细节转化为引导式合约选择，
+源图像留在你的设备上，应用将 LUT 所需的色彩细节转化为引导式契约选择，
 你只需专注于出片。
 
 ## 用起来很简单
@@ -61,7 +61,7 @@
 | 快速看到图像。                 | 依次提供嵌入式预览、快速预览和受控高品质预览。                                             |
 | 保护照片隐私。                 | 在浏览器本地处理所选文件。                                                                   |
 | 无需繁琐设置即可完成一张照片。 | 无需账户、上传、原生助手和许可证管理。                                                       |
-| 自信地导出。                   | 当源文件和合约受支持时，通过 Worker 路径重建全分辨率 JPEG。                                  |
+| 自信地导出。                   | 当源文件和契约受支持时，通过 Worker 路径重建全分辨率 JPEG。                                  |
 
 专业工具如 Lightroom、Capture One 和 DaVinci Resolve 在需要完整编辑控制、
 目录管理、节点图或专业级调色自由度时仍然是出色的选择。LumaForge
@@ -76,21 +76,21 @@
 - 对比原始和处理后的输出：WebGPU 预览下为分屏对比，较慢的 CPU 预览下为
   原图切换。在手机上，对比镜头位于照片上，长按可临时查看原图。
 - 从 LumaForge LUT 目录或你通过 URL 添加的其他目录中选择风格。目录中的 LUT
-  通常自带输入和输出合约；缺少合约时，LumaForge 会请你选择。
+  通常自带输入和输出契约；缺少契约时，LumaForge 会请你选择。
 - 用一组有限的控制项微调：曝光、对比度、高光、阴影、白色和黑色；色温和色调；
   饱和度和自然饱和度；八个 HSL 色带；以及风格强度。它们不会把应用变成完整的
   显影驾驶舱，导出会完整复现其中每一项。
 - 用 Transform 校正和重新构图：自动校正（upright）模式，以及手动的垂直和
   水平透视、旋转、宽高比、缩放和偏移，并默认开启约束裁切。全分辨率导出会
   重现已提交的构图，无法规划的几何变换会拒绝导出。
-- 上传自定义 `.cube` LUT 并声明其输入和输出合约。
+- 上传自定义 `.cube` LUT 并声明其输入和输出契约。
 - 处理各种配置文件系列，如 ARRI LogC、RED Log3G10、Sony S-Log、Panasonic
   V-Log、Fujifilm F-Log、Canon Log、Nikon N-Log、ACES 和显示 sRGB。
 - 通过受控 Worker 路径导出全分辨率 JPEG（质量 0.92），浏览器支持时提供
   下载、分享和剪贴板操作。如果同一文件上一次导出被中断，你下一次发起的
   导出会使用更稳妥的设置；应用不会自行续传或自动导出。
 
-## LUT 合约
+## LUT 契约
 
 色彩路径在最终 JPEG 输出之前保持场景参考（scene-referred）：
 
@@ -108,12 +108,12 @@ RAW 文件
 
 导出时，已提交的 Transform 会先以全分辨率重采样，然后才进入这条色彩路径。
 
-LUT 合约是一小段结构，让 LumaForge 能够将创意风格应用于 RAW
+LUT 契约是一小段结构，让 LumaForge 能够将创意风格应用于 RAW
 文件，而无需用户手动构建色彩管线。当 LUT 本身携带有用元数据时，
 LumaForge 可以直接使用。当需要更多信息时，应用会通过可搜索的
-合约浏览器询问 LUT 的输入和输出配置文件。
+契约浏览器询问 LUT 的输入和输出配置文件。
 
-如果所选源文件或 LUT 合约尚不受全分辨率导出路径支持，LumaForge
+如果所选源文件或 LUT 契约尚不受全分辨率导出路径支持，LumaForge
 会说明缺少什么，并在最终 JPEG 能够由正式 Worker 导出路径复现之前
 阻止导出。
 
@@ -139,7 +139,7 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
 
 - `packages/luma-raw-runtime`：浏览器 RAW 元数据、预览提取、解码会话、
   处理窗口访问、导出能力信息，以及锁定的原生构建产物。
-- `packages/luma-color-runtime`：纯 TypeScript 色彩运算、LUT 合约、
+- `packages/luma-color-runtime`：纯 TypeScript 色彩运算、LUT 契约、
   传递函数/色域变换、图谱解析、行处理和 WGSL 辅助函数。
 - `packages/luma-jpeg-runtime`：受控的逐行 JPEG 编码器。
 - `packages/render-engine`：`/raw` 与 `lmfg` 共用的无界面引擎，包含全分辨率
@@ -151,7 +151,7 @@ LumaForge 是一套运行在浏览器中的 RAW + LUT 处理管线。当前支�
 - `src/lib/transform`：Transform 控制项的几何、自动校正检测，以及显示构图的
   预览 Worker；导出在引擎中复现已提交的几何变换。
 - `src/modules/raw-processor`：`/raw` 工作流，涵盖上传、预览、风格与 LUT
-  选择、调整（Adjust）、Transform、LUT 合约选择、对比、状态和导出操作。
+  选择、调整（Adjust）、Transform、LUT 契约选择、对比、状态和导出操作。
 
 ### 命令行：`lmfg`
 
@@ -207,7 +207,7 @@ pnpm test:browser    # tests/browser 下的 Playwright 用例
 pnpm check:structure # 未使用的代码和导入环
 ```
 
-`AGENTS.md` 说明每类改动需要哪些检查，以及每份合约归属何处。
+`AGENTS.md` 说明每类改动需要哪些检查，以及每份契约归属何处。
 
 本仓库仅使用 `pnpm`。
 
@@ -253,7 +253,7 @@ pnpm --filter @lumaforge/luma-raw-runtime fixtures:fetch-public
 ## 贡献
 
 保持贡献与产品边界一致：一张 RAW 文件、本地预览、风格或 LUT、对比和
-可信赖的 JPEG 导出。色彩和 LUT 更改应保持合约清晰：声明的输入色域、
+可信赖的 JPEG 导出。色彩和 LUT 更改应保持契约清晰：声明的输入色域、
 传递/对数曲线、LUT 角色、输出处理和导出就绪行为应对用户保持透明。
 
 ## 许可证

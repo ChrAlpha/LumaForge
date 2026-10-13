@@ -67,7 +67,7 @@ describe('landing page i18n', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        '调整色温、色调、饱和度、自然饱和度与八色 HSL；想要特定风格时，再带上已声明合同的 `.cube` LUT。',
+        '调整色温、色调、饱和度、自然饱和度与八色 HSL；想要特定风格时，再带上已声明契约的 `.cube` LUT。',
       ),
     ).toBeInTheDocument()
     expect(screen.getByText('两种处理的示意对比')).toBeInTheDocument()

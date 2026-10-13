@@ -35,17 +35,8 @@ describe('i18n locale catalogs', () => {
     // UI copy uses a period, colon, or parentheses, never an em dash.
     expect(enMessages['raw.preview.cpuDegraded.banner']).not.toMatch(/—/)
     expect(zhMessages['raw.preview.cpuDegraded.banner']).not.toMatch(/—/)
-    // The mobile Look and export surfaces call the colour contract 契约,
-    // as the details sheet beside them does.
-    for (const key of [
-      'raw.mobile.look.needsContract',
-      'raw.mobile.lut.chooseContract',
-      'raw.mobile.lut.editContractAria',
-      'raw.mobile.more.lutNeedsContract',
-    ] as const) {
-      expect(zhMessages[key]).toContain('契约')
-      expect(zhMessages[key]).not.toContain('合同')
-    }
+    // The colour contract is 契约 everywhere, as in the zh guides.
+    expect(Object.values(zhMessages).join('\n')).not.toMatch(/合同|合约/)
     // No export progress outlives the tab, so no copy blames the browser
     // for failing to store it.
     expect(Object.values(enMessages).join('\n')).not.toMatch(

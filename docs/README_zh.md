@@ -11,7 +11,7 @@ LumaForge 用于完成一张 RAW 照片，配上你喜欢的风格。文件全�
 ## 指南
 
 - [RAW 实验室指南](./USER_GUIDE_zh.md)：加载 RAW 文件、选择风格、对比并导出。
-- [LUT 与导出常见问题](./LUT_AND_EXPORT_FAQ_zh.md)：选择 LUT 合约、理解导出
+- [LUT 与导出常见问题](./LUT_AND_EXPORT_FAQ_zh.md)：选择 LUT 契约、理解导出
   禁用状态，以及检查浏览器兼容性。
 
 ## 简短版
