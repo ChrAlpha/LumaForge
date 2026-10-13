@@ -1,4 +1,3 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
 import { m } from 'motion/react'
 import type { ComponentProps, ReactNode } from 'react'
 
@@ -7,8 +6,7 @@ import { surfaceFade } from '~/lib/spring'
 import { useRawToolAdjustments } from '../../hooks/useRawToolState'
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
-import type { ColorValue } from '../color-fields'
-import type { ToneValue } from '../tone-fields'
+import { useRawToolCommands } from '../RawWorkflowContext'
 import type { ScrubFieldId } from './AdjustListPanel'
 import { AdjustListPanel } from './AdjustListPanel'
 import type { MobileLookView, MobileMode } from './mobile-stage-layout'
@@ -32,12 +30,6 @@ export function MobileLabModeDock({
   exportPanel,
   onModeChange,
   onCollapse,
-  onToneChange,
-  onToneReset,
-  onColorChange,
-  onColorReset,
-  onSelectiveColorChange,
-  onSelectiveColorReset,
   onScrubChange,
   onOpenLutBrowser,
   lookView,
@@ -68,15 +60,6 @@ export function MobileLabModeDock({
   exportPanel: ReactNode
   onModeChange: (mode: MobileMode) => void
   onCollapse: () => void
-  onToneChange: (patch: Partial<ToneValue>) => void
-  onToneReset: () => void
-  onColorChange: (patch: Partial<ColorValue>) => void
-  onColorReset: () => void
-  onSelectiveColorChange: (
-    band: HSLBandId,
-    shift: Partial<HSLBandShift>,
-  ) => void
-  onSelectiveColorReset: () => void
   onScrubChange: (field: ScrubFieldId | null) => void
   onOpenLutBrowser: () => void
   lookView: MobileLookView
@@ -122,12 +105,6 @@ export function MobileLabModeDock({
               mode={mode}
               lutBrowser={lutBrowser}
               scrubbing={scrubbing}
-              onToneChange={onToneChange}
-              onToneReset={onToneReset}
-              onColorChange={onColorChange}
-              onColorReset={onColorReset}
-              onSelectiveColorChange={onSelectiveColorChange}
-              onSelectiveColorReset={onSelectiveColorReset}
               onScrubChange={onScrubChange}
               onOpenLutBrowser={onOpenLutBrowser}
               lookView={lookView}
@@ -146,12 +123,6 @@ function MobileLabModePanel({
   mode,
   lutBrowser,
   scrubbing,
-  onToneChange,
-  onToneReset,
-  onColorChange,
-  onColorReset,
-  onSelectiveColorChange,
-  onSelectiveColorReset,
   onScrubChange,
   onOpenLutBrowser,
   lookView,
@@ -162,15 +133,6 @@ function MobileLabModePanel({
   mode: MobileMode
   lutBrowser: MobileLookControls
   scrubbing: boolean
-  onToneChange: (patch: Partial<ToneValue>) => void
-  onToneReset: () => void
-  onColorChange: (patch: Partial<ColorValue>) => void
-  onColorReset: () => void
-  onSelectiveColorChange: (
-    band: HSLBandId,
-    shift: Partial<HSLBandShift>,
-  ) => void
-  onSelectiveColorReset: () => void
   onScrubChange: (field: ScrubFieldId | null) => void
   onOpenLutBrowser: () => void
   lookView: MobileLookView
@@ -189,16 +151,7 @@ function MobileLabModePanel({
 
   if (mode === 'tone') {
     return (
-      <MobileAdjustPanel
-        onToneChange={onToneChange}
-        onColorChange={onColorChange}
-        onSelectiveColorChange={onSelectiveColorChange}
-        onToneReset={onToneReset}
-        onColorReset={onColorReset}
-        onSelectiveColorReset={onSelectiveColorReset}
-        onScrubChange={onScrubChange}
-        scrubbing={scrubbing}
-      />
+      <MobileAdjustPanel onScrubChange={onScrubChange} scrubbing={scrubbing} />
     )
   }
 
@@ -218,17 +171,24 @@ function MobileLabModePanel({
  * scrub step renders the list and leaves the dock and the chrome alone.
  */
 function MobileAdjustPanel(
-  props: Omit<
+  props: Pick<
     ComponentProps<typeof AdjustListPanel>,
-    'tone' | 'color' | 'selectiveColor'
+    'onScrubChange' | 'scrubbing'
   >,
 ) {
   const { tone, color, selectiveColor } = useRawToolAdjustments()
+  const commands = useRawToolCommands()
   return (
     <AdjustListPanel
       tone={tone}
       color={color}
       selectiveColor={selectiveColor}
+      onToneChange={commands.onToneChange}
+      onToneReset={commands.onToneReset}
+      onColorChange={commands.onColorChange}
+      onColorReset={commands.onColorReset}
+      onSelectiveColorChange={commands.onSelectiveColorChange}
+      onSelectiveColorReset={commands.onSelectiveColorReset}
       {...props}
     />
   )

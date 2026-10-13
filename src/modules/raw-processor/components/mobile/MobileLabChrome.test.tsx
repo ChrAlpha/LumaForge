@@ -15,6 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UseOnlineLutSourcesResult } from '../../hooks/useOnlineLutSources'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
 import { seedRawToolStore } from '../raw-tool-surface.fixture'
+import type { RawToolCommands } from '../RawWorkflowContext'
+import { RawToolCommandsContext } from '../RawWorkflowContext'
 import { transformFeatureFixture } from '../shared/transform-feature.fixture'
 import { mobileAvailabilityFixture } from '../tool-availability.fixture'
 import { MobileLabChrome as Chrome } from './MobileLabChrome'
@@ -28,22 +30,28 @@ function MobileLabChrome(
   props: Omit<ChromeProps, 'availability'> &
     Partial<Pick<ChromeProps, 'availability'>>,
 ) {
-  return <Chrome availability={mobileAvailabilityFixture(props)} {...props} />
+  return (
+    <RawToolCommandsContext value={adjustCommands}>
+      <Chrome availability={mobileAvailabilityFixture(props)} {...props} />
+    </RawToolCommandsContext>
+  )
 }
 
-const base = {
-  hasImage: true,
+const adjustCommands = {
   onToneChange: vi.fn(),
   onToneReset: vi.fn(),
   onColorChange: vi.fn(),
   onColorReset: vi.fn(),
   onSelectiveColorChange: vi.fn(),
   onSelectiveColorReset: vi.fn(),
+} as unknown as RawToolCommands
+
+const base = {
+  hasImage: true,
   viewMode: 'processed' as const,
   onViewModeChange: vi.fn(),
   fileName: 'DSC09142.ARW',
   fileMeta: 'Sony α7 IV · Experimental support',
-  supportLevel: 'experimental' as const,
   onReplaceFile: vi.fn(),
   onResetSession: vi.fn(),
   isProcessing: false,

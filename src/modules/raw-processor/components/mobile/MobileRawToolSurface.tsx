@@ -49,12 +49,6 @@ export function MobileRawToolSurface() {
       availability={availability}
       canExport={props.canExport}
       hasImage={props.hasImage}
-      onToneChange={commands.onToneChange}
-      onToneReset={commands.onToneReset}
-      onColorChange={commands.onColorChange}
-      onColorReset={commands.onColorReset}
-      onSelectiveColorChange={commands.onSelectiveColorChange}
-      onSelectiveColorReset={commands.onSelectiveColorReset}
       viewMode={props.viewMode}
       onViewModeChange={commands.onViewModeChange}
       compareSupported={props.compareSupported}

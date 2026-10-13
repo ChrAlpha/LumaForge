@@ -1,4 +1,3 @@
-import type { HSLBandId, HSLBandShift } from '@lumaforge/luma-color-runtime'
 import { useSetAtom } from 'jotai'
 import { AnimatePresence, m } from 'motion/react'
 import type { ReactNode } from 'react'
@@ -11,11 +10,9 @@ import type { ExportResultKind } from '../../model/export-result'
 import { DOCK_SPRING } from '../../motion'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
 import { mobileHistogramShownAtom } from '../../state/histogram.atoms'
-import type { ColorValue } from '../color-fields'
 import type { CpuPreviewNotice } from '../CpuPreviewBanner'
 import { CpuPreviewBanner } from '../CpuPreviewBanner'
 import type { RawRuntimeReadinessState } from '../raw-runtime-readiness'
-import type { ToneValue } from '../tone-fields'
 import { computeMobileStageLayout } from './mobile-stage-layout'
 import {
   COMPARE_LENS_POSITION,
@@ -60,15 +57,6 @@ export function MobileLabChrome(props: {
   availability: ToolAvailability
   canExport?: boolean
   hasImage: boolean
-  onToneChange: (patch: Partial<ToneValue>) => void
-  onToneReset: () => void
-  onColorChange: (patch: Partial<ColorValue>) => void
-  onColorReset: () => void
-  onSelectiveColorChange: (
-    band: HSLBandId,
-    shift: Partial<HSLBandShift>,
-  ) => void
-  onSelectiveColorReset: () => void
   viewMode: MobileLabViewMode
   onViewModeChange: (mode: MobileLabViewMode) => void
   /**
@@ -454,12 +442,6 @@ export function MobileLabChrome(props: {
                   onClose: closeExportPanel,
                   onChooseLutContract: openLookContract,
                 })}
-                onToneChange={props.onToneChange}
-                onToneReset={props.onToneReset}
-                onColorChange={props.onColorChange}
-                onColorReset={props.onColorReset}
-                onSelectiveColorChange={props.onSelectiveColorChange}
-                onSelectiveColorReset={props.onSelectiveColorReset}
                 onScrubChange={setScrubField}
                 onOpenLutBrowser={openLutBrowser}
                 lookView={lookView}
