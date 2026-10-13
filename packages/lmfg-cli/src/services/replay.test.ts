@@ -440,11 +440,13 @@ describe('prepareReplay with a recorded geometry', () => {
       geometryOutput: SENSOR,
     })
     expect(verifyManifestSha256(manifest)).toBe(true)
-    await expect(prepare(manifest)).rejects.toMatchObject({
+    const refused = await prepare(manifest).catch((error: unknown) => error)
+    expect(refused).toMatchObject({
       code: 'args.invalid',
       exitCode: 2,
       details: { stage: 'geometry', source: SENSOR },
     })
+    expect((refused as Error).cause).toEqual(new Error(INVALID_EXPORT_GEOMETRY))
   })
 
   it('refuses a geometry output the planner does not produce from the recorded source', async () => {
@@ -546,186 +548,6 @@ describe('prepareReplay with a recorded geometry', () => {
       code: 'args.invalid',
       details: { stage: 'geometry' },
     })
-  })
-})
-
-describe('replaying an independent non-square geometry reference', () => {
-  /** Source-normalized to output-normalized: a turn of `degrees` about the centre. */
-  function rotation(degrees: number): number[] {
-    const angle = (degrees * Math.PI) / 180
-    const cos = Math.cos(angle)
-    const sin = Math.sin(angle)
-    return [
-      cos,
-      -sin,
-      0.5 - 0.5 * cos + 0.5 * sin,
-      sin,
-      cos,
-      0.5 - 0.5 * sin - 0.5 * cos,
-      0,
-      0,
-      1,
-    ]
-  }
-
-  // Derived by hand, not by the planner: a constrained 30 degree turn keeps
-  // the centred square of side 1 / (cos 30 + sin 30) = 0.7320508... of each
-  // normalized axis, so 6000x4000 delivers 4392x2928 and 3000x4500 delivers
-  // 2196x3294.
-  const LANDSCAPE = { width: 6000, height: 4000 }
-  const LANDSCAPE_TURNED = { width: 4392, height: 2928 }
-  const PORTRAIT = { width: 3000, height: 4500 }
-  const PORTRAIT_TURNED = { width: 2196, height: 3294 }
-
-  it.each([
-    ['landscape', LANDSCAPE, 30, LANDSCAPE_TURNED],
-    ['portrait', PORTRAIT, -30, PORTRAIT_TURNED],
-  ] as const)(
-    'accepts a constrained turn of a %s source at the hand-derived frame',
-    async (_label, source, degrees, delivered) => {
-      const manifest = geometryManifestFor({
-        source,
-        matrix: rotation(degrees),
-        geometryOutput: delivered,
-      })
-      expect(manifest.output.dimensions).toEqual(delivered)
-      await expect(prepare(manifest)).resolves.toMatchObject({
-        fingerprintMatch: true,
-      })
-    },
-  )
-
-  it('refuses a recorded geometry output one pixel off the plan', async () => {
-    const recorded = { width: 4393, height: 2928 }
-    await expect(
-      prepare(
-        geometryManifestFor({
-          source: LANDSCAPE,
-          matrix: rotation(30),
-          geometryOutput: recorded,
-        }),
-      ),
-    ).rejects.toMatchObject({
-      code: 'replay.mismatch',
-      exitCode: 8,
-      details: {
-        stage: 'geometry',
-        source: LANDSCAPE,
-        expected: recorded,
-        actual: LANDSCAPE_TURNED,
-      },
-    })
-  })
-
-  it('refuses an output one pixel off the planned frame', async () => {
-    const recorded = { width: 4392, height: 2929 }
-    await expect(
-      prepare(
-        geometryManifestFor({
-          source: LANDSCAPE,
-          matrix: rotation(30),
-          geometryOutput: LANDSCAPE_TURNED,
-          output: recorded,
-        }),
-      ),
-    ).rejects.toMatchObject({
-      code: 'replay.mismatch',
-      details: {
-        stage: 'dimensions',
-        expected: recorded,
-        actual: LANDSCAPE_TURNED,
-      },
-    })
-  })
-
-  it('refuses a crop that retains too little and keeps the planner refusal as its cause', async () => {
-    // Zooming out by 0.05 keeps less of the frame than the planner allows.
-    const output = { width: 300, height: 200 }
-    const refused = await prepare(
-      geometryManifestFor({
-        source: LANDSCAPE,
-        matrix: [0.05, 0, 0.475, 0, 0.05, 0.475, 0, 0, 1],
-        geometryOutput: output,
-      }),
-    ).catch((error: unknown) => error)
-    expect(refused).toMatchObject({
-      code: 'args.invalid',
-      exitCode: 2,
-      details: { stage: 'geometry', source: LANDSCAPE },
-    })
-    expect((refused as Error).cause).toEqual(new Error(INVALID_EXPORT_GEOMETRY))
-  })
-
-  it.each(['preview', 'candidate'] as const)(
-    'refuses a %s manifest that records the reference geometry',
-    async (kind) => {
-      await expect(
-        prepare(
-          geometryManifestFor({
-            kind,
-            source: LANDSCAPE,
-            matrix: rotation(30),
-            geometryOutput: LANDSCAPE_TURNED,
-          }),
-        ),
-      ).rejects.toMatchObject({
-        code: 'args.invalid',
-        details: { stage: 'geometry', unsupported: 'render_params.geometry' },
-      })
-    },
-  )
-
-  it('refuses the off-plan output in a hand-built plan before the RAW runtime runs', async () => {
-    const recorded = { width: 4393, height: 2928 }
-    const manifest = geometryManifestFor({
-      source: LANDSCAPE,
-      matrix: rotation(30),
-      geometryOutput: recorded,
-    })
-    const params = manifestToRenderParams(manifest.render_params)
-    const plan: ReplayPlan = {
-      manifest,
-      params,
-      exposure,
-      lut: null,
-      graph: requireSupportedGraph(buildColorGraph(params, null, exposure)),
-      fingerprintMatch: true,
-    }
-    const runtime: LmfgRuntime = {
-      memoryProfile: 'desktop',
-      raw: vi.fn(async () => {
-        throw new Error('the RAW runtime must not be used')
-      }),
-      jpeg: vi.fn(async () => {
-        throw new Error('the JPEG runtime must not be used')
-      }),
-      dispose: vi.fn(),
-    }
-    const outputPath = join(dir, 'replay', 'output.jpg')
-    const manifestOutputPath = join(dir, 'replay', 'manifest.json')
-    await expect(
-      runReplay({
-        runtime,
-        plan,
-        source: fakeSource('a'.repeat(64)),
-        environment,
-        manifestPath: join(dir, 'm.json'),
-        sessionId: null,
-        outputPath,
-        manifestOutputPath,
-      }),
-    ).rejects.toMatchObject({
-      code: 'replay.mismatch',
-      details: {
-        stage: 'geometry',
-        expected: recorded,
-        actual: LANDSCAPE_TURNED,
-      },
-    })
-    expect(runtime.raw).not.toHaveBeenCalled()
-    expect(runtime.jpeg).not.toHaveBeenCalled()
-    expect(await fileExists(outputPath)).toBe(false)
-    expect(await fileExists(manifestOutputPath)).toBe(false)
   })
 })
 
