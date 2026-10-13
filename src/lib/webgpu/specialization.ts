@@ -3,7 +3,7 @@ import type {
   ColorGraphIntent,
   LUTData,
 } from '@lumaforge/luma-color-runtime'
-import { normalizeSelectiveColorParams } from '@lumaforge/luma-color-runtime'
+import { isSelectiveColorNeutral } from '@lumaforge/luma-color-runtime'
 
 import { resolveGpuPreviewLook } from './lut-profile'
 
@@ -80,9 +80,6 @@ export function getShaderSpecialization(
   params: ColorGraphIntent,
   lut: LUTData | null,
 ): ShaderSpecialization {
-  const bands = normalizeSelectiveColorParams({
-    selectiveColor: params.selectiveColor,
-  })
   // Key the variant on the look the shader draws, as the uniforms do.
   const {
     look,
@@ -93,9 +90,7 @@ export function getShaderSpecialization(
     styleKind:
       look.styleKind === 'builtin' ? 1 : look.styleKind === 'custom' ? 2 : 0,
     useLut: drawnLut !== null,
-    selectiveColorActive: Object.values(bands).some(
-      (band) => band.hue !== 0 || band.saturation !== 0 || band.lightness !== 0,
-    ),
+    selectiveColorActive: !isSelectiveColorNeutral(params.selectiveColor),
     // Match the actual f32 upload. Signed zero and values rounded to zero take
     // the existing neutral bypass; nonfinite values stay dynamic, not hidden.
     builtinPreset: PRESETS[look.builtinPreset ?? 'neutral'] ?? 0,

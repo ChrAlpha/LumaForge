@@ -1,5 +1,6 @@
 import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import {
+  isSelectiveColorNeutral,
   LUT_SIZE,
   NEUTRAL_SELECTIVE_COLOR,
   normalizeSelectiveColorParams,
@@ -206,9 +207,7 @@ export class WebGPUImages {
     const signature = JSON.stringify(normalized)
     if (signature === this.selectiveSignature) return
     resolveSelectiveColorParams({ selectiveColor: bands }, this.selectiveData)
-    this.selectiveActive = Object.values(normalized).some(
-      (band) => band.hue !== 0 || band.saturation !== 0 || band.lightness !== 0,
-    )
+    this.selectiveActive = !isSelectiveColorNeutral(normalized)
     this.device.queue.writeTexture(
       { texture: this.selective },
       this.selectiveData,
