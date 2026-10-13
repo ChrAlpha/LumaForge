@@ -11,7 +11,7 @@ import type {
   ExportResult,
   HqPreviewExportReasonCode,
 } from '../../../model/export-result'
-import type { ImageSession, TransformIntent } from '../../../model/session'
+import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { deriveTransformExportRefusalReason } from '../../../services/export/export-readiness'
 import {
@@ -21,9 +21,10 @@ import {
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
 import { createCompletedExportResult } from '../../../services/export/export-result-materialization'
 import {
-  claimExportSlot,
-  clearExportResultForActiveExport,
+  beginExportAttempt,
   clearExportResultState,
+  isExportAttemptLive,
+  patchExportState,
 } from '../../../services/export/export-state'
 import {
   buildPreviewExportFilename,
@@ -71,18 +72,6 @@ type UseHqPreviewExportActionInput = {
   setStatus: (status: ProcessingStatus) => void
   toast?: HqPreviewExportToast
 }
-
-/**
- * One HQ preview export attempt, fixed when it starts: the source, the
- * export graph generation, the neutral Transform intent it was admitted
- * with, and its own abort controller.
- */
-type HqPreviewExportAttempt = Readonly<{
-  sessionId: string
-  graphVersion: number
-  transformIntent: TransformIntent | undefined
-  controller: AbortController
-}>
 
 let lastHqPreviewAttempt = 0
 
@@ -209,36 +198,23 @@ export function useHqPreviewExportAction({
     })
 
     const exportSessionId = activeSession.id
-    const exportGraphVersion = exportGraphVersionRef.current
-    abortExportWork()
-    const attempt: HqPreviewExportAttempt = Object.freeze({
-      sessionId: exportSessionId,
-      graphVersion: exportGraphVersion,
-      transformIntent: activeSession.transform?.intent,
-      controller: new AbortController(),
-    })
-    const exportAbortController = attempt.controller
-    claimExportSlot(
+    const refs = {
+      isMountedRef,
+      exportGraphVersionRef,
       exportAbortControllerRef,
-      exportAbortController,
-      identity.attemptId,
-    )
+      abortExportWork,
+    }
+    const attempt = beginExportAttempt(activeSession, identity.attemptId, refs)
+    const exportAbortController = attempt.controller
     queueExportResultResourceDisposal()
     setStatus('exporting')
     setProgress(0)
-    setSession((prev) =>
-      prev && prev.id === exportSessionId
-        ? (() => {
-            const cleared = clearExportResultForActiveExport(prev)
-            return {
-              ...cleared,
-              exportState: {
-                ...cleared.exportState,
-                status: 'exporting',
-              },
-            } satisfies ImageSession
-          })()
-        : prev,
+    setSession(
+      patchExportState(exportSessionId, {
+        status: 'exporting',
+        result: undefined,
+        lastProgress: undefined,
+      }),
     )
 
     /** Ends this attempt with a refusal and hands the workflow back. */
@@ -257,27 +233,15 @@ export function useHqPreviewExportAction({
     }
 
     /**
-     * Whether this attempt may still write anything: the view is mounted,
-     * its signal is live, it still holds the export slot, the export graph
-     * has not moved, and the same source still asks for the same neutral
-     * Transform. Every edit makes a new intent, so the first edit ends it,
-     * and whoever ended it settles the workflow. A live Transform the HQ JPEG
-     * cannot leave out refuses the attempt, which then ends itself and hands
-     * the workflow back with the reason.
+     * Whether this attempt may still write anything: nothing has made it
+     * obsolete, and the source still asks for the neutral Transform it was
+     * admitted with. A live Transform the HQ JPEG cannot leave out refuses
+     * the attempt, which then ends itself and hands the workflow back with
+     * the reason.
      */
     const isCurrentExport = () => {
       const live = getSession()
-      if (
-        !isMountedRef.current ||
-        attempt.controller.signal.aborted ||
-        exportAbortControllerRef.current !== attempt.controller ||
-        exportGraphVersionRef.current !== attempt.graphVersion ||
-        !live ||
-        live.id !== attempt.sessionId ||
-        live.transform?.intent !== attempt.transformIntent
-      ) {
-        return false
-      }
+      if (!isExportAttemptLive(attempt, live, refs)) return false
       const refusal = deriveTransformExportRefusalReason(live, 'hq-preview')
       if (!refusal) return true
       endRefused(refusal)
@@ -340,17 +304,11 @@ export function useHqPreviewExportAction({
       })
       registerExportResultResource(exportResult)
 
-      setSession((prev) =>
-        prev && prev.id === exportSessionId
-          ? {
-              ...prev,
-              exportState: {
-                ...prev.exportState,
-                status: 'ready',
-                result: exportResult,
-              },
-            }
-          : prev,
+      setSession(
+        patchExportState(exportSessionId, {
+          status: 'ready',
+          result: exportResult,
+        }),
       )
       setProgress(100)
       setStatus('ready')
@@ -365,17 +323,11 @@ export function useHqPreviewExportAction({
         err instanceof Error
           ? err.message
           : t('raw.export.toast.hqPreviewFallback')
-      setSession((prev) =>
-        prev && prev.id === exportSessionId
-          ? {
-              ...prev,
-              exportState: {
-                ...prev.exportState,
-                status: 'idle',
-                result: undefined,
-              },
-            }
-          : prev,
+      setSession(
+        patchExportState(exportSessionId, {
+          status: 'idle',
+          result: undefined,
+        }),
       )
       setStatus('ready')
       setProgress(0)

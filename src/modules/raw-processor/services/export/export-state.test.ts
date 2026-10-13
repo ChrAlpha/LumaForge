@@ -14,9 +14,9 @@ import { createTransformState } from '../../model/session-factory'
 import { captureExportResultIdentity } from './export-result-identity'
 import {
   changesRenderGraphParams,
-  clearExportResultForActiveExport,
   clearExportResultState,
   hasSameRawRenderExposure,
+  patchExportState,
   toFullResCapabilityState,
 } from './export-state'
 
@@ -365,19 +365,25 @@ describe('export state helpers', () => {
     expect(next.exportState.lastProgress).toBeUndefined()
   })
 
-  it('clears active exporting state progress and result without changing status', () => {
-    const result = createReadyExportResult()
+  it('patches the export state of the session it names and no other', () => {
     const session = createSession({
       status: 'exporting',
-      result,
+      result: createReadyExportResult(),
       lastProgress: { completedStrips: 1, totalStrips: 4 },
     })
+    const clear = patchExportState(session.id, {
+      result: undefined,
+      lastProgress: undefined,
+    })
 
-    const next = clearExportResultForActiveExport(session)
-
-    expect(next.exportState.status).toBe('exporting')
-    expect(next.exportState.result).toBeUndefined()
-    expect(next.exportState.lastProgress).toBeUndefined()
+    expect(clear(session)?.exportState).toEqual({
+      ...session.exportState,
+      result: undefined,
+      lastProgress: undefined,
+    })
+    const other = { ...session, id: 'another-source' }
+    expect(clear(other)).toBe(other)
+    expect(clear(null)).toBeNull()
   })
 
   it('compares selective color by value: an equal copy keeps, any band scalar changes', () => {

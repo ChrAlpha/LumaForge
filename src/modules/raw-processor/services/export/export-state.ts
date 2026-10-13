@@ -16,6 +16,7 @@ import { toExportRefusalReasons } from '~/lib/raw/luma-runtime-adapter'
 import type {
   FullResExportCapabilityState,
   ImageSession,
+  TransformIntent,
 } from '../../model/session'
 
 const UNSUPPORTED_SOURCE_REASON =
@@ -110,6 +111,82 @@ export function isLatestExportClaim(
 }
 
 /**
+ * One export attempt, fixed when it starts: the source it reads, the export
+ * graph generation, the Transform intent it was admitted with, and its own
+ * abort controller.
+ */
+export type ExportAttempt = Readonly<{
+  sessionId: string
+  graphVersion: number
+  transformIntent: TransformIntent | undefined
+  controller: AbortController
+}>
+
+type ExportAttemptRefs = {
+  exportGraphVersionRef: { current: number }
+  exportAbortControllerRef: ExportSlot
+}
+
+/**
+ * Starts an attempt on `session`: ends any export still running, then gives
+ * the export slot to a controller of the attempt's own.
+ */
+export function beginExportAttempt(
+  session: ImageSession,
+  attemptId: string,
+  refs: ExportAttemptRefs & { abortExportWork: () => void },
+): ExportAttempt {
+  const graphVersion = refs.exportGraphVersionRef.current
+  refs.abortExportWork()
+  const attempt: ExportAttempt = Object.freeze({
+    sessionId: session.id,
+    graphVersion,
+    transformIntent: session.transform?.intent,
+    controller: new AbortController(),
+  })
+  claimExportSlot(refs.exportAbortControllerRef, attempt.controller, attemptId)
+  return attempt
+}
+
+/**
+ * Whether nothing has made an attempt obsolete: the view is mounted, its
+ * signal is live, no later attempt has claimed the export slot (even one
+ * that has since ended), the export graph has not moved, and the same source
+ * still asks for the same Transform. Every edit makes a new intent, so asking
+ * again for an earlier Transform does not make an attempt current again; an
+ * event that asks for the same Transform keeps the intent. Whoever made an
+ * attempt obsolete settles the workflow.
+ */
+export function isExportAttemptLive(
+  attempt: ExportAttempt,
+  live: ImageSession | null,
+  refs: ExportAttemptRefs & { isMountedRef: { current: boolean } },
+): live is ImageSession {
+  return (
+    refs.isMountedRef.current &&
+    !attempt.controller.signal.aborted &&
+    isLatestExportClaim(refs.exportAbortControllerRef, attempt.controller) &&
+    refs.exportGraphVersionRef.current === attempt.graphVersion &&
+    live?.id === attempt.sessionId &&
+    live.transform?.intent === attempt.transformIntent
+  )
+}
+
+/**
+ * Writes `patch` over the export state of the session `sessionId` names; any
+ * other session, or none, stays as it is.
+ */
+export function patchExportState(
+  sessionId: string,
+  patch: Partial<ImageSession['exportState']>,
+) {
+  return (prev: ImageSession | null): ImageSession | null =>
+    prev?.id === sessionId
+      ? { ...prev, exportState: { ...prev.exportState, ...patch } }
+      : prev
+}
+
+/**
  * The attempt the export slot answers to: the one holding it, or, once it is
  * empty, the last one it was given. Null when it was never claimed or is held
  * by a controller no claim gave it to, so no result can be vouched for.
@@ -146,19 +223,6 @@ export function clearExportResultState<T extends ImageSession | null>(
         session.exportState.status === 'exporting'
           ? undefined
           : session.exportState.lastProgress,
-    },
-  }
-}
-
-export function clearExportResultForActiveExport(
-  session: ImageSession,
-): ImageSession {
-  return {
-    ...session,
-    exportState: {
-      ...session.exportState,
-      result: undefined,
-      lastProgress: undefined,
     },
   }
 }
