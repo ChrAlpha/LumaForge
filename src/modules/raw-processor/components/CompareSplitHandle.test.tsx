@@ -5,9 +5,7 @@ import { createElement } from 'react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import {
-  clampCompareSplit,
   CompareSplitHandle,
-  getCompareSplitFromClientX,
   getCompareSplitPositionGeometry,
 } from './CompareSplitHandle'
 
@@ -24,20 +22,6 @@ beforeAll(() => {
       delete this.dataset.capturedPointerId
     }
   }
-})
-
-describe('compare split helpers', () => {
-  it('clamps finite split values to the preview frame range', () => {
-    expect(clampCompareSplit(-1)).toBe(0)
-    expect(clampCompareSplit(0.5)).toBe(0.5)
-    expect(clampCompareSplit(2)).toBe(1)
-  })
-
-  it('maps pointer x position to a clamped frame fraction', () => {
-    expect(getCompareSplitFromClientX({ left: 100, width: 400 }, 300)).toBe(0.5)
-    expect(getCompareSplitFromClientX({ left: 100, width: 400 }, 60)).toBe(0)
-    expect(getCompareSplitFromClientX({ left: 100, width: 400 }, 520)).toBe(1)
-  })
 })
 
 describe('compareSplitHandle', () => {

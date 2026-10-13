@@ -3,12 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { SUPPORTED_RAW_EXTENSIONS } from '~/lib/raw/decoder'
 
-import {
-  Dropzone,
-  FileDropzone,
-  LutDropzone,
-  RAW_FILE_ACCEPT,
-} from './Dropzone'
+import { Dropzone, LutDropzone, RAW_FILE_ACCEPT } from './Dropzone'
 
 const DECODER_EXTENSIONS = Array.from(SUPPORTED_RAW_EXTENSIONS)
 const DOTTED_DECODER_EXTENSIONS = new Set(
@@ -34,7 +29,9 @@ function acceptTokens(input: HTMLInputElement) {
 function renderFileDropzone(props: { disabled?: boolean } = {}) {
   const onFileDrop = vi.fn()
   const { container } = render(
-    <FileDropzone onFileDrop={onFileDrop} {...props} />,
+    <Dropzone accept={RAW_FILE_ACCEPT} onFileDrop={onFileDrop} {...props}>
+      <span>RAW</span>
+    </Dropzone>,
   )
   const input = container.querySelector<HTMLInputElement>('input[type="file"]')
   const frame = input?.closest('label')
@@ -80,7 +77,7 @@ describe('raw file acceptance', () => {
     expect(RAW_FILE_ACCEPT).not.toContain('.png')
   })
 
-  it('sets the decoder extension set on the empty-state and stage inputs', () => {
+  it('sets the decoder extension set on the default and stage inputs', () => {
     const empty = renderFileDropzone()
     const stage = renderStageDropzone()
 

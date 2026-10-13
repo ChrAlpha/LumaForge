@@ -1,23 +1,20 @@
+import type { UserColorIntent } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_USER_COLOR_INTENT,
   USER_COLOR_FIELD_BOUNDS,
 } from '@lumaforge/luma-color-runtime'
-import { z } from 'zod'
 
 import type { Translate } from '~/lib/i18n'
 
-import { boundedColorNumber } from './fields/bounded-color-number'
-
-export const ToneValueSchema = z.object({
-  userExposureEv: boundedColorNumber('userExposureEv'),
-  userContrast: boundedColorNumber('userContrast'),
-  userHighlights: boundedColorNumber('userHighlights'),
-  userShadows: boundedColorNumber('userShadows'),
-  userWhites: boundedColorNumber('userWhites'),
-  userBlacks: boundedColorNumber('userBlacks'),
-})
-
-export type ToneValue = z.infer<typeof ToneValueSchema>
+export type ToneValue = Pick<
+  UserColorIntent,
+  | 'userExposureEv'
+  | 'userContrast'
+  | 'userHighlights'
+  | 'userShadows'
+  | 'userWhites'
+  | 'userBlacks'
+>
 
 export type ToneField = {
   key: keyof ToneValue

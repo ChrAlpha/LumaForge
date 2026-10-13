@@ -23,8 +23,8 @@ import type { TransformField, TransformGroup } from '../transform-fields'
 import {
   applyTransformSlider,
   formatTransformValue,
-  isTransformDirty,
   isTransformGroupNeutral,
+  isTransformResettable,
   resetTransformGroup,
   resolveTransformMessage,
   TRANSFORM_GROUP_LABEL,
@@ -92,7 +92,7 @@ export function TransformListPanel({
   const resetDisabled =
     !availability.transformReset.available ||
     (section === 'upright'
-      ? !isTransformDirty(preview.mode, preview.manual) && preview.constrainCrop
+      ? !isTransformResettable(preview)
       : isTransformGroupNeutral(section, preview.manual) &&
         (section !== 'frame' || preview.constrainCrop))
   const onSectionReset = () => {

@@ -20,7 +20,7 @@ import type { TransformField, TransformGroup } from '../transform-fields'
 import {
   applyTransformSlider,
   formatTransformValue,
-  isTransformDirty,
+  isTransformResettable,
   resolveTransformMessage,
   TRANSFORM_GROUP_LABEL,
   transformFieldsIn,
@@ -73,8 +73,7 @@ export const TransformTool = memo(
     const message = resolveTransformMessage(feature)
     const controlsDisabled = !availability.transformGeometry.available
     const viewDisabled = !availability.transformOverlay.available
-    const dirty =
-      isTransformDirty(preview.mode, preview.manual) || !preview.constrainCrop
+    const dirty = isTransformResettable(preview)
 
     return (
       <div data-raw-transform-tool className="grid min-w-0 gap-3">

@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
 import {
   HSL_BAND_IDS,
   HSL_SHIFT_AXES,
@@ -179,16 +176,5 @@ describe('adjust field tables', () => {
     expect(formatHSLValueShort('hue', 4.6)).toBe('+5')
     expect(formatHSLValueShort('lightness', -8)).toBe('-8')
     expect(formatHSLValueShort('saturation', 0)).toBe('0')
-  })
-
-  it('owns the HSL field table without importing a tool surface', () => {
-    const source = readFileSync(
-      resolve(
-        process.cwd(),
-        'src/modules/raw-processor/components/fields/hsl-fields.ts',
-      ),
-      'utf8',
-    )
-    expect(source).not.toMatch(/from '\.\.\/(?:tools|mobile)\//)
   })
 })

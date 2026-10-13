@@ -176,12 +176,20 @@ export function resetTransformGroup(
   return next
 }
 
-/** True when Transform is doing something the user can reset. */
-export function isTransformDirty(
-  mode: UprightMode,
-  manual: ManualTransform,
-): boolean {
-  return mode !== 'off' || !isManualTransformNeutral(manual)
+/**
+ * True when Transform is doing something the user can reset: an upright
+ * mode, a manual control off its base, or the crop constraint turned off.
+ */
+export function isTransformResettable(preview: {
+  mode: UprightMode
+  manual: ManualTransform
+  constrainCrop: boolean
+}): boolean {
+  return (
+    preview.mode !== 'off' ||
+    !isManualTransformNeutral(preview.manual) ||
+    !preview.constrainCrop
+  )
 }
 
 export interface TransformMessage {

@@ -261,45 +261,6 @@ export function Dropzone({
 }
 
 /**
- * Empty state dropzone for initial file loading.
- */
-export function FileDropzone({
-  onFileDrop,
-  disabled,
-}: {
-  onFileDrop: (files: File[]) => void
-  disabled?: boolean
-}) {
-  const { t } = useI18n()
-
-  return (
-    <Dropzone
-      onFileDrop={onFileDrop}
-      accept={RAW_FILE_ACCEPT}
-      disabled={disabled}
-      className="min-h-[300px] flex flex-col items-center justify-center p-8"
-    >
-      <div className="flex flex-col items-center gap-4 text-center">
-        <div className="size-16 rounded-full bg-fill flex items-center justify-center">
-          <i className="i-mingcute-image-2-line text-3xl text-text-secondary" />
-        </div>
-        <div>
-          <h3 className="text-lg font-medium text-text">
-            {t('raw.drop.fileTitle')}
-          </h3>
-          <p className="text-sm text-text-secondary mt-1">
-            {t('raw.drop.browse')}
-          </p>
-        </div>
-        <p className="text-xs text-text-tertiary max-w-md">
-          {t('raw.drop.supported')}
-        </p>
-      </div>
-    </Dropzone>
-  )
-}
-
-/**
  * Small dropzone for LUT files.
  */
 export function LutDropzone({

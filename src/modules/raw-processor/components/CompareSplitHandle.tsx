@@ -10,11 +10,6 @@ import {
   getCompareSplitFromClientX,
 } from '../services/compare/compare-split'
 
-export {
-  clampCompareSplit,
-  getCompareSplitFromClientX,
-} from '../services/compare/compare-split'
-
 const KEYBOARD_STEP = 0.01
 // Double-tap to reset (touch / pen): two taps inside this window and radius.
 // Mouse uses the native dblclick instead.
@@ -121,7 +116,7 @@ function getHandlePositionX(frameRect: Pick<DOMRect, 'width'>, split: number) {
   return frameRect.width * clampCompareSplit(split)
 }
 
-export function getCompareSplitInteractionGeometry(
+function getCompareSplitInteractionGeometry(
   target: HTMLElement,
   clientX: number,
 ) {
