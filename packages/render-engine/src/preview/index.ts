@@ -41,14 +41,7 @@ export type {
   CpuPreviewVariant,
 } from './worker-bridge/protocol'
 
-// Candidate render + contact sheet
-export {
-  type CandidateParams,
-  candidateRender,
-  type CandidateRenderOptions,
-  type CandidateRenderSource,
-  type CandidateResult,
-} from './candidate-render'
+// Contact sheet
 export {
   composeContactSheet,
   type ComposeContactSheetInput,

@@ -246,8 +246,8 @@ image-editor assumptions.
   - `packages/render-engine/src/preview`: the CPU preview renderer, the
     quick/bounded-HQ preview plan, the preview color plan
     (`resolvePreviewColorPlan`: what each preview executor draws for the
-    selected look, and why when that differs), candidates and contact sheets,
-    and the CPU preview worker bridge and protocol.
+    selected look, and why when that differs), JPEG preview encode, contact
+    sheets, and the CPU preview worker bridge and protocol.
   - `packages/render-engine/src/policy`: export and interactive policy
     decisions and resource budgets.
   - `packages/render-engine/src/manifest`: `RenderManifest` types,

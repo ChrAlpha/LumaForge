@@ -21,6 +21,11 @@ predates this file.
   from `@lumaforge/render-engine` and `@lumaforge/render-engine/manifest`. No
   production reader used them; a replaying reader maps a parsed manifest's
   `render_params` onto its own params schema (as `lmfg` does).
+- Removed `candidateRender` and its `CandidateParams`, `CandidateResult`,
+  `CandidateRenderOptions` and `CandidateRenderSource` types from
+  `@lumaforge/render-engine/preview`. Render a candidate with
+  `renderCpuPreviewFrame` and encode it with `encodePreviewFrameToJpeg`, as
+  `lmfg` does for each one.
 - `RawRenderExposureSource` is no longer exported from
   `@lumaforge/render-engine` or `@lumaforge/render-engine/manifest`; import it
   from `@lumaforge/luma-color-runtime`, which defines it.

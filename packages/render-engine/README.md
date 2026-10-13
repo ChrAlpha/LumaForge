@@ -17,8 +17,8 @@ It holds the render pipeline shared by the `/raw` app and the `lmfg` CLI:
   session's begin and end hooks.
 - The pure 3x3 projective geometry kernel export geometry runs
   (`@lumaforge/render-engine/geometry`).
-- CPU preview render, the preview plan and preview color plan, candidate
-  render, and contact sheets (`@lumaforge/render-engine/preview`).
+- CPU preview render and JPEG encode, the preview plan and preview color
+  plan, and contact sheets (`@lumaforge/render-engine/preview`).
 - Export and interactive policy decisions and resource budgets
   (`@lumaforge/render-engine/policy`).
 
@@ -43,7 +43,8 @@ reruns from the start: the engine keeps no export journal or checkpoint.
   browser object, so loading it initializes no renderer. Geometry
   authoring (composing upright and manual controls into a matrix) is not
   part of the engine.
-- `@lumaforge/render-engine/preview` — CPU preview, candidates, contact sheets
+- `@lumaforge/render-engine/preview` — CPU preview, JPEG preview encode,
+  contact sheets
 - `@lumaforge/render-engine/policy` — capability input and policy decisions
 
 `@lumaforge/luma-color-runtime`, `@lumaforge/luma-jpeg-runtime`, and

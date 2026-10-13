@@ -4,7 +4,10 @@ import { Worker } from 'node:worker_threads'
 import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import { sha256Hex } from '@lumaforge/render-engine'
 import type { PreviewJpegEncoderFactory } from '@lumaforge/render-engine/preview'
-import { candidateRender } from '@lumaforge/render-engine/preview'
+import {
+  encodePreviewFrameToJpeg,
+  renderCpuPreviewFrame,
+} from '@lumaforge/render-engine/preview'
 
 import { LmfgError } from '../protocol/errors'
 import type { MemoryProfile } from '../runtime/versions'
@@ -166,29 +169,40 @@ export function renderCandidates(
   }
 }
 
+// The same render and encode the worker runs, one candidate at a time.
 async function* renderInline(
   input: RenderCandidatesInput,
 ): AsyncGenerator<CandidateOutput> {
-  for await (const result of candidateRender({
-    source: input.frame,
-    params: input.tasks.map((task, index) => ({
+  const { data, width, height } = input.frame
+  const throwIfAborted = () => {
+    if (input.signal?.aborted) {
+      throw input.signal.reason ?? new Error('CANDIDATE_RENDER_ABORTED')
+    }
+  }
+  for (const [index, task] of input.tasks.entries()) {
+    throwIfAborted()
+    const rgba = renderCpuPreviewFrame({
+      data,
+      width,
+      height,
       graph: task.graph,
+    })
+    const jpeg = (await encodePreviewFrameToJpeg(input.createEncoder, {
+      rgba,
+      width,
+      height,
       quality: task.quality,
-      tag: String(index),
-    })),
-    maxConcurrent: 1,
-    createEncoder: input.createEncoder,
-    signal: input.signal,
-  })) {
+    })) as Uint8Array
     yield finishCandidate({
-      index: result.index,
-      width: result.width,
-      height: result.height,
-      rgba: result.rgba,
-      jpeg: result.outputBytes as Uint8Array,
+      index,
+      width,
+      height,
+      rgba,
+      jpeg,
       tile: input.tile,
     })
   }
+  throwIfAborted()
 }
 
 async function* renderWithWorkers(
