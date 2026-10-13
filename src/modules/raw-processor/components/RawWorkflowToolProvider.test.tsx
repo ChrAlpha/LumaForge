@@ -25,7 +25,7 @@ import {
   vi,
 } from 'vitest'
 
-import { viewportAtom } from '~/atoms/viewport'
+import { viewportWidthAtom } from '~/atoms/viewport'
 import { I18nProvider } from '~/lib/i18n'
 import { jotaiStore } from '~/lib/jotai'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
@@ -1331,8 +1331,8 @@ describe('rawWorkflowToolProvider interruption note', () => {
   it('shows the note in the desktop export block, and only the explicit Export starts one', async () => {
     const user = userEvent.setup()
     const onExport = vi.fn()
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 1280, sm: true })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 1280)
     try {
       const { container, rerender } = render(
         <SurfaceWith
@@ -1366,15 +1366,15 @@ describe('rawWorkflowToolProvider interruption note', () => {
       // Unmount the surface before restoring the viewport it reads, so the
       // restore re-renders nothing outside act.
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 
   it('shows the same note in the mobile export deck the topbar opens, and only the explicit Export starts one', async () => {
     const user = userEvent.setup()
     const onExport = vi.fn()
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 390)
     try {
       const { container } = render(
         <SurfaceWith
@@ -1414,7 +1414,7 @@ describe('rawWorkflowToolProvider interruption note', () => {
       // Unmount the surface before restoring the viewport it reads, so the
       // restore re-renders nothing outside act.
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 })
@@ -1505,9 +1505,9 @@ function policyCommands() {
 }
 
 describe('rawWorkflowToolProvider surface policy', () => {
-  let previousViewport = jotaiStore.get(viewportAtom)
+  let previousViewport = jotaiStore.get(viewportWidthAtom)
   beforeEach(() => {
-    previousViewport = jotaiStore.get(viewportAtom)
+    previousViewport = jotaiStore.get(viewportWidthAtom)
     vi.stubGlobal(
       'ResizeObserver',
       vi.fn().mockImplementation(() => ({
@@ -1522,13 +1522,11 @@ describe('rawWorkflowToolProvider surface policy', () => {
     // cards it reads, so the restore re-renders nothing outside act and the
     // next rail mounts with the cards its storage holds.
     cleanup()
-    jotaiStore.set(viewportAtom, previousViewport)
+    jotaiStore.set(viewportWidthAtom, previousViewport)
     jotaiStore.set(toolCardOpenAtom, RESET)
   })
-  const showDesktop = () =>
-    jotaiStore.set(viewportAtom, { ...previousViewport, w: 1280, sm: true })
-  const showMobile = () =>
-    jotaiStore.set(viewportAtom, { ...previousViewport, w: 390, sm: false })
+  const showDesktop = () => jotaiStore.set(viewportWidthAtom, 1280)
+  const showMobile = () => jotaiStore.set(viewportWidthAtom, 390)
   const lens = (container: HTMLElement) =>
     container.querySelector<HTMLElement>('[data-mobile-compare-lens]')!
   const dockTab = (name: RegExp) =>
@@ -2024,9 +2022,9 @@ describe('rawWorkflowToolProvider surface policy', () => {
 })
 
 describe('rawWorkflowToolProvider export reasons on the surfaces', () => {
-  let previousViewport = jotaiStore.get(viewportAtom)
+  let previousViewport = jotaiStore.get(viewportWidthAtom)
   beforeEach(() => {
-    previousViewport = jotaiStore.get(viewportAtom)
+    previousViewport = jotaiStore.get(viewportWidthAtom)
     vi.stubGlobal(
       'ResizeObserver',
       vi.fn().mockImplementation(() => ({
@@ -2041,15 +2039,13 @@ describe('rawWorkflowToolProvider export reasons on the surfaces', () => {
     // and the locale it reads, so the restore re-renders nothing outside act
     // and the next rail mounts with the cards its storage holds.
     cleanup()
-    jotaiStore.set(viewportAtom, previousViewport)
+    jotaiStore.set(viewportWidthAtom, previousViewport)
     jotaiStore.set(toolCardOpenAtom, RESET)
     localStorage.clear()
     document.documentElement.lang = 'en'
   })
-  const showDesktop = () =>
-    jotaiStore.set(viewportAtom, { ...previousViewport, w: 1280, sm: true })
-  const showMobile = () =>
-    jotaiStore.set(viewportAtom, { ...previousViewport, w: 390, sm: false })
+  const showDesktop = () => jotaiStore.set(viewportWidthAtom, 1280)
+  const showMobile = () => jotaiStore.set(viewportWidthAtom, 390)
   const HQ_TRANSFORM =
     'Export at full resolution to keep Transform, or reset Transform for an HQ preview JPEG.'
   const TRANSFORM_BLOCKS = [

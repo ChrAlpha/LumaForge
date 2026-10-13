@@ -1,16 +1,15 @@
 import { useInRouterContext, useLocation } from 'react-router'
 import { Toaster as Sonner } from 'sonner'
 
-import { useThemeAtomValue, useViewport } from '~/hooks/common'
+import {
+  isRawMobileViewport,
+  useThemeAtomValue,
+  useViewport,
+} from '~/hooks/common'
 
 type ToasterProps = React.ComponentProps<typeof Sonner>
 
-const selectMobileToastPosition = (value: { w: number }) =>
-  value.w < 1024 && value.w !== 0
-
-// The viewport where /raw shows its mobile surface, with a persistent topbar.
-const selectRawMobileSurface = (value: { w: number }) =>
-  value.w <= 640 && value.w !== 0
+const selectMobileToastPosition = (width: number) => width < 1024 && width !== 0
 
 const TOAST_EDGE_OFFSET = '16px'
 
@@ -85,7 +84,7 @@ function AppToaster({
 }: ToasterProps & { rawRoute: boolean }) {
   const theme = useThemeAtomValue()
   const isMobile = useViewport(selectMobileToastPosition)
-  const rawMobileViewport = useViewport(selectRawMobileSurface)
+  const rawMobileViewport = useViewport(isRawMobileViewport)
   const rawMobile = rawRoute && rawMobileViewport
   // Sonner switches to `mobileOffset` below 600px; set both so the band
   // between 600px and the 640px mobile breakpoint clears the topbar too.

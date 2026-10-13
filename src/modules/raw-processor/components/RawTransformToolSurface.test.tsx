@@ -2,7 +2,7 @@ import { cleanup, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { viewportAtom } from '~/atoms/viewport'
+import { viewportWidthAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
 
 import {
@@ -69,11 +69,7 @@ describe('raw Transform tool surfaces', () => {
         disconnect: vi.fn(),
       })),
     )
-    jotaiStore.set(viewportAtom, {
-      ...jotaiStore.get(viewportAtom),
-      w: 1280,
-      h: 800,
-    })
+    jotaiStore.set(viewportWidthAtom, 1280)
     jotaiStore.set(toolCardOpenAtom, [])
   })
   afterEach(() => {
@@ -111,11 +107,7 @@ describe('raw Transform tool surfaces', () => {
   })
 
   it('brings the three mobile tools in with the RAW photo, not before', () => {
-    jotaiStore.set(viewportAtom, {
-      ...jotaiStore.get(viewportAtom),
-      w: 390,
-      sm: false,
-    })
+    jotaiStore.set(viewportWidthAtom, 390)
     const { rerender } = renderRawToolSurface({
       ...base,
       hasImage: false,
@@ -137,11 +129,7 @@ describe('raw Transform tool surfaces', () => {
   })
 
   it('opens Transform inside the mobile dock and releases observation when switching tools', async () => {
-    jotaiStore.set(viewportAtom, {
-      ...jotaiStore.get(viewportAtom),
-      w: 390,
-      sm: false,
-    })
+    jotaiStore.set(viewportWidthAtom, 390)
     const stop = vi.fn()
     const transform = transformFeatureFixture({
       hasImage: true,
@@ -174,11 +162,7 @@ describe('raw Transform tool surfaces', () => {
   })
 
   it('keeps the open tool when Transform becomes active and after reset', async () => {
-    jotaiStore.set(viewportAtom, {
-      ...jotaiStore.get(viewportAtom),
-      w: 390,
-      sm: false,
-    })
+    jotaiStore.set(viewportWidthAtom, 390)
     const transform = transformFeatureFixture({ hasImage: true })
     const { rerender } = renderRawToolSurface({ ...base, transform })
     await userEvent.click(screen.getByRole('tab', { name: 'Adjust' }))

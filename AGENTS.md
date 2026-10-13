@@ -13,8 +13,8 @@ image-editor assumptions.
 - Do not edit generated files such as `src/generated-routes.ts`. Change routes
   by adding or renaming files under `src/pages/`.
 - Use the `~/` alias for imports from `src`.
-- Stay inside the shared app runtime patterns: do not recreate the QueryClient,
-  Jotai store, router plumbing, or provider stack outside the existing
+- Stay inside the shared app runtime patterns: do not recreate the Jotai
+  store, router plumbing, or provider stack outside the existing
   providers.
 - Do not use `window.location` or other ad hoc navigation paths when existing
   router utilities cover the case.
@@ -58,8 +58,9 @@ image-editor assumptions.
   supported-format count), module CSS, and colocated tests.
 - There is no `/transform-demo` route and no demo module; `/raw` Transform is
   production code (see Retained And Scheduled Slices).
-- `src/providers/root-providers.tsx` owns `LazyMotion`, React Query, Jotai,
-  i18n, error boundary, router stability, settings sync, and toasts. Preserve provider order unless a concrete bug requires changing it.
+- `src/providers/root-providers.tsx` owns `LazyMotion`, Jotai, i18n, error
+  boundary, viewport width, settings sync, and toasts. Preserve provider order
+  unless a concrete bug requires changing it.
 - `src/modules/raw-processor/RawProcessorView.tsx` is a thin composition layer.
   Keep orchestration in hooks/controllers and domain logic in services.
 - `src/modules/raw-processor/hooks/useRawProcessorViewController.ts` bridges

@@ -11,7 +11,7 @@ import {
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import { viewportAtom } from '~/atoms/viewport'
+import { viewportWidthAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
 
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
@@ -1197,8 +1197,8 @@ describe('rawToolSurface', () => {
   })
 
   it('mobile + no image shows onboarding under the branded topbar, without a dock', () => {
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 390)
     try {
       const { container } = renderRawToolSurface({
         ...baseProps,
@@ -1233,13 +1233,13 @@ describe('rawToolSurface', () => {
       ).toBeNull()
     } finally {
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 
   it('mobile + image mounts the photo-first chrome', () => {
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 390)
     try {
       const { container } = renderRawToolSurface({
         ...baseProps,
@@ -1253,15 +1253,15 @@ describe('rawToolSurface', () => {
       ).toHaveClass('pointer-events-auto')
     } finally {
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 
   it('mobile keeps strength disabled for catalog-only online LUT sources', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 390)
     try {
       renderRawToolSurface({
         ...baseProps,
@@ -1289,13 +1289,13 @@ describe('rawToolSurface', () => {
       expect(onChange).not.toHaveBeenCalled()
     } finally {
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 
   it('mobile lets the stage handoff receive touch while processing', () => {
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 390)
     try {
       const { container } = renderRawToolSurface({
         ...baseProps,
@@ -1314,13 +1314,13 @@ describe('rawToolSurface', () => {
       ).toBeInTheDocument()
     } finally {
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 
   it('mobile keeps export result actions reachable through the toolbar while the preview is released', () => {
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 390)
     try {
       const { container } = renderRawToolSurface({
         ...baseProps,
@@ -1366,14 +1366,14 @@ describe('rawToolSurface', () => {
       ).toBeInTheDocument()
     } finally {
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 
   it('mobile locks the tools while the preview is released, and keeps every delivery action on the result', async () => {
     const user = userEvent.setup()
-    const prev = jotaiStore.get(viewportAtom)
-    jotaiStore.set(viewportAtom, { ...prev, w: 390, sm: false })
+    const prev = jotaiStore.get(viewportWidthAtom)
+    jotaiStore.set(viewportWidthAtom, 390)
     const onToneChange = vi.fn()
     const onDownloadExport = vi.fn()
     const onDownloadExportManifest = vi.fn()
@@ -1458,7 +1458,7 @@ describe('rawToolSurface', () => {
       expect(onToneChange).toHaveBeenCalled()
     } finally {
       cleanup()
-      jotaiStore.set(viewportAtom, prev)
+      jotaiStore.set(viewportWidthAtom, prev)
     }
   })
 

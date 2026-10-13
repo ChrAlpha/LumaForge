@@ -1,15 +1,13 @@
 import { memo } from 'react'
 
-import { useViewport } from '~/hooks/common'
+import { isRawMobileViewport, useViewport } from '~/hooks/common'
 
 import { DesktopRawToolSurface } from './DesktopRawToolSurface'
 import { MobileRawToolSurface } from './mobile/MobileRawToolSurface'
 
-const selectIsNarrowViewport = (v: { w: number }) => v.w <= 640 && v.w !== 0
-
 /** Whether `/raw` is showing the mobile surface rather than the desktop one. */
 export function useIsMobileRawSurface() {
-  return useViewport(selectIsNarrowViewport)
+  return useViewport(isRawMobileViewport)
 }
 
 /**

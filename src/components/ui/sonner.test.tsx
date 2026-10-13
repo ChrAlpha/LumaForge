@@ -7,10 +7,10 @@ import { RAW_MOBILE_TOAST_TOP, Toaster } from './sonner'
 
 const viewport = vi.hoisted(() => ({ w: 1280 }))
 
-vi.mock('~/hooks/common', () => ({
+vi.mock('~/hooks/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/hooks/common')>()),
   useThemeAtomValue: () => 'dark',
-  useViewport: <T,>(selector: (value: { w: number }) => T) =>
-    selector({ w: viewport.w }),
+  useViewport: <T,>(selector: (width: number) => T) => selector(viewport.w),
 }))
 
 vi.mock('sonner', () => ({

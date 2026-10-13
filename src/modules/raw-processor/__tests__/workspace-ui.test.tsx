@@ -18,7 +18,7 @@ import { Provider } from 'jotai'
 import type { ComponentProps, ReactElement } from 'react'
 import { afterEach, beforeEach, vi } from 'vitest'
 
-import { viewportAtom } from '~/atoms/viewport'
+import { viewportWidthAtom } from '~/atoms/viewport'
 import { jotaiStore } from '~/lib/jotai'
 import { SUPPORTED_RAW_EXTENSIONS } from '~/lib/raw/decoder'
 import { createRawRuntimeHost } from '~/lib/raw/raw-runtime-host'
@@ -508,17 +508,9 @@ describe('rawProcessorView', () => {
 
   it('keeps mobile reset confirmation in the dark on-photo design language', async () => {
     const user = userEvent.setup()
-    const prevViewport = jotaiStore.get(viewportAtom)
+    const prevViewport = jotaiStore.get(viewportWidthAtom)
     const reset = vi.fn()
-    jotaiStore.set(viewportAtom, {
-      ...prevViewport,
-      w: 390,
-      sm: false,
-      md: false,
-      lg: false,
-      xl: false,
-      '2xl': false,
-    })
+    jotaiStore.set(viewportWidthAtom, 390)
     mockUseRawWorkflow.mockReturnValue(
       rawProcessorViewState({
         hasImage: true,
@@ -588,7 +580,7 @@ describe('rawProcessorView', () => {
       // The view unmounts before the viewport is restored, so the restore
       // re-renders nothing.
       cleanup()
-      jotaiStore.set(viewportAtom, prevViewport)
+      jotaiStore.set(viewportWidthAtom, prevViewport)
     }
   })
 

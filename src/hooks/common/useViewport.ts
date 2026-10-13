@@ -1,16 +1,17 @@
-import type { ExtractAtomValue } from 'jotai'
 import { useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 import { useCallback } from 'react'
 
-import { viewportAtom } from '~/atoms/viewport'
+import { viewportWidthAtom } from '~/atoms/viewport'
 
-export const useViewport = <T>(
-  selector: (value: ExtractAtomValue<typeof viewportAtom>) => T,
-): T =>
+/** Whether a viewport this wide gets the mobile `/raw` surface. */
+export const isRawMobileViewport = (width: number) =>
+  width <= 640 && width !== 0
+
+export const useViewport = <T>(selector: (width: number) => T): T =>
   useAtomValue(
     selectAtom(
-      viewportAtom,
-      useCallback((atomValue) => selector(atomValue), [selector]),
+      viewportWidthAtom,
+      useCallback((width) => selector(width), [selector]),
     ),
   )
