@@ -110,7 +110,7 @@ function size(value: { width: number; height: number }): string {
 }
 
 /** The protocol form of a geometry refusal and the issue it reports. */
-function describeGeometryRefusal(refusal: RecordedGeometryRefusal): {
+export function describeGeometryRefusal(refusal: RecordedGeometryRefusal): {
   refusal: ManifestGeometryRefusal
   issue: string
 } {

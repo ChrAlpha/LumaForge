@@ -45,7 +45,7 @@ import {
   loadLutFile,
   resolveLutContract,
 } from './lut'
-import { percentToQuality } from './manifest'
+import { describeGeometryRefusal, percentToQuality } from './manifest'
 import { renderPreview } from './preview'
 
 export type ReplayPlan = {
@@ -106,41 +106,41 @@ function requireRecordedFrame(
   const check = checkRecordedExportGeometry(manifest)
   if (check.ok) return check.frame
   const { refusal } = check
+  const message = `Replay refused before decoding: ${describeGeometryRefusal(refusal).issue}`
+  const verify = ['lmfg manifest verify <manifest.json>']
   switch (refusal.reason) {
     case 'non-export-geometry':
       throw new LmfgError('args.invalid', {
-        message: `A ${refusal.kind} manifest that records a geometry (render_params.geometry) cannot be replayed; only full-resolution exports apply a geometry, and this replay would drop the recorded crop, rotation, and perspective.`,
+        message,
         details: { stage: 'geometry', unsupported: 'render_params.geometry' },
-        suggestedNextActions: ['lmfg manifest verify <manifest.json>'],
+        suggestedNextActions: verify,
       })
-    case 'unplannable-geometry': {
-      const { source } = refusal
+    case 'unplannable-geometry':
       throw new LmfgError('args.invalid', {
-        message: `The recorded geometry cannot be exported from the recorded ${source.width}x${source.height} source frame: it folds the frame or retains too little of it.`,
-        details: { stage: 'geometry', source },
-        suggestedNextActions: ['lmfg manifest verify <manifest.json>'],
+        message,
+        details: { stage: 'geometry', source: refusal.source },
+        suggestedNextActions: verify,
         cause: refusal.cause,
       })
-    }
-    case 'geometry-output-mismatch': {
-      const { source, recorded, planned } = refusal
+    case 'geometry-output-mismatch':
       throw new LmfgError('replay.mismatch', {
-        message: `The recorded geometry output ${recorded.width}x${recorded.height} is not the ${planned.width}x${planned.height} frame the geometry plans from the recorded ${source.width}x${source.height} source.`,
+        message,
         details: {
           stage: 'geometry',
-          source,
-          expected: recorded,
-          actual: planned,
+          source: refusal.source,
+          expected: refusal.recorded,
+          actual: refusal.planned,
         },
       })
-    }
-    case 'output-mismatch': {
-      const { recorded, delivered, deliveredBy } = refusal
+    case 'output-mismatch':
       throw new LmfgError('replay.mismatch', {
-        message: `The manifest records a ${recorded.width}x${recorded.height} output, but its ${deliveredBy} delivers ${delivered.width}x${delivered.height}.`,
-        details: { stage: 'dimensions', expected: recorded, actual: delivered },
+        message,
+        details: {
+          stage: 'dimensions',
+          expected: refusal.recorded,
+          actual: refusal.delivered,
+        },
       })
-    }
   }
 }
 
