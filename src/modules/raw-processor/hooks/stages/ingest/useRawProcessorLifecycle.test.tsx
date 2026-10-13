@@ -1,29 +1,34 @@
 import { renderHook } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../../model/session'
-import type { SetImageSession } from '../../../state/session.atoms'
+import {
+  getCurrentSession,
+  setCurrentSession,
+} from '../../../state/session.atoms'
+import { rawWorkflowStore } from '../../../state/workflow.atoms'
 import {
   createTestDecodedImage,
   createTestSession,
 } from '../../../test-support/builders'
+import { resetToDefaults } from '../../../test-support/workflow-store'
 import { useEmbeddedPreviewUrlLifecycle } from '../preview/useEmbeddedPreviewUrlLifecycle'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
 
+beforeEach(() => {
+  resetToDefaults()
+  setCurrentSession(null)
+})
+
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
-function createSession(id = 'pending-session'): ImageSession {
-  return createTestSession({ id })
-}
-
-function withEmbeddedPreview(
-  session: ImageSession,
-  objectUrl: string,
-): ImageSession {
+function withEmbeddedPreview(id: string, objectUrl: string): ImageSession {
+  const session = createTestSession({ id })
   return {
     ...session,
     previewBundle: {
@@ -34,12 +39,14 @@ function withEmbeddedPreview(
   }
 }
 
-function applySessionUpdate(store: {
-  session: ImageSession | null
-}): SetImageSession {
-  return (update) => {
-    store.session =
-      typeof update === 'function' ? update(store.session) : update
+/** The processor state a departure clears, as the store's setters see it. */
+function spyOnProcessorState() {
+  return {
+    setStatus: vi.spyOn(rawWorkflowStore, 'setStatus'),
+    setError: vi.spyOn(rawWorkflowStore, 'setError'),
+    setProgress: vi.spyOn(rawWorkflowStore, 'setProgress'),
+    setStats: vi.spyOn(rawWorkflowStore, 'setStats'),
+    setSession: vi.spyOn(rawWorkflowStore, 'setSession'),
   }
 }
 
@@ -51,66 +58,38 @@ function renderLifecycle(
   },
   options: { reactStrictMode?: boolean } = {},
 ) {
-  const isMountedRef = { current: false }
-  const runtimeWorkSessionIdRef = {
-    current: 'runtime-work' as string | null,
+  setCurrentSession(refs.session ?? null)
+  const runtime = {
+    isMountedRef: { current: false },
+    runtimeWorkSessionIdRef: { current: 'runtime-work' as string | null },
+    pendingLoadSessionIdRef: { current: refs.pendingLoadSessionId ?? null },
+    // The mount owns the session it published: the pending load, or the
+    // session the test names, or else the one the store starts with.
+    ownedSessionIdRef: {
+      current:
+        refs.ownedSessionId !== undefined
+          ? refs.ownedSessionId
+          : (refs.pendingLoadSessionId ?? refs.session?.id ?? null),
+    },
+    decodedImageRef: {
+      current: createTestDecodedImage() as DecodedImage | null,
+    },
+    previewCopyCanvasRef: {
+      current: document.createElement('canvas') as HTMLCanvasElement | null,
+    },
   }
-  const pendingLoadSessionIdRef = {
-    current: refs.pendingLoadSessionId ?? null,
-  }
-  const decodedImageRef = {
-    current: createTestDecodedImage() as DecodedImage | null,
-  }
-  const previewCopyCanvasRef = { current: null as HTMLCanvasElement | null }
-  // The mount owns the session it published: the pending load, or the
-  // session the test names, or else the one the store starts with.
-  const ownedSessionIdRef = {
-    current:
-      refs.ownedSessionId !== undefined
-        ? refs.ownedSessionId
-        : (refs.pendingLoadSessionId ?? refs.session?.id ?? null),
-  }
-  const store = { session: refs.session ?? null }
-  // A stable store reader, as the workflow's is.
-  const getSession = () => store.session
   const calls = {
     abortExportWork: vi.fn(),
     abortRuntimeWork: vi.fn(),
     queueExportResultResourceDisposal: vi.fn(),
     revokeCurrentEmbeddedPreviewUrl: vi.fn(),
-    setStatus: vi.fn(),
-    setError: vi.fn(),
-    setProgress: vi.fn(),
-    setStats: vi.fn(),
-    setSession: vi.fn<SetImageSession>((update) => {
-      store.session =
-        typeof update === 'function' ? update(store.session) : update
-    }),
   }
+  const state = spyOnProcessorState()
   const rendered = renderHook(
-    () =>
-      useRawProcessorLifecycle({
-        isMountedRef,
-        runtimeWorkSessionIdRef,
-        pendingLoadSessionIdRef,
-        decodedImageRef,
-        previewCopyCanvasRef,
-        ownedSessionIdRef,
-        getSession,
-        ...calls,
-      }),
+    () => useRawProcessorLifecycle({ ...runtime, ...calls }),
     options,
   )
-  return {
-    ...rendered,
-    isMountedRef,
-    runtimeWorkSessionIdRef,
-    pendingLoadSessionIdRef,
-    ownedSessionIdRef,
-    decodedImageRef,
-    store,
-    calls,
-  }
+  return { ...rendered, ...runtime, calls, state }
 }
 
 /** Lets a departure the cleanup deferred settle. */
@@ -127,220 +106,152 @@ function releaseCounts(calls: ReturnType<typeof renderLifecycle>['calls']) {
   }
 }
 
+const ONCE = { abortExportWork: 1, abortRuntimeWork: 1, dispose: 1, revoke: 1 }
+
 describe('useRawProcessorLifecycle', () => {
-  it('marks the processor mounted and cleans up pending load state on unmount', () => {
-    const isMountedRef = { current: false }
-    const runtimeWorkSessionIdRef = { current: 'runtime-work' }
-    const pendingLoadSessionIdRef = { current: 'pending-session' }
-    const decodedImageRef = { current: createTestDecodedImage() }
-    const previewCopyCanvasRef = {
-      current: document.createElement('canvas') as HTMLCanvasElement | null,
-    }
-    const store = { session: createSession() as ImageSession | null }
-    const abortExportWork = vi.fn()
-    const abortRuntimeWork = vi.fn()
-    const queueExportResultResourceDisposal = vi.fn()
-    const revokeCurrentEmbeddedPreviewUrl = vi.fn()
-    const setStatus = vi.fn()
-    const setError = vi.fn()
-    const setProgress = vi.fn()
-    const setStats = vi.fn()
+  it('marks the processor mounted and drops a pending load at once on unmount', () => {
+    const lifecycle = renderLifecycle({
+      pendingLoadSessionId: 'pending-session',
+      session: createTestSession({ id: 'pending-session' }),
+    })
+    expect(lifecycle.isMountedRef.current).toBe(true)
 
-    const { unmount } = renderHook(() =>
-      useRawProcessorLifecycle({
-        isMountedRef,
-        runtimeWorkSessionIdRef,
-        pendingLoadSessionIdRef,
-        decodedImageRef,
-        previewCopyCanvasRef,
-        ownedSessionIdRef: { current: 'pending-session' },
-        getSession: () => store.session,
-        abortExportWork,
-        abortRuntimeWork,
-        queueExportResultResourceDisposal,
-        revokeCurrentEmbeddedPreviewUrl,
-        setStatus,
-        setError,
-        setProgress,
-        setStats,
-        setSession: applySessionUpdate(store),
-      }),
-    )
+    lifecycle.unmount()
 
-    expect(isMountedRef.current).toBe(true)
-
-    unmount()
-
-    expect(isMountedRef.current).toBe(false)
-    expect(runtimeWorkSessionIdRef.current).toBeNull()
-    expect(pendingLoadSessionIdRef.current).toBeNull()
-    expect(abortExportWork).toHaveBeenCalledTimes(1)
-    expect(abortRuntimeWork).toHaveBeenCalledTimes(1)
-    expect(queueExportResultResourceDisposal).toHaveBeenCalledTimes(1)
-    expect(revokeCurrentEmbeddedPreviewUrl).toHaveBeenCalledTimes(1)
-    expect(previewCopyCanvasRef.current).toBeNull()
-    expect(decodedImageRef.current).toBeNull()
-    expect(setStatus).toHaveBeenCalledWith('idle')
-    expect(setError).toHaveBeenCalledWith(null)
-    expect(setProgress).toHaveBeenCalledWith(0)
-    expect(setStats).toHaveBeenCalledWith(null)
-    expect(store.session).toBeNull()
+    expect(lifecycle.isMountedRef.current).toBe(false)
+    expect(lifecycle.runtimeWorkSessionIdRef.current).toBeNull()
+    expect(lifecycle.pendingLoadSessionIdRef.current).toBeNull()
+    expect(lifecycle.previewCopyCanvasRef.current).toBeNull()
+    expect(lifecycle.decodedImageRef.current).toBeNull()
+    expect(releaseCounts(lifecycle.calls)).toEqual(ONCE)
+    expect(lifecycle.state.setStatus).toHaveBeenCalledExactlyOnceWith('idle')
+    expect(lifecycle.state.setError).toHaveBeenCalledExactlyOnceWith(null)
+    expect(lifecycle.state.setProgress).toHaveBeenCalledExactlyOnceWith(0)
+    expect(lifecycle.state.setStats).toHaveBeenCalledExactlyOnceWith(null)
+    expect(getCurrentSession()).toBeNull()
   })
 
   it('clears only its own pending load, leaving a session a newer load put in the store and its status', async () => {
-    const newer = createSession('newer-session')
     const lifecycle = renderLifecycle({
       pendingLoadSessionId: 'pending-session',
-      session: createSession(),
+      session: createTestSession({ id: 'pending-session' }),
     })
-    // A newer load took the store's slot before this mount departs.
-    lifecycle.store.session = newer
+    const newer = createTestSession({ id: 'newer-session' })
+    setCurrentSession(newer)
+    lifecycle.state.setSession.mockClear()
 
     lifecycle.unmount()
     await settleDeparture()
 
-    expect(lifecycle.store.session).toBe(newer)
-    expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
+    expect(getCurrentSession()).toBe(newer)
+    expect(lifecycle.state.setSession).not.toHaveBeenCalled()
     // Its own decoded frame goes; the status and progress are the newer
     // load's, so they stay.
     expect(lifecycle.decodedImageRef.current).toBeNull()
-    expect(lifecycle.calls.setStatus).not.toHaveBeenCalled()
-    expect(lifecycle.calls.setProgress).not.toHaveBeenCalled()
+    expect(lifecycle.state.setStatus).not.toHaveBeenCalled()
+    expect(lifecycle.state.setProgress).not.toHaveBeenCalled()
   })
 
   it('ends the loaded session it owns once the mount has really departed', async () => {
     const lifecycle = renderLifecycle({
-      session: createSession('loaded-session'),
+      session: createTestSession({ id: 'loaded-session' }),
     })
 
     lifecycle.unmount()
     // Departure is confirmed only after the commit: a StrictMode replay
     // would have mounted the workflow again by then.
-    expect(lifecycle.store.session?.id).toBe('loaded-session')
+    expect(getCurrentSession()?.id).toBe('loaded-session')
+    expect(releaseCounts(lifecycle.calls)).toEqual(ONCE)
 
     await settleDeparture()
 
-    expect(lifecycle.store.session).toBeNull()
-    expect(lifecycle.calls.setSession).toHaveBeenCalledTimes(1)
+    expect(getCurrentSession()).toBeNull()
+    expect(lifecycle.ownedSessionIdRef.current).toBeNull()
     expect(lifecycle.decodedImageRef.current).toBeNull()
-    expect(lifecycle.calls.setStatus).toHaveBeenCalledExactlyOnceWith('idle')
-    expect(lifecycle.calls.setError).toHaveBeenCalledExactlyOnceWith(null)
-    expect(lifecycle.calls.setProgress).toHaveBeenCalledExactlyOnceWith(0)
-    expect(lifecycle.calls.setStats).toHaveBeenCalledExactlyOnceWith(null)
-    // Its resources were released once, in the cleanup itself.
-    expect(releaseCounts(lifecycle.calls)).toEqual({
-      abortExportWork: 1,
-      abortRuntimeWork: 1,
-      dispose: 1,
-      revoke: 1,
-    })
+    expect(lifecycle.state.setStatus).toHaveBeenCalledExactlyOnceWith('idle')
+    expect(releaseCounts(lifecycle.calls)).toEqual(ONCE)
   })
 
-  it('leaves a session it did not publish, and its status, when it departs', async () => {
-    const other = createSession('other-mount-session')
+  it.each([
+    ['a session it did not publish', 'loaded-session'],
+    ['any session when it published none', null],
+  ])('leaves %s, and its status, when it departs', async (_, ownedId) => {
+    const other = createTestSession({ id: 'other-mount-session' })
     const lifecycle = renderLifecycle({
-      ownedSessionId: 'loaded-session',
+      ownedSessionId: ownedId,
       session: other,
     })
 
     lifecycle.unmount()
     await settleDeparture()
 
-    expect(lifecycle.store.session).toBe(other)
-    expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
-    expect(lifecycle.calls.setStatus).not.toHaveBeenCalled()
+    expect(getCurrentSession()).toBe(other)
+    expect(lifecycle.state.setSession).not.toHaveBeenCalled()
+    expect(lifecycle.state.setStatus).not.toHaveBeenCalled()
   })
 
   it('leaves a session a new mount publishes before the departure settles', async () => {
     const lifecycle = renderLifecycle({
-      session: createSession('loaded-session'),
+      session: createTestSession({ id: 'loaded-session' }),
     })
 
     lifecycle.unmount()
     // An immediate new mount loads in the same tick as the departure.
-    const acquired = createSession('new-mount-session')
-    lifecycle.store.session = acquired
+    const acquired = createTestSession({ id: 'new-mount-session' })
+    setCurrentSession(acquired)
+    lifecycle.state.setSession.mockClear()
     await settleDeparture()
 
-    expect(lifecycle.store.session).toBe(acquired)
-    expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
-    expect(lifecycle.calls.setStatus).not.toHaveBeenCalled()
-  })
-
-  it('ends nothing when it departs without having published a session', async () => {
-    const lifecycle = renderLifecycle({ ownedSessionId: null })
-
-    lifecycle.unmount()
-    await settleDeparture()
-
-    expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
-    expect(lifecycle.calls.setStatus).not.toHaveBeenCalled()
+    expect(getCurrentSession()).toBe(acquired)
+    expect(lifecycle.state.setSession).not.toHaveBeenCalled()
+    expect(lifecycle.state.setStatus).not.toHaveBeenCalled()
   })
 
   describe('with the real embedded preview URL owner', () => {
     /**
-     * The lifecycle wired to the URL owner the workflow uses, over one store,
-     * so a departure revokes and clears through the real cleanup.
+     * The lifecycle wired to the URL owner the workflow uses, over the
+     * store, so a departure revokes and clears through the real cleanup.
      */
     function renderWithUrlOwner(refs: {
       ownedSessionId: string | null
       embeddedPreviewUrl: string | null
       session: ImageSession | null
     }) {
-      const store = { session: refs.session }
-      const getSession = () => store.session
-      const setSession = applySessionUpdate(store)
+      setCurrentSession(refs.session)
       const revokeObjectURL = vi.fn()
       vi.stubGlobal(
         'URL',
         Object.assign(class extends URL {}, { revokeObjectURL }),
       )
       const embeddedPreviewUrlRef = { current: refs.embeddedPreviewUrl }
-      const ownedSessionIdRef = { current: refs.ownedSessionId }
-      const decodedImageRef = {
-        current: createTestDecodedImage() as DecodedImage | null,
-      }
-      const setStatus = vi.fn()
+      const state = spyOnProcessorState()
       const rendered = renderHook(() => {
         const { revokeCurrentEmbeddedPreviewUrl } =
           useEmbeddedPreviewUrlLifecycle({
             embeddedPreviewUrlRef,
-            getSession,
-            setSession,
+            ...rawWorkflowStore,
           })
         useRawProcessorLifecycle({
           isMountedRef: { current: false },
           runtimeWorkSessionIdRef: { current: null },
           pendingLoadSessionIdRef: { current: null },
-          ownedSessionIdRef,
-          decodedImageRef,
+          ownedSessionIdRef: { current: refs.ownedSessionId },
+          decodedImageRef: { current: createTestDecodedImage() },
           previewCopyCanvasRef: { current: null },
-          getSession,
           abortExportWork: vi.fn(),
           abortRuntimeWork: vi.fn(),
           queueExportResultResourceDisposal: vi.fn(),
           revokeCurrentEmbeddedPreviewUrl,
-          setStatus,
-          setError: vi.fn(),
-          setProgress: vi.fn(),
-          setStats: vi.fn(),
-          setSession,
         })
       })
       const revokedUrls = () =>
         revokeObjectURL.mock.calls.map(([url]) => url as string)
-      return {
-        ...rendered,
-        store,
-        embeddedPreviewUrlRef,
-        revokedUrls,
-        setStatus,
-      }
+      return { ...rendered, embeddedPreviewUrlRef, revokedUrls, state }
     }
 
     it("revokes only its own URL and leaves another mount's session, URL and preview whole", async () => {
       const other = withEmbeddedPreview(
-        createSession('other-mount-session'),
+        'other-mount-session',
         'blob:other-mount',
       )
       const lifecycle = renderWithUrlOwner({
@@ -354,16 +265,13 @@ describe('useRawProcessorLifecycle', () => {
 
       expect(lifecycle.revokedUrls()).toEqual(['blob:own-mount'])
       expect(lifecycle.embeddedPreviewUrlRef.current).toBeNull()
-      expect(lifecycle.store.session).toBe(other)
-      expect(
-        lifecycle.store.session?.previewBundle.embeddedPreview,
-      ).toMatchObject({ objectUrl: 'blob:other-mount' })
-      expect(lifecycle.setStatus).not.toHaveBeenCalled()
+      expect(getCurrentSession()).toBe(other)
+      expect(lifecycle.state.setStatus).not.toHaveBeenCalled()
     })
 
     it('touches no session URL when it departs without having published one', async () => {
       const other = withEmbeddedPreview(
-        createSession('other-mount-session'),
+        'other-mount-session',
         'blob:other-mount',
       )
       const lifecycle = renderWithUrlOwner({
@@ -376,35 +284,31 @@ describe('useRawProcessorLifecycle', () => {
       await settleDeparture()
 
       expect(lifecycle.revokedUrls()).toEqual([])
-      expect(lifecycle.store.session).toBe(other)
+      expect(getCurrentSession()).toBe(other)
     })
 
     it('revokes and ends its own session with its preview URL', async () => {
-      const own = withEmbeddedPreview(
-        createSession('loaded-session'),
-        'blob:own-mount',
-      )
       const lifecycle = renderWithUrlOwner({
         ownedSessionId: 'loaded-session',
         embeddedPreviewUrl: 'blob:own-mount',
-        session: own,
+        session: withEmbeddedPreview('loaded-session', 'blob:own-mount'),
       })
 
       lifecycle.unmount()
       // The URL goes with the cleanup; the session once departure settles.
       expect(lifecycle.revokedUrls()).toEqual(['blob:own-mount'])
-      expect(lifecycle.store.session?.previewBundle.embeddedPreview).toEqual({
+      expect(getCurrentSession()?.previewBundle.embeddedPreview).toEqual({
         status: 'idle',
       })
       await settleDeparture()
 
-      expect(lifecycle.store.session).toBeNull()
+      expect(getCurrentSession()).toBeNull()
     })
   })
 
   describe('under StrictMode replay', () => {
     it('runs its cleanup once on mount and ends mounted with the loaded session untouched', async () => {
-      const loaded = createSession('loaded-session')
+      const loaded = createTestSession({ id: 'loaded-session' })
       const lifecycle = renderLifecycle(
         { session: loaded },
         { reactStrictMode: true },
@@ -413,14 +317,9 @@ describe('useRawProcessorLifecycle', () => {
       await settleDeparture()
 
       expect(lifecycle.isMountedRef.current).toBe(true)
-      expect(releaseCounts(lifecycle.calls)).toEqual({
-        abortExportWork: 1,
-        abortRuntimeWork: 1,
-        dispose: 1,
-        revoke: 1,
-      })
-      expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
-      expect(lifecycle.store.session).toBe(loaded)
+      expect(releaseCounts(lifecycle.calls)).toEqual(ONCE)
+      expect(lifecycle.state.setSession).not.toHaveBeenCalled()
+      expect(getCurrentSession()).toBe(loaded)
 
       // A rerender with the same inputs replays nothing.
       lifecycle.rerender()
@@ -432,19 +331,19 @@ describe('useRawProcessorLifecycle', () => {
       const lifecycle = renderLifecycle(
         {
           pendingLoadSessionId: 'pending-session',
-          session: createSession(),
+          session: createTestSession({ id: 'pending-session' }),
         },
         { reactStrictMode: true },
       )
 
       // The replay's cleanup dropped the pending load it found.
-      expect(lifecycle.calls.setSession).toHaveBeenCalledTimes(1)
-      expect(lifecycle.store.session).toBeNull()
+      expect(lifecycle.state.setSession).toHaveBeenCalledTimes(1)
+      expect(getCurrentSession()).toBeNull()
       expect(lifecycle.pendingLoadSessionIdRef.current).toBeNull()
 
       // Another owner's source lands in the store before the real unmount.
-      const replacement = createSession('replacement-session')
-      lifecycle.store.session = replacement
+      const replacement = createTestSession({ id: 'replacement-session' })
+      setCurrentSession(replacement)
       lifecycle.decodedImageRef.current = createTestDecodedImage()
 
       lifecycle.unmount()
@@ -452,18 +351,17 @@ describe('useRawProcessorLifecycle', () => {
 
       expect(releaseCounts(lifecycle.calls).dispose).toBe(2)
       // The repeated cleanup finds no pending load and owns no session.
-      expect(lifecycle.calls.setSession).toHaveBeenCalledTimes(1)
-      expect(lifecycle.calls.setStatus).toHaveBeenCalledTimes(1)
-      expect(lifecycle.store.session).toBe(replacement)
+      expect(lifecycle.state.setStatus).toHaveBeenCalledTimes(1)
+      expect(getCurrentSession()).toBe(replacement)
     })
 
     it('runs its cleanup again on the real unmount after the replay and ends its session once', async () => {
       const lifecycle = renderLifecycle(
-        { session: createSession('loaded-session') },
+        { session: createTestSession({ id: 'loaded-session' }) },
         { reactStrictMode: true },
       )
       await settleDeparture()
-      expect(lifecycle.calls.setSession).not.toHaveBeenCalled()
+      expect(lifecycle.state.setSession).not.toHaveBeenCalled()
 
       lifecycle.unmount()
       await settleDeparture()
@@ -475,8 +373,8 @@ describe('useRawProcessorLifecycle', () => {
         dispose: 2,
         revoke: 2,
       })
-      expect(lifecycle.calls.setSession).toHaveBeenCalledTimes(1)
-      expect(lifecycle.store.session).toBeNull()
+      expect(lifecycle.state.setSession).toHaveBeenCalledTimes(1)
+      expect(getCurrentSession()).toBeNull()
     })
   })
 })

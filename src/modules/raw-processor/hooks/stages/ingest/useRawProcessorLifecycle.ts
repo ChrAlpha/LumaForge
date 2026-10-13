@@ -1,24 +1,18 @@
-import type { MutableRefObject } from 'react'
 import { useEffect } from 'react'
 
-import type { DecodedImage } from '~/lib/raw/decoder'
-import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
-
-import type { ImageSession } from '../../../model/session'
-import type { ProcessingStatus } from '../../../model/workflow'
 import { releaseSourceForUnmount } from '../../../services/workflow/raw-workflow-resources'
-import type { SetImageSession } from '../../../state/session.atoms'
+import { rawWorkflowStore } from '../../../state/workflow.atoms'
+import type { RawWorkflowRuntime } from '../../useRawWorkflowRefs'
 
-type UseRawProcessorLifecycleInput = {
-  isMountedRef: MutableRefObject<boolean>
-  runtimeWorkSessionIdRef: MutableRefObject<string | null>
-  pendingLoadSessionIdRef: MutableRefObject<string | null>
-  /** The session this mount last published to the store. */
-  ownedSessionIdRef: MutableRefObject<string | null>
-  decodedImageRef: MutableRefObject<DecodedImage | null>
-  previewCopyCanvasRef: MutableRefObject<HTMLCanvasElement | null>
-  /** Reads the session store when called, not the last render. */
-  getSession: () => ImageSession | null
+type UseRawProcessorLifecycleInput = Pick<
+  RawWorkflowRuntime,
+  | 'isMountedRef'
+  | 'runtimeWorkSessionIdRef'
+  | 'pendingLoadSessionIdRef'
+  | 'ownedSessionIdRef'
+  | 'decodedImageRef'
+  | 'previewCopyCanvasRef'
+> & {
   abortExportWork: () => void
   abortRuntimeWork: () => void
   queueExportResultResourceDisposal: () => void
@@ -27,11 +21,6 @@ type UseRawProcessorLifecycleInput = {
    * session it names, that session's URL; another session's is left alone.
    */
   revokeCurrentEmbeddedPreviewUrl: (ownerSessionId?: string | null) => void
-  setStatus: (status: ProcessingStatus) => void
-  setError: (error: string | null) => void
-  setProgress: (progress: number) => void
-  setStats: (stats: PipelineStats | null) => void
-  setSession: SetImageSession
 }
 
 export function useRawProcessorLifecycle({
@@ -41,16 +30,10 @@ export function useRawProcessorLifecycle({
   ownedSessionIdRef,
   decodedImageRef,
   previewCopyCanvasRef,
-  getSession,
   abortExportWork,
   abortRuntimeWork,
   queueExportResultResourceDisposal,
   revokeCurrentEmbeddedPreviewUrl,
-  setStatus,
-  setError,
-  setProgress,
-  setStats,
-  setSession,
 }: UseRawProcessorLifecycleInput) {
   useEffect(() => {
     isMountedRef.current = true
@@ -61,12 +44,14 @@ export function useRawProcessorLifecycle({
     // since, and its status, are not this mount's to clear.
     const depart = (sessionId: string | null) => {
       decodedImageRef.current = null
-      if (!sessionId || getSession()?.id !== sessionId) return
-      setStatus('idle')
-      setError(null)
-      setProgress(0)
-      setStats(null)
-      setSession((prev) => (prev?.id === sessionId ? null : prev))
+      if (!sessionId || rawWorkflowStore.getSession()?.id !== sessionId) return
+      rawWorkflowStore.setStatus('idle')
+      rawWorkflowStore.setError(null)
+      rawWorkflowStore.setProgress(0)
+      rawWorkflowStore.setStats(null)
+      rawWorkflowStore.setSession((prev) =>
+        prev?.id === sessionId ? null : prev,
+      )
       if (ownedSessionIdRef.current === sessionId) {
         ownedSessionIdRef.current = null
       }
@@ -108,7 +93,6 @@ export function useRawProcessorLifecycle({
     abortExportWork,
     abortRuntimeWork,
     decodedImageRef,
-    getSession,
     isMountedRef,
     ownedSessionIdRef,
     pendingLoadSessionIdRef,
@@ -116,10 +100,5 @@ export function useRawProcessorLifecycle({
     queueExportResultResourceDisposal,
     revokeCurrentEmbeddedPreviewUrl,
     runtimeWorkSessionIdRef,
-    setError,
-    setProgress,
-    setSession,
-    setStats,
-    setStatus,
   ])
 }

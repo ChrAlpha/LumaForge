@@ -25,6 +25,9 @@ function createRawWorkflowRuntime() {
     isMountedRef: ref(false),
     runtimeWorkSessionIdRef: ref<string | null>(null),
     pendingLoadSessionIdRef: ref<string | null>(null),
+    // The session this mount last published. Only that one ends when the
+    // mount departs; a session another mount publishes is never this one's.
+    ownedSessionIdRef: ref<string | null>(null),
     exportAbortControllerRef: ref<AbortController | null>(null),
     exportGraphVersionRef: ref(0),
     decodedImageRef: ref<DecodedImage | null>(null),

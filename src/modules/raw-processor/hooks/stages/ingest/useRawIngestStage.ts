@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 
 import type { ExportResourceCleanupReason } from '~/lib/export/execution-profile'
 import type { DecodedImage } from '~/lib/raw/decoder'
@@ -40,13 +40,10 @@ export function useRawIngestStage({
     isMountedRef,
     runtimeWorkSessionIdRef,
     pendingLoadSessionIdRef,
-    decodedImageRef,
+    ownedSessionIdRef,
     previewCopyCanvasRef,
     embeddedPreviewUrlRef,
   } = runtime
-  // The session this mount last published. Only that one ends when the mount
-  // departs; a session another mount publishes is never this mount's.
-  const ownedSessionIdRef = useRef<string | null>(null)
   // Publishes the new source's session to the store before it returns.
   const replaceFile = useCallback(
     (
@@ -61,26 +58,15 @@ export function useRawIngestStage({
       ownedSessionIdRef.current = next.id
       return next
     },
-    [],
+    [ownedSessionIdRef],
   )
 
   useRawProcessorLifecycle({
-    isMountedRef,
-    runtimeWorkSessionIdRef,
-    pendingLoadSessionIdRef,
-    ownedSessionIdRef,
-    decodedImageRef,
-    previewCopyCanvasRef,
-    getSession: rawWorkflowStore.getSession,
+    ...runtime,
     abortExportWork,
     abortRuntimeWork,
     queueExportResultResourceDisposal,
     revokeCurrentEmbeddedPreviewUrl,
-    setStatus: rawWorkflowStore.setStatus,
-    setError: rawWorkflowStore.setError,
-    setProgress: rawWorkflowStore.setProgress,
-    setStats: rawWorkflowStore.setStats,
-    setSession: rawWorkflowStore.setSession,
   })
 
   const { loadFile } = useRawLoadAction({
