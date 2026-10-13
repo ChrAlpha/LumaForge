@@ -1,24 +1,12 @@
 // @vitest-environment node
-import type {
-  LookSelection,
-  ProcessingParams,
-  UserColorIntent,
-} from '@lumaforge/luma-color-runtime'
-import {
-  colorGraphIntentSignature,
-  NEUTRAL_USER_COLOR_INTENT,
-  resolveExportColorGraph,
-} from '@lumaforge/luma-color-runtime'
+import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
 import { canonicalizeJson } from './canonicalize'
-import { colorGraphIdentity } from './color-graph-descriptor'
 import type { RenderParams } from './render-manifest'
 import type { ManifestRenderParamsInput } from './render-params'
-import {
-  invertManifestRenderParams,
-  projectManifestRenderParams,
-} from './render-params'
+import { projectManifestRenderParams } from './render-params'
 
 // Reviewed literal canonical JSON. The browser export writer and the CLI
 // writer both record render params through this projection, so they write
@@ -101,28 +89,6 @@ function project(
     rawRenderExposure: identityExposure,
     ...overrides,
   })
-}
-
-/** Parse the canonical bytes back, as a reader of a written manifest would. */
-function reread(params: RenderParams): RenderParams {
-  return JSON.parse(canonicalizeJson(params)) as RenderParams
-}
-
-function graphFingerprint(
-  look: LookSelection,
-  userColor: Partial<UserColorIntent>,
-  exposure: { ev: number; source: 'dng-baseline' | 'identity' | 'user' },
-): string {
-  const graph = resolveExportColorGraph({
-    ...look,
-    ...userColor,
-    selectiveColor:
-      userColor.selectiveColor ?? NEUTRAL_USER_COLOR_INTENT.selectiveColor,
-    lut: null,
-    rawRenderExposure: { ...exposure, multiplier: 2 ** exposure.ev },
-  })
-  if (!graph.supported) throw new Error(graph.message)
-  return colorGraphIdentity(graph).fingerprint
 }
 
 describe('projectManifestRenderParams canonical bytes', () => {
@@ -227,147 +193,5 @@ describe('projectManifestRenderParams canonical bytes', () => {
     // The look selection never enters render_params.
     expect(canonicalizeJson(params)).not.toContain('builtin')
     expect(canonicalizeJson(params)).not.toContain('warm')
-  })
-})
-
-describe('invertManifestRenderParams', () => {
-  it('reads omitted neutral HSL in a current record as neutral user color', () => {
-    const written = reread(project())
-    expect('selective_color' in written).toBe(false)
-    expect(invertManifestRenderParams(written)).toEqual({
-      userColor: NEUTRAL_USER_COLOR_INTENT,
-      intensity: 1,
-      rawRenderExposure: { ev: 0, source: 'identity' },
-      geometry: null,
-    })
-  })
-
-  it('keeps the recorded exposure, geometry and strength', () => {
-    const intent = invertManifestRenderParams(
-      reread(
-        project({
-          intensity: 0.37,
-          rawRenderExposure: { ev: 0.4125, source: 'image-statistics' },
-          geometry,
-        }),
-      ),
-    )
-    expect(intent.intensity).toBe(0.37)
-    expect(intent.rawRenderExposure).toEqual({
-      ev: 0.4125,
-      source: 'image-statistics',
-    })
-    expect(intent.geometry).toEqual(geometry)
-  })
-
-  it('reads a recorded selective color band for band', () => {
-    const recorded = {
-      ...explicitNeutralSelectiveColor,
-      aqua: { hue: 0, saturation: 15, lightness: 0 },
-    }
-    const intent = invertManifestRenderParams({
-      ...reread(project()),
-      selective_color: recorded,
-    })
-    expect(intent.userColor.selectiveColor).toEqual(recorded)
-  })
-
-  it('reads an explicit all-neutral record as neutral user color', () => {
-    const intent = invertManifestRenderParams({
-      ...reread(project()),
-      selective_color: explicitNeutralSelectiveColor,
-    })
-    expect(intent.userColor).toEqual(NEUTRAL_USER_COLOR_INTENT)
-  })
-
-  it('never invents a LUT identity or a look selection', () => {
-    const intent = invertManifestRenderParams(
-      reread(project({ userColor: nonNeutralUserColor, intensity: 0.75 })),
-    )
-    expect(Object.keys(intent).sort()).toEqual([
-      'geometry',
-      'intensity',
-      'rawRenderExposure',
-      'userColor',
-    ])
-    expect(intent.userColor).not.toHaveProperty('styleKind')
-    expect(intent.userColor).not.toHaveProperty('builtinPreset')
-    expect(intent.userColor).not.toHaveProperty('lut')
-  })
-})
-
-describe('invertManifestRenderParams reads what is recorded', () => {
-  it('reads the strength and the exposure with its provenance as written', () => {
-    const written = reread(
-      project({
-        intensity: 0,
-        rawRenderExposure: { ev: 0, source: 'user' },
-      }),
-    )
-    expect(invertManifestRenderParams(written)).toMatchObject({
-      intensity: 0,
-      rawRenderExposure: { ev: 0, source: 'user' },
-    })
-  })
-})
-
-describe('projection round trip', () => {
-  const nonNeutral = {
-    ...nonNeutralUserColor,
-    selectiveColor: {
-      ...explicitNeutralSelectiveColor,
-      red: { hue: 10, saturation: 0, lightness: 0 },
-      blue: { hue: 0, saturation: -30, lightness: 5 },
-    },
-  }
-  const looks: readonly LookSelection[] = [
-    { styleKind: 'none', builtinPreset: null, intensity: 0.37 },
-    { styleKind: 'builtin', builtinPreset: 'film-soft', intensity: 0.7 },
-  ]
-
-  for (const look of looks) {
-    it(`keeps the graph identity for a ${look.styleKind} look`, () => {
-      const written = reread(
-        project({
-          userColor: nonNeutral,
-          intensity: look.intensity,
-          rawRenderExposure: dngExposure,
-        }),
-      )
-      const restored = invertManifestRenderParams(written)
-      expect(restored.intensity).toBe(look.intensity)
-      expect(restored.rawRenderExposure).toEqual(dngExposure)
-
-      // The caller supplies the look; render_params never records it.
-      const restoredLook = { ...look, intensity: restored.intensity }
-      expect(
-        colorGraphIntentSignature({ ...restoredLook, ...restored.userColor }),
-      ).toBe(colorGraphIntentSignature({ ...look, ...nonNeutral }))
-      // Full-resolution export resolves no graph for built-in looks.
-      if (look.styleKind === 'none') {
-        expect(
-          graphFingerprint(restoredLook, restored.userColor, dngExposure),
-        ).toBe(graphFingerprint(look, nonNeutral, dngExposure))
-      }
-    })
-  }
-
-  it('projects its own inverse to the same bytes', () => {
-    const written = reread(
-      project({
-        userColor: nonNeutral,
-        intensity: 0.37,
-        rawRenderExposure: dngExposure,
-        geometry,
-      }),
-    )
-    const restored = invertManifestRenderParams(written)
-    const reprojected = projectManifestRenderParams({
-      userColor: restored.userColor,
-      intensity: restored.intensity,
-      rawRenderExposure: restored.rawRenderExposure,
-      geometry: restored.geometry ?? undefined,
-    })
-    expect(canonicalizeJson(reprojected)).toBe(canonicalizeJson(written))
   })
 })

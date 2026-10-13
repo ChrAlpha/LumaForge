@@ -1,5 +1,4 @@
-// Shared projection of user color intent onto manifest `render_params`, and
-// its inverse for readers that replay a manifest.
+// Shared projection of user color intent onto manifest `render_params`.
 //
 // `render_params` records the user color, the look strength, the RAW render
 // exposure and the geometry. It never records the look selection (style kind,
@@ -8,7 +7,6 @@
 
 import type {
   RawRenderExposureSource,
-  UserColorIntent,
   UserColorIntentInput,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -32,14 +30,6 @@ export interface ManifestRenderParamsInput {
   readonly rawRenderExposure: RecordedRawRenderExposure
   /** Present only when a geometry was applied at full resolution. */
   readonly geometry?: GeometryParams
-}
-
-/** What `render_params` says about a render, read back. */
-export interface ManifestRenderParamsIntent {
-  readonly userColor: UserColorIntent
-  readonly intensity: number
-  readonly rawRenderExposure: RecordedRawRenderExposure
-  readonly geometry: GeometryParams | null
 }
 
 /**
@@ -76,42 +66,5 @@ export function projectManifestRenderParams(
     intensity: input.intensity,
     raw_render_exposure_ev: input.rawRenderExposure.ev,
     raw_render_exposure_source: input.rawRenderExposure.source,
-  }
-}
-
-/**
- * Read `render_params` back into user color intent. Omitted selective color
- * reads as neutral, the only field a current record may leave out; every
- * other field is read as recorded. The look selection and LUT are not part
- * of the result.
- *
- * This projects params already typed as `RenderParams`; it validates
- * nothing. A manifest read from outside must pass `parseRenderManifest`
- * first, which verifies its hash and holds every executable field to the
- * shape the current writers record.
- */
-export function invertManifestRenderParams(
-  params: RenderParams,
-): ManifestRenderParamsIntent {
-  return {
-    userColor: normalizeUserColorIntent({
-      userExposureEv: params.exposure_ev,
-      userContrast: params.tone_curve.contrast,
-      userHighlights: params.tone_curve.highlights,
-      userShadows: params.tone_curve.shadows,
-      userWhites: params.tone_curve.whites,
-      userBlacks: params.tone_curve.blacks,
-      userTemperature: params.color_balance.temperature,
-      userTint: params.color_balance.tint,
-      userSaturation: params.saturation.saturation,
-      userVibrance: params.saturation.vibrance,
-      selectiveColor: params.selective_color,
-    }),
-    intensity: params.intensity,
-    rawRenderExposure: {
-      ev: params.raw_render_exposure_ev,
-      source: params.raw_render_exposure_source,
-    },
-    geometry: params.geometry ?? null,
   }
 }

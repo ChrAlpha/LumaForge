@@ -12,12 +12,8 @@ import { computeManifestSha256 } from './canonicalize'
 import { fingerprintColorGraph } from './color-graph-descriptor'
 import { createRenderManifest } from './create-render-manifest'
 import { parseRenderManifest } from './parse-render-manifest'
-import type { RenderManifest } from './render-manifest'
-import type { ManifestRenderParamsIntent } from './render-params'
-import {
-  invertManifestRenderParams,
-  projectManifestRenderParams,
-} from './render-params'
+import type { RenderManifest, RenderParams } from './render-manifest'
+import { projectManifestRenderParams } from './render-params'
 
 const userColor = { userExposureEv: 0.5, userContrast: 10 }
 const rawRenderExposure = { ev: 0.2, source: 'dng-baseline' as const }
@@ -728,18 +724,15 @@ describe('sealed records of the current version with a malformed graph', () => {
 
 describe('reading render params from an untrusted manifest', () => {
   type Read =
-    | { ok: true; intent: ManifestRenderParamsIntent }
+    | { ok: true; params: RenderParams }
     | { ok: false; paths: string[] }
 
   // The only route from untrusted JSON to replayable params: the whole
-  // manifest passes the canonical parser before its params are inverted.
+  // manifest passes the canonical parser before its params are read.
   function readParams(value: unknown): Read {
     const parsed = parseRenderManifest(value)
     return parsed.ok
-      ? {
-          ok: true,
-          intent: invertManifestRenderParams(parsed.manifest.render_params),
-        }
+      ? { ok: true, params: parsed.manifest.render_params }
       : { ok: false, paths: parsed.issues.map((issue) => issue.path) }
   }
 
@@ -747,29 +740,17 @@ describe('reading render params from an untrusted manifest', () => {
     const read = readParams(JSON.parse(JSON.stringify(sealed())))
     expect(read.ok).toBe(true)
     if (!read.ok) return
-    expect(read.intent.userColor.userExposureEv).toBe(0.5)
-    expect(read.intent.userColor.userContrast).toBe(10)
-    expect(read.intent.intensity).toBe(1)
-    expect(read.intent.rawRenderExposure).toEqual({
-      ev: 0.2,
-      source: 'dng-baseline',
-    })
-    expect(read.intent.geometry).toEqual(sealed().render_params.geometry)
+    expect(read.params).toEqual(sealed().render_params)
   })
 
-  it('reads omitted HSL and an explicit all-neutral record alike', () => {
-    const current = JSON.parse(JSON.stringify(sealed())) as Json
+  it('reads an explicit all-neutral HSL record as written', () => {
     const explicit = resealed((manifest) => {
       manifest.render_params.selective_color = allBands()
     })
-    const hash = explicit.manifest_sha256
-    const read = readParams(current)
-    expect('selective_color' in current.render_params).toBe(false)
-    expect(read.ok && read.intent.userColor.selectiveColor).toEqual(
-      NEUTRAL_USER_COLOR_INTENT.selectiveColor,
-    )
-    expect(readParams(explicit)).toEqual(read)
-    expect(explicit.manifest_sha256).toBe(hash)
+    expect(readParams(explicit)).toEqual({
+      ok: true,
+      params: explicit.render_params,
+    })
   })
 
   it('refuses sealed malformed params', () => {

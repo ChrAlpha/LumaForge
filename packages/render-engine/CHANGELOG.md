@@ -17,6 +17,10 @@ predates this file.
   `nowMs` from `@lumaforge/render-engine/export`. They were internal steps of
   the full-resolution export, which no consumer called; export metrics still
   reach `onMetric` as `ExportPerfMetric` records.
+- Removed `invertManifestRenderParams` and `ManifestRenderParamsIntent`
+  from `@lumaforge/render-engine` and `@lumaforge/render-engine/manifest`. No
+  production reader used them; a replaying reader maps a parsed manifest's
+  `render_params` onto its own params schema (as `lmfg` does).
 - `RawRenderExposureSource` is no longer exported from
   `@lumaforge/render-engine` or `@lumaforge/render-engine/manifest`; import it
   from `@lumaforge/luma-color-runtime`, which defines it.

@@ -48,9 +48,7 @@ export type {
   ToneCurveParams,
 } from './manifest/render-manifest'
 export {
-  invertManifestRenderParams,
   type ManifestRenderParamsInput,
-  type ManifestRenderParamsIntent,
   projectManifestRenderParams,
   type RecordedRawRenderExposure,
 } from './manifest/render-params'

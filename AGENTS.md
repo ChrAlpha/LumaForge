@@ -336,10 +336,10 @@ variant:
   `packages/render-engine/src/manifest/render-params.ts` writes
   `render_params` for both the app
   (`src/modules/raw-processor/services/export/export-manifest.ts`) and `lmfg`
-  (`packages/lmfg-cli/src/services/color-graph.ts`). Its inverse lives next
-  to it and validates nothing: a manifest read from outside passes
-  `parseRenderManifest`
-  (`packages/render-engine/src/manifest/parse-render-manifest.ts`) first.
+  (`packages/lmfg-cli/src/services/color-graph.ts`). A manifest read from
+  outside passes `parseRenderManifest`
+  (`packages/render-engine/src/manifest/parse-render-manifest.ts`) before
+  `lmfg` reads its params back.
 - Preview color policy: `resolvePreviewColorPlan`
   (`packages/render-engine/src/preview/preview-color-plan.ts`) decides what the
   WebGPU preview, the CPU preview, and the histogram draw for the selected

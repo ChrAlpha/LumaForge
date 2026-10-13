@@ -62,10 +62,9 @@ render exposure fields. A record an earlier writer sealed without one of
 these, including every manifest `lmfg` 0.1.0 wrote, is refused, not
 completed. It returns the manifest typed, or every issue with its field path.
 
-`invertManifestRenderParams` reads `render_params` back from a parsed
-manifest and validates nothing on its own. `checkRecordedExportGeometry` then
-says whether a structurally valid manifest records an export the engine can
-produce, with a typed refusal when it does not.
+`checkRecordedExportGeometry` then says whether a structurally valid manifest
+records an export the engine can produce, with a typed refusal when it does
+not.
 
 ## Test environment
 
