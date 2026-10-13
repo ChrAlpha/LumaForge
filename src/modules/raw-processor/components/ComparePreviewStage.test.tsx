@@ -1,5 +1,6 @@
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
@@ -148,5 +149,69 @@ describe('comparePreviewStage', () => {
     expect(handle.onChange).toBe(onSplitChange)
     expect(handle.onReset).toBe(onSplitReset)
     expect(handle.onPreviewChange).toBeUndefined()
+  })
+
+  it('opens the RAW picker from the empty upload dock and follows engine readiness', async () => {
+    const { container, rerender } = render(
+      stage({ hasImage: false, runtimeReadinessState: 'pending' }),
+    )
+
+    expect(screen.getByText('Waking RAW engine')).toBeInTheDocument()
+    const upload = screen.getByRole('button', {
+      name: /finish a raw with a lut/i,
+    })
+    expect(upload).toBeEnabled()
+    const input = container.querySelector<HTMLInputElement>(
+      '.raw-lab-stage-frame input[type="file"]',
+    )!
+    const inputClick = vi.spyOn(input, 'click').mockImplementation(() => {})
+    await userEvent.click(upload)
+    expect(inputClick).toHaveBeenCalledTimes(1)
+
+    rerender(stage({ hasImage: false, runtimeReadinessState: 'ready' }))
+    expect(screen.getByText('RAW engine ready')).toBeInTheDocument()
+  })
+
+  it('keeps a loaded stage drop-only instead of a picker target', async () => {
+    const onRawDrop = vi.fn()
+    const file = new File(['raw'], 'photo.dng', { type: 'image/x-adobe-dng' })
+    const { container } = render(stage({ onRawDrop }))
+    const stageFrame = container.querySelector('.raw-lab-stage-frame')!
+    const inputClick = vi
+      .spyOn(HTMLInputElement.prototype, 'click')
+      .mockImplementation(() => {})
+
+    expect(stageFrame).not.toHaveAttribute('tabindex')
+    await userEvent.click(stageFrame)
+    expect(inputClick).not.toHaveBeenCalled()
+
+    fireEvent.drop(stageFrame, { dataTransfer: { files: [file] } })
+    expect(onRawDrop).toHaveBeenCalledWith([file])
+    inputClick.mockRestore()
+  })
+
+  it('mounts no split handle where the split is turned off', () => {
+    render(stage({ decodedFrame: acceptedFrame, splitEnabled: false }))
+    expect(stageProps.splitHandle).toHaveLength(0)
+  })
+
+  it('tells an export handoff from a restore once the preview is released', () => {
+    const { container, rerender } = render(
+      stage({ previewSuspended: true, isProcessing: true, phase: 'exporting' }),
+    )
+    const state = () =>
+      container
+        .querySelector('.raw-lab-stage')
+        ?.getAttribute('data-preview-state')
+
+    expect(state()).toBe('exporting-released')
+    expect(
+      container.querySelector('[data-raw-export-processing-handoff]'),
+    ).not.toBeNull()
+
+    rerender(
+      stage({ previewSuspended: true, isProcessing: true, phase: 'decoding' }),
+    )
+    expect(state()).toBe('restoring-released')
   })
 })

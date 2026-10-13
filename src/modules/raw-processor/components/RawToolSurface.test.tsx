@@ -628,6 +628,9 @@ describe('rawToolSurface', () => {
       screen.getByRole('button', { name: 'Reset tone' }),
     ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Compare' }))
+    expect(
+      screen.getByText('Drag the split directly on the image.'),
+    ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Reset compare view' }))
 
     expect(onCompareReset).toHaveBeenCalledTimes(1)
@@ -780,9 +783,11 @@ describe('rawToolSurface', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('disables strength before upload', () => {
+  it('disables strength but keeps LUT loading before upload', () => {
     const onChange = vi.fn()
     renderRawToolSurface({ ...baseProps, onIntensityChange: onChange })
+
+    expect(screen.getByLabelText(/add \.cube lut/i)).toBeEnabled()
 
     const strength = screen.getByRole('slider', { name: 'Strength' })
     expect(strength).toHaveAttribute('data-disabled')

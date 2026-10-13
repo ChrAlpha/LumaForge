@@ -177,5 +177,9 @@ describe('lut file acceptance', () => {
 
     drop(frame, [rawFile('look.CUBE')])
     expect(forwardedNames(onFileDrop)).toEqual([['look.CUBE']])
+
+    // A tap picks through the native input on mobile.
+    fireEvent.change(input, { target: { files: [rawFile('tap.cube')] } })
+    expect(forwardedNames(onFileDrop).at(-1)).toEqual(['tap.cube'])
   })
 })
