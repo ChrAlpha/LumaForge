@@ -411,7 +411,7 @@ export class WebGPUProcessingPipeline {
       processDraws: this.processDraws,
     }
   }
-  dispose(_options: { releaseContext?: boolean } = {}) {
+  dispose() {
     this.disposed = true
     this.frames?.dispose()
     this.variants?.dispose()

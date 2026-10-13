@@ -33,11 +33,10 @@ function createPipeline({
   return {
     initialize: vi.fn(initialize),
     release,
-    dispose: vi.fn((options?: { releaseContext?: boolean }) => {
+    dispose: vi.fn(() => {
       if (disposed) return
       disposed = true
-      if (options) release(options)
-      else release()
+      release()
       const pending = [...listeners]
       listeners.clear()
       for (const listener of pending) listener()
@@ -187,12 +186,8 @@ describe('usePreviewPipelineEvacuation', () => {
     result.current.registerCurrentPreviewPipelineForEvacuation()
     await disposeGpuOwners(registry)
 
-    expect(processed.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
-    expect(original.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    expect(processed.release).toHaveBeenCalledOnce()
+    expect(original.release).toHaveBeenCalledOnce()
     expect(pipelineRef.current).toBeNull()
     expect(registry.snapshot().live).toEqual([])
 
@@ -273,12 +268,8 @@ describe('usePreviewPipelineEvacuation', () => {
 
     expect(first.release).toHaveBeenCalledOnce()
     expect(firstOriginal.release).toHaveBeenCalledOnce()
-    expect(restored.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
-    expect(restoredOriginal.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    expect(restored.release).toHaveBeenCalledOnce()
+    expect(restoredOriginal.release).toHaveBeenCalledOnce()
     expect(pipelineRef.current).toBeNull()
   })
 

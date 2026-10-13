@@ -1,15 +1,10 @@
 import type { RefObject } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-/** Release options a preview pipeline accepts. */
-export interface PreviewPipelineReleaseOptions {
-  releaseContext?: boolean
-}
-
 /** The lifetime surface of a preview GPU pipeline. */
 export interface PreviewLifecyclePipeline {
   initialize: () => Promise<void>
-  dispose: (options?: PreviewPipelineReleaseOptions) => void
+  dispose: () => void
   /** Tells the owner when anyone disposes the pipeline, so it forgets it. */
   onDisposed?: (listener: () => void) => () => void
   getResourceStats?: () => { estimatedBytes: number }
@@ -49,7 +44,7 @@ export interface PreviewPipelineLifecycleOptions<
   onInitializationError: (error: unknown) => void
   /**
    * While suspended there is no pipeline; entering suspension releases the
-   * current one with its GPU context.
+   * current one.
    */
   suspended?: boolean
   /**
@@ -66,7 +61,7 @@ export interface PreviewPipelineLifecycle<
   pipelineRef: RefObject<TPipeline | null>
   isInitialized: boolean
   /** Releases the current pipeline once; later calls are no-ops. */
-  release: (options?: PreviewPipelineReleaseOptions) => void
+  release: () => void
 }
 
 /**
@@ -89,13 +84,9 @@ export function usePreviewPipelineLifecycle<
   releaseOnInitializationFailure = false,
 }: PreviewPipelineLifecycleOptions<TPipeline>): PreviewPipelineLifecycle<TPipeline> {
   const pipelineRef = useRef<TPipeline | null>(null)
-  const suspendedRef = useRef(suspended)
   const onInitializationErrorRef = useRef(onInitializationError)
-  const releaseCurrentRef = useRef<
-    (options?: PreviewPipelineReleaseOptions) => void
-  >(() => {})
+  const releaseCurrentRef = useRef<() => void>(() => {})
   const [isInitialized, setIsInitialized] = useState(false)
-  suspendedRef.current = suspended
 
   useEffect(() => {
     onInitializationErrorRef.current = onInitializationError
@@ -133,18 +124,17 @@ export function usePreviewPipelineLifecycle<
 
     // The publication port hears `null` once per pipeline it may know of,
     // before the pipeline is released.
-    const releasePipeline = (options?: PreviewPipelineReleaseOptions) => {
+    const releasePipeline = () => {
       const owned = pipeline
       if (!owned || disposed) return
       const wasPublished = pipelineRef.current === owned
       forgetPipeline()
       if (!wasPublished) publish(null, null)
-      if (options) owned.dispose(options)
-      else owned.dispose()
+      owned.dispose()
     }
 
     const handle: PreviewPipelineHandle = {
-      dispose: () => releasePipeline({ releaseContext: true }),
+      dispose: releasePipeline,
       snapshot: () =>
         pipeline && !disposed
           ? {
@@ -177,11 +167,7 @@ export function usePreviewPipelineLifecycle<
 
     return () => {
       cancelled = true
-      // Suspension frees the GPU context too; an ordinary teardown does not
-      // force context loss.
-      releasePipeline(
-        suspendedRef.current ? { releaseContext: true } : undefined,
-      )
+      releasePipeline()
       if (releaseCurrentRef.current === releasePipeline) {
         releaseCurrentRef.current = () => {}
       }
@@ -195,11 +181,7 @@ export function usePreviewPipelineLifecycle<
     suspended,
   ])
 
-  const release = useCallback(
-    (options?: PreviewPipelineReleaseOptions) =>
-      releaseCurrentRef.current(options),
-    [],
-  )
+  const release = useCallback(() => releaseCurrentRef.current(), [])
 
   return { pipelineRef, isInitialized, release }
 }

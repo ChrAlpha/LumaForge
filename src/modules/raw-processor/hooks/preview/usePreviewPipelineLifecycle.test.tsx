@@ -38,11 +38,10 @@ function createPipeline({
     initialize: vi.fn(initialize),
     release,
     unsubscribe,
-    dispose: vi.fn((options?: { releaseContext?: boolean }) => {
+    dispose: vi.fn(() => {
       if (disposed) return
       disposed = true
-      if (options) release(options)
-      else release()
+      release()
       const pending = [...listeners]
       listeners.clear()
       for (const listener of pending) listener()
@@ -156,8 +155,7 @@ describe('usePreviewPipelineLifecycle', () => {
       renderLifecycle([pipeline])
 
     unmount()
-    // An ordinary unmount releases the pipeline without forcing context loss.
-    expect(pipeline.release).toHaveBeenCalledExactlyOnceWith()
+    expect(pipeline.release).toHaveBeenCalledOnce()
     expect(pipeline.unsubscribe).toHaveBeenCalledOnce()
     expect(nulls()).toBe(1)
 
@@ -167,7 +165,7 @@ describe('usePreviewPipelineLifecycle', () => {
     expect(onInitializationError).not.toHaveBeenCalled()
   })
 
-  it('releases with its context on suspension during initialization and builds anew on resume', async () => {
+  it('releases on suspension during initialization and builds anew on resume', async () => {
     const initialized = deferred()
     const first = createPipeline({ initialize: () => initialized.promise })
     const second = createPipeline()
@@ -179,9 +177,7 @@ describe('usePreviewPipelineLifecycle', () => {
     } = renderLifecycle([first, second])
 
     rerender({ suspended: true })
-    expect(first.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    expect(first.release).toHaveBeenCalledOnce()
     expect(result.current.pipelineRef.current).toBeNull()
     expect(result.current.isInitialized).toBe(false)
 
@@ -210,7 +206,7 @@ describe('usePreviewPipelineLifecycle', () => {
       const { result, unmount, published, onInitializationError } =
         renderLifecycle([pipeline], { releaseOnInitializationFailure: true })
 
-      act(() => pipeline.dispose({ releaseContext: true }))
+      act(() => pipeline.dispose())
       expect(pipeline.unsubscribe).toHaveBeenCalledOnce()
 
       await act(async () => {
@@ -226,9 +222,7 @@ describe('usePreviewPipelineLifecycle', () => {
 
       unmount()
       expect(pipeline.dispose).toHaveBeenCalledOnce()
-      expect(pipeline.release).toHaveBeenCalledExactlyOnceWith({
-        releaseContext: true,
-      })
+      expect(pipeline.release).toHaveBeenCalledOnce()
     },
   )
 
@@ -244,11 +238,9 @@ describe('usePreviewPipelineLifecycle', () => {
 
     // The handle, another owner, and the handle again: one release, one null.
     act(() => firstHandle!.dispose())
-    act(() => first.dispose({ releaseContext: true }))
+    act(() => first.dispose())
     act(() => firstHandle!.dispose())
-    expect(first.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    expect(first.release).toHaveBeenCalledOnce()
     expect(nulls()).toBe(1)
     expect(result.current.pipelineRef.current).toBeNull()
     expect(result.current.isInitialized).toBe(false)
@@ -260,7 +252,7 @@ describe('usePreviewPipelineLifecycle', () => {
     const nullsBefore = nulls()
 
     act(() => firstHandle!.dispose())
-    act(() => first.dispose({ releaseContext: true }))
+    act(() => first.dispose())
     expect(second.dispose).not.toHaveBeenCalled()
     expect(result.current.pipelineRef.current).toBe(second)
     expect(result.current.isInitialized).toBe(true)
@@ -288,9 +280,7 @@ describe('usePreviewPipelineLifecycle', () => {
 
     act(() => handle!.dispose())
     act(() => handle!.dispose())
-    expect(pipeline.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    expect(pipeline.release).toHaveBeenCalledOnce()
     expect(result.current.pipelineRef.current).toBeNull()
     expect(nulls()).toBe(1)
 
@@ -367,11 +357,9 @@ describe('usePreviewPipelineLifecycle', () => {
     const { result, nulls, unmount } = renderLifecycle([pipeline])
     await flush()
 
-    act(() => result.current.release({ releaseContext: true }))
-    act(() => result.current.release({ releaseContext: true }))
-    expect(pipeline.release).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    act(() => result.current.release())
+    act(() => result.current.release())
+    expect(pipeline.release).toHaveBeenCalledOnce()
     expect(result.current.pipelineRef.current).toBeNull()
     expect(result.current.isInitialized).toBe(false)
     expect(nulls()).toBe(1)

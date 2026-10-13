@@ -139,7 +139,7 @@ describe('originalGpuLayer', () => {
     const failure = new Error('GPU completion failed')
     await act(async () => frame.reject(failure))
     expect(onError).toHaveBeenCalledExactlyOnceWith(failure, '1')
-    expect(dispose).toHaveBeenCalledExactlyOnceWith({ releaseContext: true })
+    expect(dispose).toHaveBeenCalledOnce()
     expect(onReady).not.toHaveBeenCalled()
   })
 
@@ -273,35 +273,6 @@ describe('originalGpuLayer', () => {
     })
   })
 
-  it('does not force GPU context loss on ordinary unmount', async () => {
-    const dispose = vi.fn()
-    const renderPipeline = vi.fn()
-    const { unmount } = render(
-      <OriginalGpuLayer
-        imageRef={{ current: decodedImage }}
-        decodedFrame={testFrame(1)}
-        generationKey="1"
-        createPipeline={() =>
-          ({
-            initialize: vi.fn().mockResolvedValue(undefined),
-            uploadImage: vi.fn(),
-            setParams: vi.fn(),
-            render: renderPipeline,
-            waitForGpu: vi.fn().mockResolvedValue(undefined),
-            resize: vi.fn(),
-            dispose,
-          }) as never
-        }
-      />,
-    )
-
-    await waitFor(() => expect(renderPipeline).toHaveBeenCalled())
-
-    unmount()
-
-    expect(dispose).toHaveBeenCalledWith()
-  })
-
   it('reports render failures and releases the original GPU context', async () => {
     const dispose = vi.fn()
     const onError = vi.fn()
@@ -334,7 +305,7 @@ describe('originalGpuLayer', () => {
         '1',
       )
     })
-    expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
+    expect(dispose).toHaveBeenCalled()
   })
   it('draws no decoded pixels until an accepted frame names them', async () => {
     const pipeline = createPipelineMock()
@@ -624,9 +595,7 @@ describe('originalGpuLayer', () => {
         failure,
         '1:quick:dual:compare:active',
       )
-      expect(pipeline.dispose).toHaveBeenCalledExactlyOnceWith({
-        releaseContext: true,
-      })
+      expect(pipeline.dispose).toHaveBeenCalledOnce()
       expect(onPipelineChange).toHaveBeenLastCalledWith(null)
     } finally {
       vi.unstubAllGlobals()

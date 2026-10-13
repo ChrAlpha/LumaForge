@@ -210,10 +210,8 @@ describe('preview pipeline facade', () => {
     fixtures.gpu.initialize.mockRejectedValue(failure)
     const pipeline = new RawProcessingPipeline(document.createElement('canvas'))
     await expect(pipeline.initialize()).rejects.toBe(failure)
-    pipeline.dispose({ releaseContext: true })
-    expect(fixtures.gpu.dispose).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    pipeline.dispose()
+    expect(fixtures.gpu.dispose).toHaveBeenCalledOnce()
   })
 
   it('notifies disposal subscribers once however often the pipeline is disposed', async () => {
@@ -224,13 +222,11 @@ describe('preview pipeline facade', () => {
     pipeline.onDisposed(owner)
     pipeline.onDisposed(departed)()
 
-    pipeline.dispose({ releaseContext: true })
     pipeline.dispose()
-    pipeline.dispose({ releaseContext: true })
+    pipeline.dispose()
+    pipeline.dispose()
 
-    expect(fixtures.gpu.dispose).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    expect(fixtures.gpu.dispose).toHaveBeenCalledOnce()
     expect(owner).toHaveBeenCalledOnce()
     expect(departed).not.toHaveBeenCalled()
     // Owners that subscribe late still learn the pipeline is gone.
@@ -277,14 +273,11 @@ describe('preview pipeline facade', () => {
     // The late initialization releases what it acquired after the first
     // disposal, without telling the owner a second time.
     expect(fixtures.gpu.dispose).toHaveBeenCalledTimes(2)
-    expect(fixtures.gpu.dispose).toHaveBeenLastCalledWith({
-      releaseContext: true,
-    })
     expect(owner).toHaveBeenCalledOnce()
     expect(canvas.dataset.renderBackend).toBeUndefined()
     expect(fixtures.gpu.onLost).not.toHaveBeenCalled()
     expect(reportGpuPreviewFailure).not.toHaveBeenCalled()
-    pipeline.dispose({ releaseContext: true })
+    pipeline.dispose()
     expect(fixtures.gpu.dispose).toHaveBeenCalledTimes(2)
     expect(owner).toHaveBeenCalledOnce()
   })

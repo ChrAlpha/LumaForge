@@ -158,7 +158,7 @@ export async function renderOriginalReferenceSnapshot({
   const disposePipeline = () => {
     if (disposed) return
     disposed = true
-    pipeline.dispose({ releaseContext: true })
+    pipeline.dispose()
   }
   const handleAbort = () => {
     disposePipeline()

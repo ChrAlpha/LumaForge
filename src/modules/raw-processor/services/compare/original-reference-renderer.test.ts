@@ -87,7 +87,7 @@ describe('renderOriginalReferenceSnapshot', () => {
         })
         expect(toBlob).toHaveBeenCalledOnce()
       }
-      expect(dispose).toHaveBeenCalledExactlyOnceWith({ releaseContext: true })
+      expect(dispose).toHaveBeenCalledOnce()
     },
   )
 
@@ -138,7 +138,7 @@ describe('renderOriginalReferenceSnapshot', () => {
       }),
     )
     expect(render).toHaveBeenCalled()
-    expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
+    expect(dispose).toHaveBeenCalled()
     expect(snapshot.width * snapshot.height).toBeLessThanOrEqual(1_000_000)
     expect(snapshot).toMatchObject({
       key: 'snapshot-key',
@@ -184,7 +184,7 @@ describe('renderOriginalReferenceSnapshot', () => {
     expect(uploadImage).not.toHaveBeenCalled()
     expect(toBlob).not.toHaveBeenCalled()
     expect(createObjectURL).not.toHaveBeenCalled()
-    expect(dispose).toHaveBeenCalledExactlyOnceWith({ releaseContext: true })
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('disposes the pipeline and revokes partial output when encoding fails', async () => {
@@ -215,7 +215,7 @@ describe('renderOriginalReferenceSnapshot', () => {
       }),
     ).rejects.toThrow('ORIGINAL_REFERENCE_SNAPSHOT_ENCODE_FAILED')
 
-    expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
+    expect(dispose).toHaveBeenCalled()
     expect(createObjectURL).not.toHaveBeenCalled()
   })
 
@@ -256,7 +256,7 @@ describe('renderOriginalReferenceSnapshot', () => {
     await vi.waitFor(() => expect(render).toHaveBeenCalled())
     abortController.abort()
 
-    expect(dispose).toHaveBeenCalledWith({ releaseContext: true })
+    expect(dispose).toHaveBeenCalled()
     finishEncode(new Blob(['jpeg'], { type: 'image/jpeg' }))
 
     await expect(renderPromise).rejects.toThrow(

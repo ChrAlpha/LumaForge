@@ -82,7 +82,7 @@ export function usePreviewPipelineEvacuation({
         'processed',
         processed,
         processed.getResourceStats?.().estimatedBytes,
-        () => processed.dispose({ releaseContext: true }),
+        () => processed.dispose(),
       )
     }
 

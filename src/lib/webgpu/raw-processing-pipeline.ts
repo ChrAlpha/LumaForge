@@ -69,7 +69,7 @@ export class RawProcessingPipeline {
       this.activeRenderer = new WebGPUProcessingPipeline(this.canvas)
       await this.renderer.initialize()
       if (this.disposed) {
-        this.renderer.dispose({ releaseContext: true })
+        this.renderer.dispose()
         throw new Error('PREVIEW_PIPELINE_DISPOSED')
       }
       this.canvas.dataset.renderBackend = this.backendName
@@ -181,11 +181,11 @@ export class RawProcessingPipeline {
   }
 
   /** Releases the renderer once; repeated calls are no-ops. */
-  dispose(...args: Parameters<PreviewPipelineBackend['dispose']>) {
+  dispose() {
     if (this.disposed) return
     this.disposed = true
     try {
-      return this.activeRenderer?.dispose(...args)
+      this.activeRenderer?.dispose()
     } finally {
       const listeners = [...this.disposeListeners]
       this.disposeListeners.clear()

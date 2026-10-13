@@ -108,7 +108,7 @@ export function OriginalGpuLayer({
 
   const reportPipelineError = useCallback(
     (error: unknown) => {
-      releasePipeline({ releaseContext: true })
+      releasePipeline()
       onErrorRef.current?.(error, generationKey)
     },
     [generationKey, releasePipeline],

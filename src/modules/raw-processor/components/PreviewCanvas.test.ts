@@ -60,11 +60,10 @@ vi.mock('~/lib/webgpu/raw-processing-pipeline', () => ({
       const disposeMock = vi.fn()
       const disposeListeners = new Set<() => void>()
       let disposed = false
-      const dispose = vi.fn((options?: { releaseContext?: boolean }) => {
+      const dispose = vi.fn(() => {
         if (disposed) return
         disposed = true
-        if (options) disposeMock(options)
-        else disposeMock()
+        disposeMock()
         const listeners = [...disposeListeners]
         disposeListeners.clear()
         for (const listener of listeners) listener()
@@ -783,9 +782,7 @@ describe('preview canvas upload descriptor', () => {
       }),
     )
 
-    expect(firstPipeline.disposeMock).toHaveBeenCalledExactlyOnceWith({
-      releaseContext: true,
-    })
+    expect(firstPipeline.disposeMock).toHaveBeenCalledOnce()
     expect(firstPipeline.dispose).toHaveBeenCalledOnce()
     expect(firstPipeline.unsubscribeDisposed).toHaveBeenCalledOnce()
     expect(onPipelineChange).toHaveBeenCalledWith(null)
@@ -805,7 +802,7 @@ describe('preview canvas upload descriptor', () => {
     // A stale handle to the suspended pipeline cannot clear its successor.
     const secondPipeline = pipelineMock.instances[1]!
     act(() => {
-      firstPipeline.dispose({ releaseContext: true })
+      firstPipeline.dispose()
     })
     expect(onPipelineChange).toHaveBeenLastCalledWith(secondPipeline)
     expect(firstPipeline.disposeMock).toHaveBeenCalledOnce()
