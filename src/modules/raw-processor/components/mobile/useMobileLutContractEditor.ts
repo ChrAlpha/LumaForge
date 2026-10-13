@@ -4,7 +4,10 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import { useState } from 'react'
 
+import { useLutContractBrowserState } from '../../hooks/useLutContractBrowserState'
+import { useLutContractSummary } from '../../hooks/useLutContractSummary'
 import type { LUTContractSelectionState } from '../../model/session'
+import type { LUTContractView } from '../../services/look/lut-contract'
 import {
   composeLUTContractProfile,
   toSelectableContract,
@@ -12,16 +15,13 @@ import {
 import type { LUTOutputOption } from '../../services/look/lut-output-options'
 import { toOutputCarrierProfile } from '../../services/look/lut-output-options'
 import type { LookContractStep } from './MobileLookFooter'
-import { useMobileLutContractState } from './useMobileLutContractState'
 
 /**
  * Where a contract edit starts: at the output when only the output is
  * missing, otherwise at the input.
  */
 export function initialContractStep(
-  status: ReturnType<
-    typeof useMobileLutContractState
-  >['contractView']['status'],
+  status: LUTContractView['status'],
 ): LookContractStep {
   return status === 'incomplete-output' ? 'output' : 'input'
 }
@@ -44,11 +44,27 @@ export function useMobileLutContractEditor({
   onComplete: () => void
 }) {
   const [contractQuery, setContractQuery] = useState('')
-  const contractState = useMobileLutContractState({
-    contractQuery,
+  const summary = useLutContractSummary({
     lutProfileSelection,
     lutProfileResolution,
   })
+  const browserState = useLutContractBrowserState({
+    query: contractQuery,
+    suggestions: summary.profileSuggestions,
+    currentProfile: summary.resolvedProfile,
+  })
+  const contractState = {
+    ...summary,
+    contractSearchResults: browserState.searchResults,
+    hasContractQuery: browserState.hasQuery,
+    visibleSuggestions: browserState.visibleSuggestions,
+    groupedInputProfiles: browserState.groupedInputProfiles,
+    suggestedOutputOptions: browserState.suggestedOutputOptions,
+    groupedOutputOptions: browserState.groupedOutputOptions,
+    activeOutputOptionId: browserState.activeOutputOptionId,
+    hasInputMatches: browserState.hasInputMatches,
+    hasOutputMatches: browserState.hasOutputMatches,
+  }
   const [contractStep, setContractStep] = useState<LookContractStep>(() =>
     initialContractStep(contractState.contractView.status),
   )

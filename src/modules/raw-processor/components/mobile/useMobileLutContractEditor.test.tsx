@@ -1,18 +1,19 @@
 import { getLUTColorProfile } from '@lumaforge/luma-color-runtime'
-import { renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
-import { useMobileLutContractState } from './useMobileLutContractState'
+import { useMobileLutContractEditor } from './useMobileLutContractEditor'
 
-describe('useMobileLutContractState', () => {
+describe('useMobileLutContractEditor', () => {
   it('derives recommended contract profiles and output choices', () => {
     const recommendation = getLUTColorProfile('sony-sgamut3cine-slog3')
     const resolved = getLUTColorProfile('display-srgb')
     if (!recommendation || !resolved) throw new Error('Missing test profiles')
 
     const { result } = renderHook(() =>
-      useMobileLutContractState({
-        contractQuery: 'sony',
+      useMobileLutContractEditor({
+        onLutProfileSelect: vi.fn(),
+        onComplete: vi.fn(),
         lutProfileSelection: {
           status: 'confirmed',
           fingerprint: 'lut-test',
@@ -25,6 +26,7 @@ describe('useMobileLutContractState', () => {
         },
       }),
     )
+    act(() => result.current.setContractQuery('sony'))
 
     expect(result.current.resolvedProfile?.id).toBe(resolved.id)
     expect(
@@ -52,8 +54,9 @@ describe('useMobileLutContractState', () => {
     }
 
     const { result } = renderHook(() =>
-      useMobileLutContractState({
-        contractQuery: 'sony',
+      useMobileLutContractEditor({
+        onLutProfileSelect: vi.fn(),
+        onComplete: vi.fn(),
         lutProfileResolution: {
           kind: 'confirmed',
           profile: confirmedProfile,
@@ -61,6 +64,7 @@ describe('useMobileLutContractState', () => {
         },
       }),
     )
+    act(() => result.current.setContractQuery('sony'))
 
     expect(result.current.resolvedProfile?.id).toBe(profile.id)
     expect(result.current.contractView).toEqual({
