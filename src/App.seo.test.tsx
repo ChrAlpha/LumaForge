@@ -8,10 +8,6 @@ import { ErrorElement } from './components/common/ErrorElement'
 import { NotFound } from './components/common/NotFound'
 import { applyDocumentSeo, HOME_ROUTE_SEO, RAW_ROUTE_SEO } from './lib/seo'
 
-vi.mock('./components/common/Footer', () => ({
-  Footer: () => null,
-}))
-
 vi.mock('./providers/root-providers', () => ({
   RootProviders: ({ children }: { children: ReactNode }) => children,
 }))

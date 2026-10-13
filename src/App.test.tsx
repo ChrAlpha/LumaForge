@@ -4,11 +4,7 @@ import { resolve } from 'node:path'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { shouldShowAppFooter, syncRouteSubstrate } from './App'
-
-vi.mock('./components/common/Footer', () => ({
-  Footer: () => null,
-}))
+import { syncRouteSubstrate } from './App'
 
 afterEach(() => {
   document.documentElement.classList.remove('luma-route-raw')
@@ -20,41 +16,6 @@ afterEach(() => {
 vi.mock('./providers/root-providers', () => ({
   RootProviders: ({ children }: { children: ReactNode }) => children,
 }))
-
-describe('shouldShowAppFooter', () => {
-  it('hides the footer on the root route', () => {
-    expect(shouldShowAppFooter('/')).toBe(false)
-  })
-
-  it('hides the footer on the RAW route', () => {
-    expect(shouldShowAppFooter('/raw')).toBe(false)
-  })
-
-  it('hides the footer on the trailing-slash RAW route', () => {
-    expect(shouldShowAppFooter('/raw/')).toBe(false)
-  })
-
-  it('hides the footer on the trailing-slash root route', () => {
-    expect(shouldShowAppFooter('//')).toBe(false)
-  })
-
-  it('shows the footer below RAW subpaths', () => {
-    expect(shouldShowAppFooter('/raw/unknown')).toBe(true)
-  })
-
-  it('treats the retired transform demo path as an ordinary app path', () => {
-    expect(shouldShowAppFooter('/transform-demo')).toBe(true)
-    expect(shouldShowAppFooter('/transform-demo/')).toBe(true)
-  })
-
-  it('shows the footer on the profiles route', () => {
-    expect(shouldShowAppFooter('/profiles')).toBe(true)
-  })
-
-  it('shows the footer on the about route', () => {
-    expect(shouldShowAppFooter('/about')).toBe(true)
-  })
-})
 
 describe('syncRouteSubstrate', () => {
   it('sets the dark RAW route substrate before the route paints', () => {

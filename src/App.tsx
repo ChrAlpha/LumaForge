@@ -2,14 +2,8 @@ import type { FC } from 'react'
 import { useLayoutEffect } from 'react'
 import { Outlet, useLocation } from 'react-router'
 
-import { Footer } from './components/common/Footer'
 import { SeoMetadata } from './components/common/SeoMetadata'
 import { RootProviders } from './providers/root-providers'
-
-export function shouldShowAppFooter(pathname: string) {
-  const path = pathname.replace(/\/+$/, '')
-  return path !== '' && path !== '/raw'
-}
 
 function isRawRoutePath(pathname: string) {
   return pathname.replace(/\/+$/, '') === '/raw'
@@ -42,7 +36,6 @@ export function syncRouteSubstrate(pathname: string) {
 
 export const App: FC = () => {
   const routeLocation = useLocation()
-  const showFooter = shouldShowAppFooter(routeLocation.pathname)
 
   useLayoutEffect(() => {
     syncRouteSubstrate(routeLocation.pathname)
@@ -51,17 +44,7 @@ export const App: FC = () => {
   return (
     <RootProviders>
       <SeoMetadata />
-      <AppLayer />
-      {showFooter && <Footer />}
+      <Outlet />
     </RootProviders>
   )
-}
-
-const AppLayer = () => {
-  const appIsReady = true
-  return appIsReady ? <Outlet /> : <AppSkeleton />
-}
-
-const AppSkeleton = () => {
-  return null
 }
