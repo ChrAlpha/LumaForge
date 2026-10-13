@@ -2744,9 +2744,7 @@ describe('useRawWorkflow embedded preview state', () => {
       await waitFor(() => {
         expect(result.current.lutData?.title).toBe('Look A')
       })
-      const lutA = result.current.lutDataRef.current!
-
-      const { loadLUT, exportImage, lutDataRef } = result.current
+      const { loadLUT, exportImage } = result.current
       await act(async () => {
         await expect(
           loadLUT(
@@ -2764,11 +2762,10 @@ describe('useRawWorkflow embedded preview state', () => {
             ),
           ),
         ).resolves.toBe('loaded')
-        expect(lutDataRef.current).toBe(lutA)
         await exportImage()
       })
 
-      const lutB = result.current.lutDataRef.current!
+      const lutB = result.current.lutData!
       expect(lutB.title).toBe('Look B')
       const steps = executedGraphSteps()
       expect(

@@ -93,7 +93,6 @@ vi.mock('../hooks/useRawWorkflow', async (importOriginal) => {
             ...workflow,
             hasImage: true,
             decodedImageRef: image,
-            decodedImageVersion: 1,
             // The descriptor the producer mints when it accepts the frame.
             decodedFrame: {
               sessionId: 'session-1',
@@ -287,7 +286,7 @@ describe('rawProcessorView GPU LUT upload failure', () => {
     expect(banners[0]).toHaveTextContent('GPU preview unavailable')
 
     // The selected look survives and drives the CPU preview unchanged.
-    const lutData = workflowHarness.latest!.lutDataRef.current
+    const lutData = workflowHarness.latest!.lutData
     expect(lutData).not.toBeNull()
     expect(getLut()?.title).toBe('Failing Look')
     expect(getProcessingParams()).toMatchObject({ styleKind: 'custom' })

@@ -190,8 +190,7 @@ function RawProcessorViewInner({
           decodedImageRef={workflow.decodedImageRef}
           decodedFrame={workflow.decodedFrame}
           params={workflow.params}
-          lutDataRef={workflow.lutDataRef}
-          lutDataVersion={workflow.lutDataVersion}
+          lutData={workflow.lutData}
           displaySource={workflow.displaySource}
         />
 

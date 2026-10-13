@@ -67,11 +67,9 @@ function workflow(overrides: Partial<UseRawWorkflowReturn>) {
     previewSuspended: false,
     status: 'ready',
     decodedImageRef: { current: null },
-    decodedImageVersion: 1,
     decodedFrame: null,
     params: {},
-    lutDataRef: { current: null },
-    lutDataVersion: 0,
+    lutData: null,
     embeddedPreviewUrl: null,
     displaySource: 'bounded-hq',
     originalReferenceSnapshot: null,
@@ -152,8 +150,6 @@ describe('rawPreviewStageSurface in CPU preview mode', () => {
 
     const props = stageProps.cpu.at(-1)!
     expect(props.decodedFrame).toBe(acceptedFrame)
-    // The CPU source is named by the descriptor, not a version counter.
-    expect(props).not.toHaveProperty('imageVersion')
   })
 
   it('hands the CPU stage no descriptor while no accepted frame is live', () => {

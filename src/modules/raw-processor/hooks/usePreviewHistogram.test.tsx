@@ -139,21 +139,15 @@ function renderPreviewHistogram(options: {
   frame?: DecodedPreviewFrame | null
   params?: ColorGraphIntent
   lutData?: LUTData | null
-  lutDataVersion?: number
   displaySource?: DisplaySource
 }) {
   const imageRef = mutableRef<DecodedImage | null>(options.image)
-  const lutDataRef = mutableRef<LUTData | null>(options.lutData ?? null)
-  const props: HistogramHarnessProps & {
-    imageRef: typeof imageRef
-    lutDataRef: typeof lutDataRef
-  } = {
+  const props: HistogramHarnessProps & { imageRef: typeof imageRef } = {
     enabled: options.enabled ?? true,
     imageRef,
     ...('frame' in options ? { frame: options.frame } : {}),
     params: options.params ?? defaultParams,
-    lutDataRef,
-    lutDataVersion: options.lutDataVersion ?? 0,
+    lutData: options.lutData ?? null,
     displaySource: options.displaySource ?? 'quick',
   }
 
@@ -174,7 +168,7 @@ function renderPreviewHistogram(options: {
     { initialProps: props },
   )
 
-  return { ...hook, imageRef, lutDataRef, renders, produceFrame }
+  return { ...hook, imageRef, renders, produceFrame }
 }
 
 async function runDebouncedWork(ms = 150) {
@@ -333,18 +327,15 @@ describe('usePreviewHistogram', () => {
         height: hqHeight,
         data: hqData,
       })
-      const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram(
-        {
-          image: quick,
-        },
-      )
+      const { result, rerender, imageRef } = renderPreviewHistogram({
+        image: quick,
+      })
 
       imageRef.current = boundedHq
       rerender({
         imageRef,
         params: hqParams,
-        lutDataRef,
-        lutDataVersion: 0,
+        lutData: null,
         displaySource: 'bounded-hq',
       })
 
@@ -405,18 +396,15 @@ describe('usePreviewHistogram', () => {
         height: hqHeight,
         data: hqData,
       })
-      const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram(
-        {
-          image: quick,
-        },
-      )
+      const { result, rerender, imageRef } = renderPreviewHistogram({
+        image: quick,
+      })
 
       imageRef.current = boundedHq
       rerender({
         imageRef,
         params: { ...defaultParams, ...lookChange },
-        lutDataRef,
-        lutDataVersion: 0,
+        lutData: null,
         displaySource: 'bounded-hq',
       })
 
@@ -462,7 +450,7 @@ describe('usePreviewHistogram', () => {
       height: 1001,
       data: hqData,
     })
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: quick,
     })
 
@@ -473,8 +461,7 @@ describe('usePreviewHistogram', () => {
       imageRef,
       frame: describeFrame(boundedHq, { quickPredecessorFrameId: null }),
       params: defaultParams,
-      lutDataRef,
-      lutDataVersion: 0,
+      lutData: null,
       displaySource: 'bounded-hq',
     })
 
@@ -539,7 +526,7 @@ describe('usePreviewHistogram', () => {
         65535, 0, 0, 0, 65535, 0, 0, 0, 65535, 65535, 65535, 65535,
       ]),
     })
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: quick,
     })
 
@@ -551,8 +538,7 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       params: defaultParams,
-      lutDataRef,
-      lutDataVersion: 0,
+      lutData: null,
       displaySource: 'bounded-hq',
     })
 
@@ -572,7 +558,7 @@ describe('usePreviewHistogram', () => {
   })
 
   it('does not recompute for an equal intent record rebuilt upstream', async () => {
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: createImage('quick'),
     })
 
@@ -583,8 +569,7 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       params: { ...defaultParams },
-      lutDataRef,
-      lutDataVersion: 0,
+      lutData: null,
       displaySource: 'quick',
     })
 
@@ -622,8 +607,10 @@ describe('usePreviewHistogram', () => {
     reference.unmount()
     expect(expected.state).toBe('ready')
 
-    const { result, rerender, imageRef, lutDataRef, renders } =
-      renderPreviewHistogram({ image: oldImage, frame: oldFrame })
+    const { result, rerender, imageRef, renders } = renderPreviewHistogram({
+      image: oldImage,
+      frame: oldFrame,
+    })
 
     // The old source's first run is under way, chunked, when it is replaced.
     await act(async () => {
@@ -637,8 +624,7 @@ describe('usePreviewHistogram', () => {
       imageRef,
       frame: newFrame,
       params: defaultParams,
-      lutDataRef,
-      lutDataVersion: 0,
+      lutData: null,
       displaySource: 'quick',
     })
     await runChunkedWorkUntilReady(result)
@@ -674,10 +660,9 @@ describe('usePreviewHistogram', () => {
     ['saturation', { userSaturation: 25 }],
     ['vibrance', { userVibrance: 25 }],
   ])('recomputes on %s changes', async (_field, colorChange) => {
-    const { result, rerender, imageRef, lutDataRef, renders } =
-      renderPreviewHistogram({
-        image: createImage('quick'),
-      })
+    const { result, rerender, imageRef, renders } = renderPreviewHistogram({
+      image: createImage('quick'),
+    })
 
     await runAllWork()
     expect(result.current.state).toBe('ready')
@@ -687,8 +672,7 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       params: { ...defaultParams, ...colorChange },
-      lutDataRef,
-      lutDataVersion: 0,
+      lutData: null,
       displaySource: 'quick',
     })
 
@@ -703,7 +687,7 @@ describe('usePreviewHistogram', () => {
   })
 
   it('keeps previous bins on screen, marked stale, until the new run lands', async () => {
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: createImage('quick'),
     })
 
@@ -714,8 +698,7 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       params: { ...defaultParams, userExposureEv: 1 },
-      lutDataRef,
-      lutDataVersion: 0,
+      lutData: null,
       displaySource: 'quick',
     })
 
@@ -746,7 +729,7 @@ describe('usePreviewHistogram', () => {
   })
 
   it('recomputes when LUT data changes', async () => {
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: createImage('quick'),
     })
 
@@ -754,12 +737,10 @@ describe('usePreviewHistogram', () => {
     expect(result.current.state).toBe('ready')
     const previous = result.current
 
-    lutDataRef.current = createLutData()
     rerender({
       imageRef,
       params: { ...defaultParams, styleKind: 'custom' },
-      lutDataRef,
-      lutDataVersion: 1,
+      lutData: createLutData(),
       displaySource: 'quick',
     })
 
@@ -775,7 +756,7 @@ describe('usePreviewHistogram', () => {
       red: { hue: 12, saturation: -8, lightness: 4 },
     })
     const params = { ...defaultParams, selectiveColor: hsl() }
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: createImage('quick'),
       params,
     })
@@ -787,8 +768,7 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       params: { ...params, selectiveColor: hsl() },
-      lutDataRef,
-      lutDataVersion: 0,
+      lutData: null,
       displaySource: 'quick',
     })
 
@@ -799,11 +779,10 @@ describe('usePreviewHistogram', () => {
   it('recomputes for a look strength between the detents', async () => {
     const lutData = createLutData()
     const params = { ...defaultParams, styleKind: 'custom' as const }
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: createImage('quick'),
       params,
       lutData,
-      lutDataVersion: 1,
     })
 
     await runAllWork()
@@ -813,8 +792,7 @@ describe('usePreviewHistogram', () => {
     rerender({
       imageRef,
       params: { ...params, intensity: 0.37 },
-      lutDataRef,
-      lutDataVersion: 1,
+      lutData,
       displaySource: 'quick',
     })
 
@@ -827,11 +805,10 @@ describe('usePreviewHistogram', () => {
   it('recomputes when the same LUT bytes take another contract', async () => {
     const lutData = createLutData()
     const params = { ...defaultParams, styleKind: 'custom' as const }
-    const { result, rerender, imageRef, lutDataRef } = renderPreviewHistogram({
+    const { result, rerender, imageRef } = renderPreviewHistogram({
       image: createImage('quick'),
       params,
       lutData,
-      lutDataVersion: 1,
     })
 
     await runAllWork()
@@ -840,12 +817,10 @@ describe('usePreviewHistogram', () => {
 
     const recontracted = createLutData('test-vlog-other')
     expect(recontracted.data).toEqual(lutData.data)
-    lutDataRef.current = recontracted
     rerender({
       imageRef,
       params,
-      lutDataRef,
-      lutDataVersion: 2,
+      lutData: recontracted,
       displaySource: 'quick',
     })
 
@@ -902,13 +877,11 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   async function settled(
     params: ColorGraphIntent,
     lutData: LUTData | null = null,
-    lutDataVersion = 0,
   ) {
     const hook = renderPreviewHistogram({
       image: createImage('quick'),
       params,
       lutData,
-      lutDataVersion,
     })
     await runAllWork()
     return hook
@@ -917,13 +890,12 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   function rerenderWith(
     hook: Awaited<ReturnType<typeof settled>>,
     params: ColorGraphIntent,
-    lutDataVersion: number,
+    lutData: LUTData | null,
   ) {
     hook.rerender({
       imageRef: hook.imageRef,
       params,
-      lutDataRef: hook.lutDataRef,
-      lutDataVersion,
+      lutData,
       displaySource: 'quick',
     })
   }
@@ -931,7 +903,7 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   it.each(['unconfirmed', 'linear-output'] as const)(
     'measures the adjusted preview without the look for a %s LUT',
     async (kind) => {
-      const refused = await settled(adjusted, refusedLut(kind), 1)
+      const refused = await settled(adjusted, refusedLut(kind))
       const stripped = await settled({ ...adjusted, styleKind: 'none' })
       const neutral = await settled(defaultParams)
 
@@ -946,34 +918,33 @@ describe('usePreviewHistogram over the look the preview draws', () => {
   )
 
   it('keeps the measure while the strength of a refused LUT moves', async () => {
-    const hook = await settled(adjusted, refusedLut('linear-output'), 1)
+    const lut = refusedLut('linear-output')
+    const hook = await settled(adjusted, lut)
     const ready = hook.result.current
     expect(ready.state).toBe('ready')
 
     for (const intensity of [0, 0.37, 1]) {
-      rerenderWith(hook, { ...adjusted, intensity }, 1)
+      rerenderWith(hook, { ...adjusted, intensity }, lut)
       expect(hook.result.current).toBe(ready)
       expect(vi.getTimerCount()).toBe(0)
     }
   })
 
   it('measures the LUT once the same bytes take a contract export accepts, and drops it again', async () => {
-    const hook = await settled(adjusted, refusedLut('unconfirmed'), 1)
+    const hook = await settled(adjusted, refusedLut('unconfirmed'))
     const strippedMeasure = measure(hook.result.current)
 
     const accepted = createLutData()
-    hook.lutDataRef.current = accepted
-    rerenderWith(hook, adjusted, 2)
+    rerenderWith(hook, adjusted, accepted)
     expect(hook.result.current.state).toBe('stale')
     await runAllWork()
     const withLook = measure(hook.result.current)
     expect(withLook).not.toEqual(strippedMeasure)
 
-    hook.lutDataRef.current = {
+    rerenderWith(hook, adjusted, {
       ...accepted,
       profileResolution: { kind: 'unknown' },
-    }
-    rerenderWith(hook, adjusted, 3)
+    })
     await runAllWork()
     expect(measure(hook.result.current)).toEqual(strippedMeasure)
   })
@@ -984,7 +955,7 @@ describe('usePreviewHistogram over the look the preview draws', () => {
     const ready = hook.result.current
     expect(measure(ready)).toEqual(measure(stripped.result.current))
 
-    rerenderWith(hook, { ...adjusted, intensity: 0.37 }, 0)
+    rerenderWith(hook, { ...adjusted, intensity: 0.37 }, null)
     expect(hook.result.current).toBe(ready)
     expect(vi.getTimerCount()).toBe(0)
   })
@@ -1002,7 +973,7 @@ describe('usePreviewHistogram over the look the preview draws', () => {
     expect(hook.result.current.state).toBe('unsupported')
     expect(vi.getTimerCount()).toBe(0)
     for (const intensity of [0, 0.37, 1]) {
-      rerenderWith(hook, { ...builtin, intensity }, 0)
+      rerenderWith(hook, { ...builtin, intensity }, null)
       await runAllWork()
       expect(hook.result.current.state).toBe('unsupported')
     }

@@ -1,6 +1,6 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
-import { useCallback, useRef } from 'react'
+import type { MutableRefObject } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import type {
   ResourceRegistry,
@@ -18,7 +18,6 @@ type UseDecodedPreviewResourceInput = {
   decodedImageRef: MutableRefObject<DecodedImage | null>
   rawRenderExposureRef: MutableRefObject<RawRenderExposure | null>
   resourceRegistryRef: MutableRefObject<ResourceRegistry | null>
-  setDecodedImageVersion: Dispatch<SetStateAction<number>>
   invalidateExportGraph: () => void
   /**
    * The source session a frame belongs to, read when the frame is accepted.
@@ -125,7 +124,6 @@ export function useDecodedPreviewResource({
   decodedImageRef,
   rawRenderExposureRef,
   resourceRegistryRef,
-  setDecodedImageVersion,
   invalidateExportGraph,
   getSessionId,
 }: UseDecodedPreviewResourceInput) {
@@ -133,6 +131,10 @@ export function useDecodedPreviewResource({
   const decodedPreviewResourceRef = useRef<TrackedLargeResource | null>(null)
   const decodedFrameSequenceRef = useRef(0)
   const acceptedFrameRef = useRef<AcceptedDecodedFrame | null>(null)
+  // Accepting or releasing a frame publishes its descriptor, which rerenders
+  // the owner; the render then reads the descriptor the live pixels carry.
+  // Pixels accepted without one are never drawn, so they need no render.
+  const [, publishDecodedFrame] = useState<DecodedPreviewFrame | null>(null)
 
   // A descriptor names pixels only while they are the live frame: released
   // or evacuated pixels take their descriptor with them, whoever released
@@ -174,16 +176,16 @@ export function useDecodedPreviewResource({
           // rendering with it.
           if (acceptedFrameRef.current?.image === decoded) {
             acceptedFrameRef.current = null
+            publishDecodedFrame(null)
           }
           if (decodedImageRef.current === decoded) {
             decodedImageRef.current = null
-            setDecodedImageVersion((version) => version + 1)
           }
         },
       })
       decodedPreviewResourceRef.current = tracked
     },
-    [decodedImageRef, resourceRegistryRef, setDecodedImageVersion],
+    [decodedImageRef, resourceRegistryRef],
   )
 
   const setDecodedImageRef = useCallback(
@@ -213,7 +215,7 @@ export function useDecodedPreviewResource({
       decodedImageRef.current = stored
       rawRenderExposureRef.current = nextExposure
       registerDecodedPreviewForEvacuation(stored)
-      setDecodedImageVersion((version) => version + 1)
+      publishDecodedFrame(acceptedFrameRef.current?.descriptor ?? null)
 
       if (
         !options?.preserveExportResult &&
@@ -229,12 +231,8 @@ export function useDecodedPreviewResource({
       rawRenderExposureRef,
       readLiveDecodedFrame,
       registerDecodedPreviewForEvacuation,
-      setDecodedImageVersion,
     ],
   )
 
-  // Every accepted or released frame bumps the decoded image version, which
-  // rerenders this hook's owner, so the descriptor read here is the one the
-  // live pixels carry.
   return { setDecodedImageRef, decodedFrame: readLiveDecodedFrame() }
 }

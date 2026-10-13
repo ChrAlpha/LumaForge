@@ -1,4 +1,4 @@
-import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { colorGraphIntentSignature } from '@lumaforge/luma-color-runtime'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 
@@ -7,6 +7,8 @@ import { decodedPreviewFrameKey } from '~/lib/preview/preview-frame'
 import { previewDimensions } from '~/lib/transform/preview-dimensions'
 import type { PreviewSource } from '~/lib/transform/preview-types'
 import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
+
+import { lutRecordKey } from './lut-record-key'
 
 /**
  * What a processed Transform frame is drawn from: the accepted decoded frame,
@@ -17,12 +19,12 @@ import type { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline
  */
 export function transformInputKey(
   frame: DecodedPreviewFrame | null,
-  lutVersion: number,
+  lut: LUTData | null,
   color: ColorGraphIntent,
 ) {
   return JSON.stringify([
     decodedPreviewFrameKey(frame),
-    lutVersion,
+    lutRecordKey(lut),
     colorGraphIntentSignature(color),
   ])
 }

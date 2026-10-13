@@ -249,7 +249,6 @@ function renderLookStageHarness({
   )
   // The LUT lands in the production store, as the workflow's setter does.
   const setLut = vi.fn((next: ParsedLUT | null) => setStoredLut(next))
-  const setLutDataRef = vi.fn()
   const scheduled: Array<() => void> = []
   const scheduleToast = vi.fn((show: () => void) => {
     scheduled.push(show)
@@ -263,8 +262,6 @@ function renderLookStageHarness({
         lut,
         setLut,
         setColorIntent,
-        lutDataRef: { current: lut },
-        setLutDataRef,
         scheduleToast,
         invalidateExportGraph,
         canApplyLoadedLut,
@@ -278,7 +275,6 @@ function renderLookStageHarness({
     setColorIntent,
     invalidateExportGraph,
     setLut,
-    setLutDataRef,
     scheduleToast,
     runScheduled() {
       for (const show of scheduled.splice(0)) show()
@@ -375,7 +371,6 @@ describe('useRawLookStage', () => {
     harness.actions.clearLUT()
 
     expect(harness.setLut).toHaveBeenCalledWith(null)
-    expect(harness.setLutDataRef).toHaveBeenCalledWith(null)
     expect(harness.sessionNotifications).toHaveBeenCalledTimes(1)
     expect(harness.readSession()).toMatchObject({
       activeStyle: null,

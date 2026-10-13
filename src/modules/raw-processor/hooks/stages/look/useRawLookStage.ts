@@ -1,10 +1,8 @@
 import type {
   ColorGraphIntent,
   LUTColorProfile,
-  LUTData,
   ParsedLUT,
 } from '@lumaforge/luma-color-runtime'
-import type { MutableRefObject } from 'react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
@@ -54,8 +52,6 @@ type UseRawLookStageInput = {
    * nowhere else; the view has its own owner and is never part of a write.
    */
   setColorIntent: SetColorIntent
-  lutDataRef: MutableRefObject<LUTData | null>
-  setLutDataRef: (nextLutData: LUTData | null) => void
   scheduleToast: (notify: () => void) => void
   invalidateExportGraph: () => void
   canApplyLoadedLut: () => boolean
@@ -109,8 +105,6 @@ export function useRawLookStage({
   lut,
   setLut,
   setColorIntent,
-  lutDataRef,
-  setLutDataRef,
   scheduleToast,
   invalidateExportGraph,
   canApplyLoadedLut,
@@ -246,7 +240,7 @@ export function useRawLookStage({
   )
 
   const clearLUT = useCallback(() => {
-    const hasLoadedLut = Boolean(lut) || Boolean(lutDataRef.current)
+    const hasLoadedLut = getLut() !== null
     let hasSession = false
     let shouldInvalidateExportGraph = false
 
@@ -269,22 +263,12 @@ export function useRawLookStage({
     }
 
     setLut(null)
-    setLutDataRef(null)
     if (shouldInvalidateExportGraph) {
       invalidateExportGraph()
     }
     const message = t('raw.lut.toast.cleared')
     scheduleToast(() => toast.info(message))
-  }, [
-    invalidateExportGraph,
-    lut,
-    lutDataRef,
-    scheduleToast,
-    setColorIntent,
-    setLut,
-    setLutDataRef,
-    t,
-  ])
+  }, [invalidateExportGraph, scheduleToast, setColorIntent, setLut, t])
 
   const adjustmentActions = useRawAdjustmentActions({
     setColorIntent,

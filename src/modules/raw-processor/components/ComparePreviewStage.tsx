@@ -25,7 +25,6 @@ import { getRawRuntimeReadinessCopy } from './raw-runtime-readiness'
 export interface ComparePreviewStageProps {
   hasImage: boolean
   imageRef: React.RefObject<DecodedImage | null>
-  imageVersion: number
   /**
    * The workflow's accepted descriptor of the frame `imageRef` holds, passed
    * on to the canvas as received; null while no decoded frame is live.
@@ -35,8 +34,7 @@ export interface ComparePreviewStageProps {
   color: ColorGraphIntent
   /** How the photo is shown; compare layers the original at the split. */
   viewMode: PreviewViewMode
-  lutDataRef: React.RefObject<LUTData | null>
-  lutDataVersion: number
+  lutData: LUTData | null
   embeddedPreviewUrl?: string | null
   displaySource?: DisplaySource
   originalReferenceSnapshot?: OriginalReferenceSnapshot | null
@@ -217,12 +215,10 @@ function ExportProcessingHandoffBackdrop() {
 export function ComparePreviewStage({
   hasImage,
   imageRef,
-  imageVersion,
   decodedFrame,
   color,
   viewMode,
-  lutDataRef,
-  lutDataVersion,
+  lutData,
   embeddedPreviewUrl,
   displaySource = 'none',
   originalReferenceSnapshot,
@@ -297,12 +293,10 @@ export function ComparePreviewStage({
             ) : hasImage ? (
               <PreviewCanvas
                 imageRef={imageRef}
-                imageVersion={imageVersion}
                 decodedFrame={decodedFrame}
                 color={color}
                 viewMode={viewMode}
-                lutDataRef={lutDataRef}
-                lutDataVersion={lutDataVersion}
+                lutData={lutData}
                 embeddedPreviewUrl={embeddedPreviewUrl}
                 displaySource={displaySource}
                 originalReferenceSnapshot={originalReferenceSnapshot}

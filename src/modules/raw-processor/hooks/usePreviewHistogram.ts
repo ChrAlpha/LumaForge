@@ -31,6 +31,7 @@ import {
 import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { DisplaySource } from '../model/session'
+import { lutRecordKey } from '../services/preview/lut-record-key'
 
 /**
  * Live feedback cadence: while the look moves, a histogram run starts at
@@ -77,8 +78,7 @@ type PreviewHistogramInput = {
    */
   frame: DecodedPreviewFrame | null
   params: ColorGraphIntent
-  lutDataRef: RefObject<LUTData | null>
-  lutDataVersion: number
+  lutData: LUTData | null
   displaySource: DisplaySource
 }
 
@@ -140,8 +140,7 @@ function createHistogramJob({
   imageRef,
   frame,
   intent,
-  lutDataRef,
-  lutDataVersion,
+  lutData,
   displaySource,
 }: HistogramJobInput): HistogramJob {
   if (!enabled) return HISTOGRAM_OFF_JOB
@@ -180,7 +179,7 @@ function createHistogramJob({
   // and the look-stripped graph would not measure it, so nothing is measured.
   const plan = resolvePreviewColorPlan({
     intent,
-    lut: lutDataRef.current,
+    lut: lutData,
     rawRenderExposure: image.renderExposure,
     executor: 'webgpu',
   })
@@ -193,11 +192,11 @@ function createHistogramJob({
   }
 
   // Keyed on what the preview draws: a look it drops, and that look's
-  // strength, start no run. The drawn LUT is keyed by its version, which
-  // moves with every LUT record, so a new contract on the same bytes counts.
+  // strength, start no run. The drawn LUT is keyed by its record, so a new
+  // contract on the same bytes counts.
   const drawnKey = [
     colorGraphIntentSignature(plan.effectiveIntent),
-    plan.lut ? lutDataVersion : 'no-lut',
+    lutRecordKey(plan.lut),
   ].join('|')
   const key = ['compute', frameKey, displaySource, drawnKey].join('|')
 
@@ -267,8 +266,7 @@ export function usePreviewHistogram(
     imageRef,
     frame,
     params,
-    lutDataRef,
-    lutDataVersion,
+    lutData,
     displaySource,
   } = input
   // The histogram reads the color intent only: a view change (view mode,
@@ -286,19 +284,10 @@ export function usePreviewHistogram(
         imageRef,
         frame,
         intent,
-        lutDataRef,
-        lutDataVersion,
+        lutData,
         displaySource,
       }),
-    [
-      displaySource,
-      enabled,
-      frame,
-      intent,
-      imageRef,
-      lutDataRef,
-      lutDataVersion,
-    ],
+    [displaySource, enabled, frame, intent, imageRef, lutData],
   )
   // An equal key is the same work: a change the preview does not draw keeps
   // the job, so it neither restarts a run nor marks the bins stale.

@@ -36,8 +36,7 @@ function source(
     decodedImageRef: { current: null },
     decodedFrame: null,
     params,
-    lutDataRef: { current: null },
-    lutDataVersion: 0,
+    lutData: null,
     displaySource: 'none',
     ...overrides,
   }

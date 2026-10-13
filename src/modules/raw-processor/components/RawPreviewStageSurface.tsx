@@ -65,7 +65,7 @@ export function RawPreviewStageSurface({
         image={workflow.decodedImageRef.current}
         decodedFrame={workflow.decodedFrame}
         color={color}
-        lut={workflow.lutDataRef.current}
+        lut={workflow.lutData}
         fallbackThumbnailUrl={workflow.embeddedPreviewUrl}
         onProcessedFrame={onCpuProcessedFrame}
         previewFrameRef={onPreviewFrameChange}
@@ -80,12 +80,10 @@ export function RawPreviewStageSurface({
       viewportInteractionDisabled={viewportInteractionDisabled}
       hasImage={workflow.hasImage}
       imageRef={workflow.decodedImageRef}
-      imageVersion={workflow.decodedImageVersion}
       decodedFrame={workflow.decodedFrame}
       color={color}
       viewMode={workflow.viewMode}
-      lutDataRef={workflow.lutDataRef}
-      lutDataVersion={workflow.lutDataVersion}
+      lutData={workflow.lutData}
       embeddedPreviewUrl={workflow.embeddedPreviewUrl}
       displaySource={workflow.displaySource}
       originalReferenceSnapshot={workflow.originalReferenceSnapshot}

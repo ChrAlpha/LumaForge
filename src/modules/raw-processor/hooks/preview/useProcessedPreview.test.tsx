@@ -101,13 +101,11 @@ function renderProcessed(initial: Partial<Options> = {}) {
   const onOriginalPipelineChange = vi.fn()
   const base: Options = {
     imageRef: { current: decodedImage() },
-    imageVersion: 1,
     decodedFrame: acceptedFrame('decoded-frame-1'),
     displaySource: 'quick',
     color: defaultColor,
     viewMode: 'processed',
-    lutDataRef: { current: null },
-    lutDataVersion: 0,
+    lutData: null,
     embeddedPreviewUrl: null,
     dualGpuAllowed: false,
     suspended: false,
@@ -197,7 +195,6 @@ describe('useProcessedPreview', () => {
     view.props().imageRef.current = decodedImage({ width: 420, height: 320 })
     await act(async () =>
       view.update({
-        imageVersion: 2,
         decodedFrame: acceptedFrame('decoded-frame-2'),
       }),
     )
@@ -300,10 +297,8 @@ describe('useProcessedPreview', () => {
     const inFlight = deferred()
     const pipeline = createPipeline()
     pipeline.waitForGpu.mockReturnValueOnce(inFlight.promise)
-    const lutDataRef = { current: createTestLut() }
     const view = renderProcessed({
-      lutDataRef,
-      lutDataVersion: 1,
+      lutData: createTestLut(),
       color: { ...defaultColor, styleKind: 'custom' },
     })
     await view.publish(pipeline)
@@ -313,8 +308,7 @@ describe('useProcessedPreview', () => {
     pipeline.uploadLUT.mockImplementationOnce(() => {
       throw new Error('Failed to create LUT texture')
     })
-    lutDataRef.current = createTestLut()
-    view.update({ lutDataVersion: 2 })
+    view.update({ lutData: createTestLut() })
     await act(async () => inFlight.resolve())
 
     // The failure stays inside the hook: no error, no frame, no stats, and
@@ -330,8 +324,7 @@ describe('useProcessedPreview', () => {
     expect(pipeline.render).toHaveBeenCalledOnce()
 
     const replacementLut = createTestLut()
-    lutDataRef.current = replacementLut
-    await act(async () => view.update({ lutDataVersion: 3 }))
+    await act(async () => view.update({ lutData: replacementLut }))
     expect(pipeline.uploadLUT).toHaveBeenLastCalledWith(replacementLut)
     expect(pipeline.render).toHaveBeenCalledTimes(2)
     expect(view.onStatsUpdate).toHaveBeenCalledOnce()
@@ -396,7 +389,6 @@ describe('useProcessedPreview', () => {
     const view = renderProcessed()
     view.props().imageRef.current = decodedImage({ width: 420, height: 320 })
     view.update({
-      imageVersion: 2,
       decodedFrame: acceptedFrame('decoded-frame-2'),
       color: { ...defaultColor, userExposureEv: 0.5 },
     })
@@ -505,7 +497,6 @@ describe('useProcessedPreview', () => {
       })
       await act(async () =>
         view.update({
-          imageVersion: 2,
           decodedFrame: acceptedFrame('decoded-frame-2', {
             stage: 'bounded-hq',
             width: 1600,
@@ -561,9 +552,7 @@ describe('useProcessedPreview', () => {
 
       // The preview is released for export, then restored.
       imageRef.current = null as never
-      await act(async () =>
-        view.update({ imageVersion: 2, decodedFrame: null }),
-      )
+      await act(async () => view.update({ decodedFrame: null }))
       expect(view.result.current.shouldMountOriginalGpuLayer).toBe(false)
       expect(pipeline.clearImage).toHaveBeenCalled()
       pipeline.uploadImage.mockClear()
@@ -572,7 +561,6 @@ describe('useProcessedPreview', () => {
       imageRef.current = decodedImage({ source: 'bounded-hq' })
       await act(async () =>
         view.update({
-          imageVersion: 3,
           decodedFrame: acceptedFrame('decoded-frame-3', {
             stage: 'bounded-hq',
           }),
@@ -676,7 +664,6 @@ describe('useProcessedPreview', () => {
       imageRef.current = decodedImage({ source: 'quick' })
       await act(async () =>
         view.update({
-          imageVersion: 2,
           decodedFrame: acceptedFrame('decoded-frame-1', {
             sessionId: 'session-2',
             stage: 'quick',
@@ -713,7 +700,6 @@ describe('useProcessedPreview', () => {
 
     imageRef.current = decodedImage({ width: 420, height: 320 })
     view.update({
-      imageVersion: 2,
       decodedFrame: acceptedFrame('decoded-frame-2'),
     })
     expect(view.result.current.trackReady).toBe(false)
@@ -722,7 +708,6 @@ describe('useProcessedPreview', () => {
     act(() => view.result.current.markTrackReady())
     imageRef.current = decodedImage({ source: 'quick', width: 500 })
     view.update({
-      imageVersion: 3,
       decodedFrame: acceptedFrame('decoded-frame-3', { stage: 'quick' }),
       displaySource: 'quick',
       embeddedPreviewUrl: 'blob:embedded',

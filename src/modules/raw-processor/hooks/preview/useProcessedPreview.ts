@@ -56,11 +56,6 @@ export interface ProcessedPreviewOptions<
 > {
   imageRef: RefObject<DecodedImage | null>
   /**
-   * Bumped whenever `imageRef` changes. It only notifies; it never names a
-   * frame.
-   */
-  imageVersion: number
-  /**
    * The workflow's accepted descriptor of the frame `imageRef` holds, which
    * keys every upload, draw, and readiness report. Null authorizes no decoded
    * drawing: the surface clears its image instead.
@@ -70,8 +65,11 @@ export interface ProcessedPreviewOptions<
   /** The color the processed surface draws; it carries no view state. */
   color: ColorGraphIntent
   viewMode: PreviewViewMode
-  lutDataRef: RefObject<LUTData | null>
-  lutDataVersion: number
+  /**
+   * The LUT record the processed surface draws through; a new record is a
+   * new object, which uploads and draws again.
+   */
+  lutData: LUTData | null
   embeddedPreviewUrl?: string | null
   dualGpuAllowed: boolean
   suspended: boolean
@@ -161,13 +159,11 @@ export function useProcessedPreview<
   TPipeline extends ProcessedPreviewPipeline,
 >({
   imageRef,
-  imageVersion,
   decodedFrame,
   displaySource,
   color,
   viewMode,
-  lutDataRef,
-  lutDataVersion,
+  lutData,
   embeddedPreviewUrl,
   dualGpuAllowed,
   suspended,
@@ -408,7 +404,6 @@ export function useProcessedPreview<
   useEffect(() => {
     const pipeline = pipelineRef.current
     if (!pipeline || !publishedPipeline) return
-    const lutData = lutDataRef.current
 
     try {
       if (lutData) {
@@ -424,11 +419,11 @@ export function useProcessedPreview<
       // escape this passive effect and tear down the whole /raw surface.
       lutUploadFailedRef.current = true
     }
-  }, [lutDataRef, lutDataVersion, publishedPipeline])
+  }, [lutData, publishedPipeline])
 
   // Draw once per processed input change: image, params, or LUT. It runs
-  // after the LUT upload effect above, so a LUT-only version change renders
-  // with the new LUT. While the retained compare pair holds a bounded-HQ
+  // after the LUT upload effect above, so a LUT-only change renders with the
+  // new LUT. While the retained compare pair holds a bounded-HQ
   // frame back, this effect stays the one draw owner: the original layer's
   // ready report lifts the delay, and the lifted delay draws. Compare mode
   // stays in CSS/DOM space, so the processed canvas never enters the legacy
@@ -436,13 +431,7 @@ export function useProcessedPreview<
   useEffect(() => {
     if (shouldDelayProcessedCompareRender) return
     renderProcessedPreview()
-  }, [
-    imageVersion,
-    lutDataRef,
-    lutDataVersion,
-    renderProcessedPreview,
-    shouldDelayProcessedCompareRender,
-  ])
+  }, [lutData, renderProcessedPreview, shouldDelayProcessedCompareRender])
 
   const forgetOriginalGpuFrame = useCallback(
     (pipeline: PreviewPipelineHandle | null) => {

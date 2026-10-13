@@ -48,7 +48,6 @@ function stage(
     <ComparePreviewStage
       hasImage
       imageRef={{ current: null }}
-      imageVersion={1}
       decodedFrame={null}
       color={{
         styleKind: 'none',
@@ -57,8 +56,7 @@ function stage(
         ...NEUTRAL_USER_COLOR_INTENT,
       }}
       viewMode="compare"
-      lutDataRef={{ current: null }}
-      lutDataVersion={0}
+      lutData={null}
       displaySource="quick"
       split={0.4}
       isProcessing={false}
@@ -102,7 +100,7 @@ describe('comparePreviewStage', () => {
       quickPredecessorFrameId: acceptedFrame.frameId,
     }
 
-    rerender(stage({ decodedFrame: successor, imageVersion: 2 }))
+    rerender(stage({ decodedFrame: successor }))
 
     expect(stageProps.canvas.at(-1)!.decodedFrame).toBe(successor)
   })

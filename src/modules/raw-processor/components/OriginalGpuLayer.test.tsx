@@ -10,10 +10,10 @@ import { OriginalGpuLayer } from './OriginalGpuLayer'
 const decodedImage = createTestDecodedImage()
 
 /** The accepted descriptor tests pair with an image version. */
-function testFrame(imageVersion: number): DecodedPreviewFrame {
+function testFrame(sequence: number): DecodedPreviewFrame {
   return {
     sessionId: 'session-1',
-    frameId: `decoded-frame-${imageVersion}`,
+    frameId: `decoded-frame-${sequence}`,
     stage: 'quick',
     width: decodedImage.width,
     height: decodedImage.height,

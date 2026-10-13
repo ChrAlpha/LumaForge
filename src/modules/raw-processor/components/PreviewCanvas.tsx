@@ -37,8 +37,6 @@ import { PreviewStageFrame } from './PreviewStageFrame'
 
 export interface PreviewCanvasProps {
   imageRef: React.RefObject<DecodedImage | null>
-  /** Bumped whenever `imageRef` changes; it never names a frame. */
-  imageVersion: number
   /**
    * The workflow's accepted descriptor of the frame `imageRef` holds; null
    * while no decoded frame is live (before a decode, with only the embedded
@@ -51,8 +49,11 @@ export interface PreviewCanvasProps {
   color: ColorGraphIntent
   /** How the stage shows the photo; compare layers the original over it. */
   viewMode: PreviewViewMode
-  lutDataRef: React.RefObject<LUTData | null>
-  lutDataVersion: number
+  /**
+   * The LUT record the processed surface draws through; a new record is a
+   * new object, which uploads and draws again.
+   */
+  lutData: LUTData | null
   embeddedPreviewUrl?: string | null
   displaySource?: DisplaySource
   originalReferenceSnapshot?: OriginalReferenceSnapshot | null
@@ -85,12 +86,10 @@ function createProcessedPipeline(canvas: HTMLCanvasElement) {
 
 export function PreviewCanvas({
   imageRef,
-  imageVersion,
   decodedFrame,
   color,
   viewMode,
-  lutDataRef,
-  lutDataVersion,
+  lutData,
   embeddedPreviewUrl,
   displaySource = 'none',
   originalReferenceSnapshot = null,
@@ -120,13 +119,11 @@ export function PreviewCanvas({
 
   const processed = useProcessedPreview<RawProcessingPipeline>({
     imageRef,
-    imageVersion,
     decodedFrame,
     displaySource,
     color,
     viewMode,
-    lutDataRef,
-    lutDataVersion,
+    lutData,
     embeddedPreviewUrl,
     dualGpuAllowed,
     suspended,

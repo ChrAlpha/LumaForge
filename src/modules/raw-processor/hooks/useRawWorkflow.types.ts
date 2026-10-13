@@ -59,7 +59,6 @@ export interface UseRawWorkflowReturn {
   params: ColorGraphIntent
   loadedImage: { file: File | null; metadata: ImageMetadata | null }
   decodedImageRef: RefObject<DecodedImage | null>
-  decodedImageVersion: number
   /**
    * The accepted descriptor of the frame `decodedImageRef` holds, minted once
    * when the frame was accepted; null while no decoded frame is live
@@ -69,9 +68,11 @@ export interface UseRawWorkflowReturn {
   status: ProcessingStatus
   error: string | null
   progress: number
+  /**
+   * The LUT record the store holds, as the preview draws it. A new load or
+   * contract choice is a new record, so its identity names the LUT.
+   */
   lutData: LUTData | null
-  lutDataRef: RefObject<LUTData | null>
-  lutDataVersion: number
   /** The preview pipeline's facts, without its frame timings. */
   previewFacts: PipelineFacts | null
   hasImage: boolean

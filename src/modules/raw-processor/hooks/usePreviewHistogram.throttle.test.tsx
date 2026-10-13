@@ -103,7 +103,6 @@ function acceptFrame(image: DecodedImage): DecodedPreviewFrame {
 
 function setup(image: DecodedImage = largeImage(), shown = true) {
   const imageRef = { current: image as DecodedImage | null }
-  const lutDataRef = { current: null }
   let enabled = shown
   let exposure = 0
   let frame = acceptFrame(image)
@@ -112,8 +111,7 @@ function setup(image: DecodedImage = largeImage(), shown = true) {
     imageRef,
     frame,
     params: { ...baseParams, userExposureEv: exposure },
-    lutDataRef,
-    lutDataVersion: 0,
+    lutData: null,
     displaySource: 'quick' as const,
   })
   const hook = renderHook(

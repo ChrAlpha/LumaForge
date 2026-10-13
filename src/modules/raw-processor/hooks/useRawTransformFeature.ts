@@ -182,7 +182,7 @@ export function useRawTransformFeature(
   const decodedFrame = workflow.decodedFrame
   const decodedKey = `${sourceId}|${isCpuMode ? `cpu:${cpuFrame?.sourceId ?? 'none'}` : `gpu:${decodedPreviewFrameKey(decodedFrame)}`}`
   const colorKey = sourceId
-    ? transformInputKey(decodedFrame, workflow.lutDataVersion, workflow.params)
+    ? transformInputKey(decodedFrame, workflow.lutData, workflow.params)
     : ''
   const key = `${decodedKey}|${colorKey}|${isCpuMode ? (settledCpuFrame?.requestId ?? 'none') : 'gpu'}`
   const previewSuspended = workflow.previewSuspended === true

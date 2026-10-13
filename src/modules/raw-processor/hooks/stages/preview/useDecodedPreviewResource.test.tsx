@@ -28,31 +28,14 @@ function createDecodedImage(
 
 describe('useDecodedPreviewResource', () => {
   it('registers decoded previews and clears the active ref when the resource is disposed', async () => {
-    const registry = createResourceRegistry()
-    const decodedImageRef = { current: null as DecodedImage | null }
-    const rawRenderExposureRef = {
-      current: null as DecodedImage['renderExposure'] | null,
-    }
-    let version = 0
-
-    const { result } = renderHook(() =>
-      useDecodedPreviewResource({
-        decodedImageRef,
-        rawRenderExposureRef,
-        resourceRegistryRef: { current: registry },
-        setDecodedImageVersion: (updater) => {
-          version = typeof updater === 'function' ? updater(version) : updater
-        },
-        invalidateExportGraph: vi.fn(),
-        getSessionId: () => 'session-a',
-      }),
-    )
+    const { registry, decodedImageRef, setDecodedImageRef, readFrame } =
+      renderResource()
 
     const decoded = createDecodedImage(0)
-    result.current.setDecodedImageRef(decoded)
+    setDecodedImageRef(decoded)
 
     expect(decodedImageRef.current).toBe(decoded)
-    expect(version).toBe(1)
+    expect(readFrame()).not.toBeNull()
     expect(registry.snapshot().live).toEqual([
       {
         id: 'decoded-preview-1',
@@ -65,7 +48,7 @@ describe('useDecodedPreviewResource', () => {
     await registry.disposeOwners(['preview'])
 
     expect(decodedImageRef.current).toBeNull()
-    expect(version).toBe(2)
+    expect(readFrame()).toBeNull()
   })
 
   function renderResource() {
@@ -81,7 +64,6 @@ describe('useDecodedPreviewResource', () => {
         decodedImageRef,
         rawRenderExposureRef,
         resourceRegistryRef: { current: registry },
-        setDecodedImageVersion: vi.fn(),
         invalidateExportGraph,
         getSessionId: () => sessionIdRef.current,
       }),

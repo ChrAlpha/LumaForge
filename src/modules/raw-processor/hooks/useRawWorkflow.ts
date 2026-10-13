@@ -1,6 +1,6 @@
 import type { LUTData } from '@lumaforge/luma-color-runtime'
 import { toLUTData } from '@lumaforge/luma-color-runtime'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { withInterruptionHistory } from '../services/export/export-recovery'
@@ -34,7 +34,6 @@ import { useHqPreviewExportAction } from './stages/export/useHqPreviewExportActi
 import { useRawIngestStage } from './stages/ingest/useRawIngestStage'
 import { useRawRuntimeControls } from './stages/ingest/useRawRuntimeControls'
 import { useRawSourceState } from './stages/ingest/useRawSourceState'
-import { useLutDataState } from './stages/look/useLutDataState'
 import { useRawLookStage } from './stages/look/useRawLookStage'
 import { useDecodedPreviewResource } from './stages/preview/useDecodedPreviewResource'
 import { useEmbeddedPreviewUrlLifecycle } from './stages/preview/useEmbeddedPreviewUrlLifecycle'
@@ -46,10 +45,9 @@ import { useRawWorkflowActions } from './useRawWorkflowActions'
 import { useRawWorkflowRefs } from './useRawWorkflowRefs'
 
 /**
- * The LUT the store holds, in the shape the pipeline reads, read when
- * called. It shares the parsed table with the copy the preview takes once
- * the LUT's effect runs, so a request that names the table here names the
- * one the preview catches up to.
+ * The LUT the store holds, in the shape the export reads, read when called.
+ * It shares the parsed table with the stored record the preview draws, so a
+ * request that names the table here names the one on screen.
  */
 function getStoredLutData(): LUTData | null {
   const lut = getLut()
@@ -85,7 +83,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     session,
     decodedImageRef,
   })
-  const [decodedImageVersion, setDecodedImageVersion] = useState(0)
   const { scheduleToast, dismissError, updateStats } = useRawWorkflowActions({
     isMountedRef: runtime.isMountedRef,
     status,
@@ -125,7 +122,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     abortExportWork,
     queueExportResultResourceDisposal,
   })
-  const { lutDataRef, lutDataVersion, setLutDataRef } = useLutDataState(lut)
   // A LUT landing while an export runs or holds the preview released would
   // cancel that export or discard its JPEG, so it never applies then. The
   // export state is read from the store when the LUT is about to land.
@@ -154,8 +150,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     lut,
     setLut: rawWorkflowStore.setLut,
     setColorIntent: rawWorkflowStore.setColorIntent,
-    lutDataRef,
-    setLutDataRef,
     scheduleToast,
     invalidateExportGraph,
     canApplyLoadedLut,
@@ -178,7 +172,6 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   } = usePreviewPipelineEvacuation(runtime)
   const { setDecodedImageRef, decodedFrame } = useDecodedPreviewResource({
     ...runtime,
-    setDecodedImageVersion,
     invalidateExportGraph,
     getSessionId: getCurrentSessionId,
   })
@@ -243,7 +236,7 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     sourceFile: loadedImage.file,
     rawRenderExposure,
     params,
-    lutData: lutDataRef.current,
+    lutData: lut,
     previewFacts,
   })
   const { previewSuspended, previewExportRefusal } = exportState
@@ -291,14 +284,11 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     ...originalReference,
     transform,
     decodedImageRef,
-    decodedImageVersion,
     decodedFrame,
     status,
     error,
     progress,
-    lutData: lutDataRef.current,
-    lutDataRef,
-    lutDataVersion,
+    lutData: lut,
     previewFacts,
     exportImage: exportWithInterruptionHistory,
     exportPreviewImage,

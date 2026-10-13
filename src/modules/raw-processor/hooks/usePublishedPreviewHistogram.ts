@@ -14,12 +14,7 @@ import type { UseRawWorkflowReturn } from './useRawWorkflow.types'
 
 export type PreviewHistogramSource = Pick<
   UseRawWorkflowReturn,
-  | 'decodedImageRef'
-  | 'decodedFrame'
-  | 'params'
-  | 'lutDataRef'
-  | 'lutDataVersion'
-  | 'displaySource'
+  'decodedImageRef' | 'decodedFrame' | 'params' | 'lutData' | 'displaySource'
 >
 
 /** A rebuilt stale or computing state over the same bins says nothing new. */
@@ -50,8 +45,7 @@ export function usePublishedPreviewHistogram(source: PreviewHistogramSource) {
     imageRef: source.decodedImageRef,
     frame: source.decodedFrame,
     params: source.params,
-    lutDataRef: source.lutDataRef,
-    lutDataVersion: source.lutDataVersion,
+    lutData: source.lutData,
     displaySource: source.displaySource,
   })
   const publish = useSetAtom(previewHistogramStateAtom, { store: jotaiStore })

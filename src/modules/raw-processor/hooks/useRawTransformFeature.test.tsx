@@ -1,3 +1,5 @@
+import type { LUTData } from '@lumaforge/luma-color-runtime'
+import { generateIdentityLUT, toLUTData } from '@lumaforge/luma-color-runtime'
 import type { ExportGeometry } from '@lumaforge/render-engine/export'
 import type { CpuPreviewFrame } from '@lumaforge/render-engine/preview'
 import { act, renderHook } from '@testing-library/react'
@@ -219,14 +221,24 @@ function decodedFrameOf(n: number, sessionId = 'one'): DecodedPreviewFrame {
   }
 }
 
+const lutRecords = new Map<number, LUTData>()
+/** One LUT record per number, the same object each time it is asked for. */
+function lutRecord(record: number): LUTData {
+  let lut = lutRecords.get(record)
+  if (!lut) {
+    lut = toLUTData(generateIdentityLUT(2))
+    lutRecords.set(record, lut)
+  }
+  return lut
+}
+
 function workflow(): UseRawWorkflowReturn {
   return {
     hasImage: true,
     sourceFileName: 'current.nef',
     status: 'ready',
-    decodedImageVersion: 1,
     decodedFrame: decodedFrameOf(1),
-    lutDataVersion: 1,
+    lutData: lutRecord(1),
     decodedImageRef: { current: { width: 80, height: 60 } },
     pipelineRef: { current: {} },
     viewMode: 'processed',
@@ -256,12 +268,8 @@ interface SessionInput {
   session?: string
   /** The accepted decoded frame of the session the workflow holds. */
   frame?: number
-  /**
-   * The workflow's decoded image counter, which moves with every accepted
-   * or released frame; it names no frame.
-   */
-  decodedImageVersion?: number
-  lutDataVersion?: number
+  /** The LUT record the store holds, by number; each number is one record. */
+  lut?: number
   userExposureEv?: number
   userSaturation?: number
   intensity?: number
@@ -279,8 +287,7 @@ interface SessionInput {
 function useSessionHarness({
   session = 'one',
   frame = 1,
-  decodedImageVersion = 1,
-  lutDataVersion = 1,
+  lut = 1,
   userExposureEv = 0,
   userSaturation = 0,
   intensity = 1,
@@ -294,9 +301,8 @@ function useSessionHarness({
       hasImage: true,
       sourceFileName: 'current.nef',
       status: 'ready',
-      decodedImageVersion,
       decodedFrame: released ? null : decodedFrameOf(frame, session),
-      lutDataVersion,
+      lutData: lutRecord(lut),
       decodedImageRef: { current: released ? null : image },
       pipelineRef,
       viewMode,
@@ -424,17 +430,17 @@ describe('rAW Transform feature', () => {
     const edits: SessionInput[] = [
       { userExposureEv: 1 },
       { userExposureEv: 1.5, userSaturation: 20 },
-      { userExposureEv: 1.5, userSaturation: 20, lutDataVersion: 2 },
+      { userExposureEv: 1.5, userSaturation: 20, lut: 2 },
       {
         userExposureEv: 1.5,
         userSaturation: 20,
-        lutDataVersion: 2,
+        lut: 2,
         intensity: 0.4,
       },
       {
         userExposureEv: 1.5,
         userSaturation: 20,
-        lutDataVersion: 2,
+        lut: 2,
         intensity: 0.7,
         viewMode: 'compare',
       },
@@ -455,7 +461,7 @@ describe('rAW Transform feature', () => {
   it('captures the photo as it now looks before a first Transform can commit', async () => {
     const hook = renderSession()
     await captureNeutral(hook)
-    hook.rerender({ userExposureEv: 1, lutDataVersion: 2, intensity: 0.5 })
+    hook.rerender({ userExposureEv: 1, lut: 2, intensity: 0.5 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledOnce()
 
@@ -495,7 +501,7 @@ describe('rAW Transform feature', () => {
     // capture again.
     act(() => hook.result.current.feature.reset())
     expect(commits).toHaveBeenLastCalledWith('one', null)
-    hook.rerender({ userExposureEv: 2, lutDataVersion: 2, intensity: 0.5 })
+    hook.rerender({ userExposureEv: 2, lut: 2, intensity: 0.5 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     expect(hook.result.current.feature.exportBlock).toBeNull()
@@ -756,19 +762,13 @@ describe('rAW Transform feature', () => {
     hook.unmount()
   })
 
-  it('names the WebGPU frame by its accepted descriptor, never by the decoded image counter', async () => {
+  it('names the WebGPU frame by its accepted descriptor', async () => {
     const hook = renderSession()
     await captureNeutral(hook)
     expect(captureTransformSource).toHaveBeenCalledOnce()
 
-    // The counter moves without a new accepted frame: the photo is the same.
-    hook.rerender({ decodedImageVersion: 2 })
-    await act(() => vi.advanceTimersByTimeAsync(150))
-    expect(captureTransformSource).toHaveBeenCalledOnce()
-    expect(hook.result.current.feature.current).toBe(true)
-
-    // A new accepted frame is a new photo, whatever the counter says.
-    hook.rerender({ decodedImageVersion: 2, frame: 2 })
+    // A new accepted frame is a new photo.
+    hook.rerender({ frame: 2 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     analyzeCapture()
@@ -784,12 +784,12 @@ describe('rAW Transform feature', () => {
     answer(answered)
     expect(hook.result.current.feature.exportBlock).toBeNull()
     // The answer stands on the same accepted frame...
-    hook.rerender({ decodedImageVersion: 5, frame: 2 })
+    hook.rerender({ frame: 2 })
     expect(hook.result.current.feature.exportBlock).toBeNull()
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(2)
     // ...and not on a frame decoded again for the same source.
-    hook.rerender({ decodedImageVersion: 5, frame: 3 })
+    hook.rerender({ frame: 3 })
     expect(hook.result.current.feature.exportBlock).toBe('pending')
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledTimes(3)
@@ -839,7 +839,7 @@ describe('rAW Transform feature', () => {
     // The bounded-HQ frame is accepted while the CPU stage keeps drawing its
     // quick source: the retained frame stays the photo a neutral analysis
     // was made on, though it is not the workflow's newest frame.
-    hook.rerender({ cpu: true, frame: 2, decodedImageVersion: 2 })
+    hook.rerender({ cpu: true, frame: 2 })
     await act(() => vi.advanceTimersByTimeAsync(150))
     expect(captureTransformSource).toHaveBeenCalledOnce()
     expect(hook.result.current.feature.available).toBe(true)
@@ -1659,7 +1659,6 @@ describe('rAW Transform feature', () => {
     rerender({
       value: {
         ...input,
-        decodedImageVersion: 2,
         decodedFrame: decodedFrameOf(2),
       },
       sourceId: 'one',
@@ -1671,7 +1670,6 @@ describe('rAW Transform feature', () => {
     rerender({
       value: {
         ...input,
-        decodedImageVersion: 3,
         decodedFrame: decodedFrameOf(1, 'replacement'),
       },
       sourceId: 'replacement',
