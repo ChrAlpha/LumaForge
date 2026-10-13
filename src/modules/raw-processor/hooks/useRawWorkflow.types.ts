@@ -17,6 +17,8 @@ import type {
   RawProcessingPipeline,
 } from '~/lib/webgpu/raw-processing-pipeline'
 
+import type { ColorValue } from '../components/color-fields'
+import type { ToneValue } from '../components/tone-fields'
 import type {
   ExportResult,
   ExportShareCapability,
@@ -128,23 +130,9 @@ export interface UseRawWorkflowReturn {
   resetCompareView: () => void
   setPreviewViewport: (viewport: PreviewViewport) => void
   clearLUT: () => void
-  setToneParams: (
-    params: Partial<
-      Pick<
-        ColorGraphIntent,
-        | 'userExposureEv'
-        | 'userContrast'
-        | 'userHighlights'
-        | 'userShadows'
-        | 'userWhites'
-        | 'userBlacks'
-      >
-    >,
-  ) => void
+  setToneParams: (params: Partial<ToneValue>) => void
   resetTone: () => void
-  setColorParams: (
-    params: Partial<Pick<ColorGraphIntent, 'userTemperature' | 'userTint'>>,
-  ) => void
+  setColorParams: (params: Partial<ColorValue>) => void
   resetColor: () => void
   setSelectiveColorBand: (band: HSLBandId, shift: Partial<HSLBandShift>) => void
   resetSelectiveColor: () => void

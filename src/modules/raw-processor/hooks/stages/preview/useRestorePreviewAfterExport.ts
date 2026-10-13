@@ -1,23 +1,16 @@
 import type { RawRenderExposure } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
-import { useCallback, useLayoutEffect, useRef } from 'react'
+import { useCallback } from 'react'
 import { toast } from 'sonner'
 
-import { useI18n } from '~/lib/i18n'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { RawRuntimeHost } from '~/lib/raw/raw-runtime-host'
 
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
-
-type RestorePreviewPhase = 'loading' | 'decoding' | 'processing' | 'complete'
-
-export type SetImageSession = (
-  update:
-    | ImageSession
-    | null
-    | ((prev: ImageSession | null) => ImageSession | null),
-) => void
+import { mapRawDecodePhaseToProcessingStatus } from '../../../services/ingest/workflow-status'
+import type { SetImageSession } from '../../../state/session.atoms'
+import { useLatestTranslate } from '../../useLatestTranslate'
 
 type UseRestorePreviewAfterExportInput = {
   /** Reads the current session from the store, not from the last render. */
@@ -66,13 +59,6 @@ function canAdmitRestore(
   )
 }
 
-function mapPhaseToStatus(phase: RestorePreviewPhase): ProcessingStatus {
-  if (phase === 'loading') return 'loading'
-  if (phase === 'decoding') return 'decoding'
-  if (phase === 'processing') return 'processing'
-  return 'ready'
-}
-
 export function useRestorePreviewAfterExport({
   getSession,
   decodedImageRef,
@@ -87,13 +73,7 @@ export function useRestorePreviewAfterExport({
   setDecodedImageRef,
   scheduleToast,
 }: UseRestorePreviewAfterExportInput) {
-  const { t: renderedTranslate } = useI18n()
-  // Copy is built when the failure is reported, after the decode, so it is
-  // read in the locale current then rather than the one this render saw.
-  const translateRef = useRef(renderedTranslate)
-  useLayoutEffect(() => {
-    translateRef.current = renderedTranslate
-  }, [renderedTranslate])
+  const t = useLatestTranslate()
 
   const restorePreviewAfterExport = useCallback(async () => {
     if (!isMountedRef.current) {
@@ -141,7 +121,7 @@ export function useRestorePreviewAfterExport({
       const decoded = await runtimeSession.decodeQuickRaw(
         ({ phase, progress }) => {
           if (!matchesActiveSession()) return
-          setStatus(mapPhaseToStatus(phase))
+          setStatus(mapRawDecodePhaseToProcessingStatus(phase))
           setProgress(progress)
         },
         lease.signal,
@@ -181,7 +161,6 @@ export function useRestorePreviewAfterExport({
       }
 
       // A runtime's own message is shown as given.
-      const t = translateRef.current
       const title = t('raw.preview.restoreFailed')
       const description =
         err instanceof Error ? err.message : t('raw.preview.restoreFallback')
@@ -213,6 +192,7 @@ export function useRestorePreviewAfterExport({
     setProgress,
     setSession,
     setStatus,
+    t,
   ])
 
   return { restorePreviewAfterExport }

@@ -16,9 +16,11 @@ const baseCurrentSessionAtom = atom<ImageSession | null>(null)
 export const [currentSessionAtom, useCurrentSession, , , getCurrentSession] =
   createAtomHooks(baseCurrentSessionAtom)
 
-/** Writes the current session; an updater receives the store's latest value. */
-export function setCurrentSession(
+export type SetImageSession = (
   update: SetStateAction<ImageSession | null>,
-): void {
+) => void
+
+/** Writes the current session; an updater receives the store's latest value. */
+export const setCurrentSession: SetImageSession = (update) => {
   jotaiStore.set(currentSessionAtom, update)
 }

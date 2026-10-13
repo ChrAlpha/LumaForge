@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
-import type { SetImageSession } from './useEmbeddedPreviewUrlLifecycle'
+import type { SetImageSession } from '../../../state/session.atoms'
 import { useEmbeddedPreviewUrlLifecycle } from './useEmbeddedPreviewUrlLifecycle'
 
 function createSession(

@@ -5,11 +5,10 @@ import type {
   ParsedLUT,
 } from '@lumaforge/luma-color-runtime'
 import type { MutableRefObject } from 'react'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 import type { Translate } from '~/lib/i18n'
-import { useI18n } from '~/lib/i18n'
 import type { OnlineLUTEntry } from '~/lib/profiles/catalog'
 
 import type {
@@ -39,8 +38,9 @@ import {
   getCurrentSession,
   setCurrentSession,
 } from '../../../state/session.atoms'
+import type { SetColorIntent } from '../../../state/workflow.atoms'
 import { getLut } from '../../../state/workflow.atoms'
-import type { SetColorIntent } from './useRawAdjustmentActions'
+import { useLatestTranslate } from '../../useLatestTranslate'
 import { useRawAdjustmentActions } from './useRawAdjustmentActions'
 
 type UseRawLookStageInput = {
@@ -130,20 +130,14 @@ export function useRawLookStage({
     [baseParams, session],
   )
 
-  const { t: renderedTranslate } = useI18n()
-  // Copy is built when a notification is, usually after an await, so it is
-  // read in the locale current then rather than the one this render saw.
-  const translateRef = useRef(renderedTranslate)
-  useLayoutEffect(() => {
-    translateRef.current = renderedTranslate
-  }, [renderedTranslate])
+  const t = useLatestTranslate()
   // A load decides what to report while it owns the session; the toast
   // itself waits for the scheduled post-commit task.
   const notify = useCallback(
     (notification: LutNotification) => {
-      scheduleToast(lutToast(notification, translateRef.current))
+      scheduleToast(lutToast(notification, t))
     },
-    [scheduleToast],
+    [scheduleToast, t],
   )
 
   // LUT loads read and write the session in the store, and contract choices
@@ -279,7 +273,7 @@ export function useRawLookStage({
     if (shouldInvalidateExportGraph) {
       invalidateExportGraph()
     }
-    const message = translateRef.current('raw.lut.toast.cleared')
+    const message = t('raw.lut.toast.cleared')
     scheduleToast(() => toast.info(message))
   }, [
     invalidateExportGraph,
@@ -289,6 +283,7 @@ export function useRawLookStage({
     setColorIntent,
     setLut,
     setLutDataRef,
+    t,
   ])
 
   const adjustmentActions = useRawAdjustmentActions({

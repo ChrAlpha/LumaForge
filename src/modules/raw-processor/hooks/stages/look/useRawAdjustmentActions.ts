@@ -13,10 +13,7 @@ import {
   computeColorParams,
   computeToneParams,
 } from '../../../services/look/orchestrate-params-update'
-
-export type SetColorIntent = (
-  value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
-) => void
+import type { SetColorIntent } from '../../../state/workflow.atoms'
 
 const NEUTRAL_TONE: ToneValue = {
   userExposureEv: 0,

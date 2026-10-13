@@ -1,5 +1,9 @@
 import type { ColorGraphIntent, ParsedLUT } from '@lumaforge/luma-color-runtime'
-import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
+import {
+  NEUTRAL_USER_COLOR_INTENT,
+  pickColorGraphIntent,
+} from '@lumaforge/luma-color-runtime'
+import type { SetStateAction } from 'jotai'
 import { atom, useAtomValue } from 'jotai'
 import { selectAtom } from 'jotai/utils'
 
@@ -36,10 +40,25 @@ export const [
   processingParamsAtom,
   ,
   useProcessingParamsValue,
-  useSetProcessingParams,
+  ,
   getProcessingParams,
   setProcessingParams,
 ] = createAtomHooks(baseProcessingParamsAtom)
+
+export type SetColorIntent = (value: SetStateAction<ColorGraphIntent>) => void
+
+/**
+ * The only write into the stored intent. It keeps the intent strict: whatever
+ * a caller hands it is copied down to the color fields, so view state can
+ * never land there. An updater that returns its input leaves the stored
+ * intent untouched.
+ */
+export const setColorIntent: SetColorIntent = (value) => {
+  jotaiStore.set(processingParamsAtom, (prev) => {
+    const next = typeof value === 'function' ? value(prev) : value
+    return next === prev ? prev : pickColorGraphIntent(next)
+  })
+}
 
 /**
  * The color intent the photo renders and exports with, read from the store

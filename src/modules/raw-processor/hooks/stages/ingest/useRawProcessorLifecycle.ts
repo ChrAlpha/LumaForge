@@ -7,13 +7,7 @@ import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 import type { ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { releaseSourceForUnmount } from '../../../services/workflow/raw-workflow-resources'
-
-export type SetImageSession = (
-  update:
-    | ImageSession
-    | null
-    | ((prev: ImageSession | null) => ImageSession | null),
-) => void
+import type { SetImageSession } from '../../../state/session.atoms'
 
 type UseRawProcessorLifecycleInput = {
   isMountedRef: MutableRefObject<boolean>

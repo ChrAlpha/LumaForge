@@ -1,14 +1,14 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 
 import type { Translate } from '~/lib/i18n'
-import { useI18n } from '~/lib/i18n'
 
 import type {
   RawLoadContext,
   RawLoadNotification,
 } from '../../../services/ingest/orchestrate-raw-load'
 import { orchestrateRawLoad } from '../../../services/ingest/orchestrate-raw-load'
+import { useLatestTranslate } from '../../useLatestTranslate'
 
 export type UseRawLoadActionInput = RawLoadContext['atoms'] &
   Omit<RawLoadContext['services'], 'notify'> &
@@ -79,20 +79,14 @@ export function useRawLoadAction({
   pendingLoadSessionIdRef,
   previewCopyCanvasRef,
 }: UseRawLoadActionInput) {
-  const { t: renderedTranslate } = useI18n()
-  // Copy is built when a notification is, usually after an await, so it is
-  // read in the locale current then rather than the one this render saw.
-  const translateRef = useRef(renderedTranslate)
-  useLayoutEffect(() => {
-    translateRef.current = renderedTranslate
-  }, [renderedTranslate])
+  const t = useLatestTranslate()
   // The load decides what to report while it owns the session; the toast
   // itself waits for the scheduled post-commit task.
   const notify = useCallback(
     (notification: RawLoadNotification) => {
-      scheduleToast(rawLoadToast(notification, translateRef.current))
+      scheduleToast(rawLoadToast(notification, t))
     },
-    [scheduleToast],
+    [scheduleToast, t],
   )
 
   const rawLoadCtx = useMemo<RawLoadContext>(

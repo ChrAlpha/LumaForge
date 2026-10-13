@@ -11,13 +11,10 @@ import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 
 import type { ImageSession, StyleAsset } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
+import type { SetColorIntent } from '../../../state/workflow.atoms'
 import { useRawLoadAction } from './useRawLoadAction'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
 import { useRawSessionReset } from './useRawSessionReset'
-
-type SetColorIntent = (
-  value: ColorGraphIntent | ((prev: ColorGraphIntent) => ColorGraphIntent),
-) => void
 
 type UseRawIngestStageInput = {
   setStatus: (status: ProcessingStatus) => void

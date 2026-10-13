@@ -5,8 +5,8 @@ import type { DecodedImage } from '~/lib/raw/decoder'
 
 import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
+import type { SetImageSession } from '../../../state/session.atoms'
 import { useEmbeddedPreviewUrlLifecycle } from '../preview/useEmbeddedPreviewUrlLifecycle'
-import type { SetImageSession } from './useRawProcessorLifecycle'
 import { useRawProcessorLifecycle } from './useRawProcessorLifecycle'
 
 afterEach(() => {

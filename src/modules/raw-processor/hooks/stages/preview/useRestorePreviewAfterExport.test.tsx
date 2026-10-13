@@ -14,7 +14,7 @@ import { createExportResult } from '../../../model/export-result'
 import type { ImageSession } from '../../../model/session'
 import { createTransformState } from '../../../model/session-factory'
 import { captureExportResultIdentity } from '../../../services/export/export-result-identity'
-import type { SetImageSession } from './useRestorePreviewAfterExport'
+import type { SetImageSession } from '../../../state/session.atoms'
 import { useRestorePreviewAfterExport } from './useRestorePreviewAfterExport'
 
 const toastMock = vi.hoisted(() => ({ toast: { error: vi.fn() } }))

@@ -6,13 +6,7 @@ import {
   clearEmbeddedPreviewUrlFromSession,
   revokeEmbeddedPreviewObjectUrls,
 } from '../../../services/preview/embedded-preview-url'
-
-export type SetImageSession = (
-  update:
-    | ImageSession
-    | null
-    | ((prev: ImageSession | null) => ImageSession | null),
-) => void
+import type { SetImageSession } from '../../../state/session.atoms'
 
 type UseEmbeddedPreviewUrlLifecycleInput = {
   embeddedPreviewUrlRef: MutableRefObject<string | null>
