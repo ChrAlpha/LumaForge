@@ -118,6 +118,7 @@ const RETIRED_MEMBERS = Object.freeze({
     ExportIntent: Object.freeze(['previousUserInterrupted']),
     ExportRuntimeResources: Object.freeze(['streamingSinkAvailable']),
     InteractivePolicy: Object.freeze(['allowConcurrentDecodeAndLutParse']),
+    RunFullResolutionJpegExportInput: Object.freeze(['onCheckpoint']),
   }),
   '@lumaforge/luma-raw-runtime': Object.freeze({
     // Decode through a session, not one-shot from the file.

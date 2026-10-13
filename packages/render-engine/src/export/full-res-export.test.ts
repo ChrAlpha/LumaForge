@@ -280,39 +280,6 @@ describe('runFullResolutionJpegExport', () => {
     expect(openBlob).not.toHaveBeenCalled()
   })
 
-  it('emits a checkpoint after each committed strip', async () => {
-    const checkpoints: unknown[] = []
-    const writer = {
-      writeRows: vi.fn(async () => undefined),
-      close: vi.fn(async () => makeJpegOutput([new Uint8Array([1])])),
-      abort: vi.fn(async () => undefined),
-    }
-
-    await runFullResolutionJpegExport({
-      capability: makeCapability({
-        height: 130,
-        rawHeight: 130,
-        visibleCrop: { x: 0, y: 0, width: 4, height: 130 },
-      }),
-      graph: neutralGraph(),
-      preferredRows: 64,
-      concurrency: 1,
-      readProcessedWindow: vi.fn((request: LumaRawProcessedWindowRequest) =>
-        Promise.resolve(makeProcessedWindow(request)),
-      ),
-      writerFactory: () => writer,
-      onCheckpoint(entry) {
-        checkpoints.push(entry)
-      },
-    })
-
-    expect(checkpoints).toEqual([
-      { completedRowsForDiagnostics: 64, totalRows: 130, stripRows: 64 },
-      { completedRowsForDiagnostics: 128, totalRows: 130, stripRows: 64 },
-      { completedRowsForDiagnostics: 130, totalRows: 130, stripRows: 64 },
-    ])
-  })
-
   it('emits strip and summary performance metrics without changing output rows', async () => {
     const metrics: unknown[] = []
     const writtenRows: Array<{ rowCount: number; bytes: Uint8Array }> = []

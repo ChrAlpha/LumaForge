@@ -72,11 +72,6 @@ export type RunFullResolutionJpegExportInput = {
    */
   geometry?: ExportGeometry
   retryPolicy?: 'in-process' | 'surface-resource-failure'
-  onCheckpoint?: (entry: {
-    completedRowsForDiagnostics: number
-    totalRows: number
-    stripRows: number
-  }) => void | Promise<void>
 }
 
 export class FullResExportResourceFailure extends Error {
@@ -553,14 +548,6 @@ export async function runFullResolutionJpegExport(
           }
 
           completedStrips += 1
-          await input.onCheckpoint?.({
-            completedRowsForDiagnostics: Math.min(
-              outputSize.height,
-              completedStrips * stripRows,
-            ),
-            totalRows: outputSize.height,
-            stripRows,
-          })
           input.onProgress?.({
             completedStrips,
             totalStrips: strips.length,

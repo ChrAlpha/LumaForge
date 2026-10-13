@@ -8,6 +8,9 @@ predates this file.
 
 ### Breaking
 
+- `runFullResolutionJpegExport` no longer takes `onCheckpoint`. No host
+  persisted the per-strip checkpoint it reported; `onProgress` still reports
+  each committed strip.
 - `@lumaforge/render-engine/policy` drops what no host read or could use:
   the `'streaming'` output sink with `ExportRuntimeResources.streamingSinkAvailable`
   and `ExportRuntimeResourcesInput` (no host wires a streaming JPEG sink),
