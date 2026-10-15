@@ -770,6 +770,15 @@ describe('executor boundary', () => {
   /** The edited intent with its HSL left out, as persisted data can be. */
   const { selectiveColor: _omitted, ...WITHOUT_HSL } = EDITED
 
+  it('keeps export input look fields writable before resolution', () => {
+    const input: ExportColorGraphInput = { ...EDITED, lut: null }
+    input.styleKind = 'none'
+    input.builtinPreset = null
+    input.intensity = 0.5
+
+    expect(resolveExportColorGraph(input).supported).toBe(true)
+  })
+
   it('requires HSL wherever a complete intent is read', () => {
     expectTypeOf<typeof WITHOUT_HSL>().not.toExtend<ColorGraphIntent>()
     expectTypeOf<typeof WITHOUT_HSL>().not.toExtend<UserColorIntent>()

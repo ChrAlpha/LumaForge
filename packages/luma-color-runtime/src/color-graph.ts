@@ -226,7 +226,10 @@ export function resolveUnsupportedLUTOutputReason(
  * scalar user fields read as neutral; HSL is required as complete bands, so
  * partial HSL goes through `normalizeColorGraphIntent` first.
  */
-export interface ExportColorGraphInput extends LookSelection {
+export interface ExportColorGraphInput {
+  styleKind: LookSelection['styleKind']
+  intensity: LookSelection['intensity']
+  builtinPreset: LookSelection['builtinPreset']
   lut: LUTData | null
   rawRenderExposure?: RawRenderExposure
   userExposureEv?: LumaColorToneParams['userExposureEv']
