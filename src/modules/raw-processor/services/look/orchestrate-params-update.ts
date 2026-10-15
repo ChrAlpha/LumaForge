@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntent,
-  ProcessingParams,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import {
   normalizeColorBalanceParams,
   normalizeLookIntensity,
@@ -138,7 +135,7 @@ export function computeToneParams(
   prevParams: ColorGraphIntent,
   toneParams: Partial<
     Pick<
-      ProcessingParams,
+      ColorGraphIntent,
       | 'userExposureEv'
       | 'userContrast'
       | 'userHighlights'
@@ -172,7 +169,7 @@ export function computeColorParams(
   prevParams: ColorGraphIntent,
   colorParams: Partial<
     Pick<
-      ProcessingParams,
+      ColorGraphIntent,
       'userTemperature' | 'userTint' | 'userSaturation' | 'userVibrance'
     >
   >,

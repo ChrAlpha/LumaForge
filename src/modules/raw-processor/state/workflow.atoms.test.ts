@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntent,
-  ProcessingParams,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_SELECTIVE_COLOR } from '@lumaforge/luma-color-runtime'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -49,8 +46,8 @@ describe('the stored color intent', () => {
       ...getProcessingParams(),
       viewMode: 'processed',
       compareSplit: 0.9,
-    } as ProcessingParams
-    setColorIntent(mixed as unknown as ColorGraphIntent)
+    }
+    setColorIntent(mixed)
 
     expect(getProcessingParams()).toMatchObject({
       intensity: 0.37,
