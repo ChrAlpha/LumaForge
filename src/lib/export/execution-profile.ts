@@ -66,7 +66,6 @@ export type ExportWorkerAttemptDebugPayload = {
   previousConcurrency?: number
   nextConcurrency?: number
   freshWorker: boolean
-  priorClientDisposed?: boolean
 }
 
 export type ExportProgressDebugPayload = {

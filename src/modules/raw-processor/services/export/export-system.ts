@@ -101,7 +101,6 @@ export type FullResolutionExportAttemptEvent = {
   previousConcurrency?: number
   nextConcurrency?: number
   freshWorker: boolean
-  priorClientDisposed?: boolean
 }
 
 function emitFullResolutionExportAttempt(
@@ -371,7 +370,6 @@ export async function runFullResolutionExportJob({
           previousConcurrency: attemptPlan.concurrency,
           nextConcurrency: fallbackPlan.concurrency,
           freshWorker: true,
-          priorClientDisposed: false,
         })
 
         plan = fallbackPlan
@@ -407,7 +405,6 @@ export async function runFullResolutionExportJob({
         previousConcurrency: attemptPlan.concurrency,
         nextConcurrency: retryPlan.concurrency,
         freshWorker: true,
-        priorClientDisposed: false,
       })
 
       plan =
@@ -419,7 +416,6 @@ export async function runFullResolutionExportJob({
         ...attemptEvent,
         phase: 'disposed',
         freshWorker: false,
-        priorClientDisposed: true,
       })
     }
   }

@@ -52,7 +52,6 @@ describe('export execution profile selection', () => {
           previousConcurrency: 1,
           nextConcurrency: 1,
           freshWorker: true,
-          priorClientDisposed: true,
         },
       },
       {

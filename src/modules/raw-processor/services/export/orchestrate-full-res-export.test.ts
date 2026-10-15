@@ -736,7 +736,6 @@ function createHarness(options: HarnessOptions = {}) {
             ...attempt,
             phase: 'disposed',
             freshWorker: false,
-            priorClientDisposed: true,
           })
         }
       },
@@ -1067,7 +1066,6 @@ describe('orchestrateFullResExport success', () => {
         concurrency: 2,
         phase: 'disposed',
         freshWorker: false,
-        priorClientDisposed: true,
       },
     ])
     expect(h.debugPayloads('export-progress')).toEqual([
