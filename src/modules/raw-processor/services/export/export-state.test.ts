@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createExportResult } from '../../model/export-result'
 import type { ImageSession } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
+import { createLoadedTestSession } from '../../test-support/builders'
 import { captureExportResultIdentity } from './export-result-identity'
 import {
   changesRenderGraphParams,
@@ -24,38 +24,18 @@ import {
 function createSession(
   exportState: Partial<ImageSession['exportState']> = {},
 ): ImageSession {
-  return {
+  return createLoadedTestSession({
     id: 'session-export-state',
-    createdAt: 1,
-    sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
-      sizeBytes: 12,
-      supportLevel: 'experimental',
-    },
+    sourceFile: { file: undefined, sizeBytes: 12 },
     previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
       boundedHqPreview: { status: 'ready', width: 800, height: 600 },
-      displaySource: 'bounded-hq',
     },
-    activeStyle: null,
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
+    viewState: { mode: 'compare' },
     exportState: {
-      status: 'idle',
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },
       ...exportState,
     },
-    exportGeometry: null,
-    transform: createTransformState('session-export-state'),
-  }
+  })
 }
 
 function createReadyExportResult() {

@@ -19,20 +19,16 @@ import enMessages from '~/locales/en.json'
 import type { ExportResult } from '../../../model/export-result'
 import { createExportResult } from '../../../model/export-result'
 import type { ImageSession, TransformState } from '../../../model/session'
-import { createTransformState } from '../../../model/session-factory'
 import {
   captureExportResultIdentity,
   isSameExportResult,
 } from '../../../services/export/export-result-identity'
-import type {
-  TransformEvent,
-  TransformStatus,
-} from '../../../services/transform/transform-state'
+import { reduceTransformState } from '../../../services/transform/transform-state'
 import {
-  deriveTransformStatus,
-  reduceTransformState,
-} from '../../../services/transform/transform-state'
-import { createTestDecodedImage } from '../../../test-support/builders'
+  createTestDecodedImage,
+  createTestSession,
+  transformAt,
+} from '../../../test-support/builders'
 import { useHqPreviewExportAction } from './useHqPreviewExportAction'
 
 /** The look the test session names: a built-in style WebGPU draws. */
@@ -105,20 +101,14 @@ function createCustomLutSession(): ImageSession {
 }
 
 function createSession(): ImageSession {
-  return {
-    id: 'session-1',
-    createdAt: 1,
+  return createTestSession({
     sourceFile: {
       file: new File(['raw'], 'frame.dng'),
       name: 'frame.dng',
       extension: 'dng',
-      sizeBytes: 3,
       metadata: { width: 800, height: 600 },
-      supportLevel: 'experimental',
     },
     previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'idle' },
       boundedHqPreview: { status: 'ready', width: 800, height: 600 },
       displaySource: 'bounded-hq',
     },
@@ -128,21 +118,7 @@ function createSession(): ImageSession {
       defaultIntensity: 0.7,
       currentIntensity: 0.7,
     },
-    viewState: {
-      mode: 'processed',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
-    exportState: {
-      status: 'idle',
-      fullResCapability: { status: 'unknown' },
-    },
-    exportGeometry: null,
-    transform: createTransformState('session-1'),
-  }
+  })
 }
 
 function createDecodedImage(): DecodedImage {
@@ -199,66 +175,6 @@ function editTransform(state: TransformState, rotate: number) {
     sourceId: state.sourceId,
     intent: { manual: { ...state.intent.manual, rotate } },
   })
-}
-
-/**
- * A first Transform edit and the events that bring it to `status`, with no
- * geometry held unless the preview's answer was accepted.
- */
-function transformAt(status: TransformStatus): TransformState {
-  const sourceId = 'session-1'
-  const captureKey = 'frame-1'
-  const request: TransformEvent = {
-    type: 'request',
-    sourceId,
-    captureKey,
-    clientEpoch: 1,
-    requestId: 1,
-    geometry: SAMPLE_GEOMETRY,
-  }
-  const events: Record<TransformStatus, TransformEvent[]> = {
-    neutral: [],
-    pending: [
-      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
-      request,
-    ],
-    accepted: [
-      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
-      request,
-      {
-        type: 'rendered',
-        sourceId,
-        captureKey,
-        clientEpoch: 1,
-        requestId: 1,
-        geometry: SAMPLE_GEOMETRY,
-        frame: { width: 800, height: 600 },
-      },
-    ],
-    invalid: [
-      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
-      request,
-      {
-        type: 'render-failed',
-        sourceId,
-        captureKey,
-        clientEpoch: 1,
-        requestId: 1,
-        failure: 'transform',
-      },
-    ],
-    unavailable: [
-      { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
-      { type: 'capture-failed', sourceId, captureKey, clientEpoch: 1 },
-    ],
-  }
-  const neutral = createTransformState(sourceId)
-  const state = events[status].reduce(
-    reduceTransformState,
-    status === 'neutral' ? neutral : editTransform(neutral, 2),
-  )
-  expect(deriveTransformStatus(state)).toBe(status)
-  return state
 }
 
 /**

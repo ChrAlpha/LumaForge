@@ -53,20 +53,19 @@ import type {
 import type { ImageSession, TransformState } from '../../model/session'
 import { createTransformState } from '../../model/session-factory'
 import type { ProcessingStatus } from '../../model/workflow'
-import { createTestDecodedImage } from '../../test-support/builders'
-import type {
-  TransformEvent,
-  TransformStatus,
-} from '../transform/transform-state'
+import {
+  createTestDecodedImage,
+  createTestSession,
+  transformAt,
+} from '../../test-support/builders'
+import { createFakeLocks } from '../../test-support/web-locks'
+import type { TransformEvent } from '../transform/transform-state'
 import {
   deriveTransformStatus,
   heldTransformGeometry,
   reduceTransformState,
 } from '../transform/transform-state'
-import type {
-  ExportSourceTuple,
-  SourceInterruptionHint,
-} from './export-interruption'
+import type { SourceInterruptionHint } from './export-interruption'
 import {
   createExportInterruptionMarkers,
   encodeExportSourceHint,
@@ -254,39 +253,26 @@ function createSession(
     transform?: TransformState
   } = {},
 ): ImageSession {
-  return {
+  return createTestSession({
     id,
-    createdAt: 1,
+    ...overrides,
     sourceFile: {
       file: SOURCE_FILE,
       name: SOURCE_FILE.name,
       extension: 'dng',
       sizeBytes: SOURCE_FILE.size,
-      supportLevel: 'experimental',
     },
     previewBundle: {
       embeddedPreview: { status: 'ready', width: 1600, height: 1067 },
       quickDecodePreview: { status: 'ready', width: 1500, height: 1000 },
-      boundedHqPreview: { status: 'idle' },
       displaySource: 'quick',
     },
-    activeStyle: overrides.activeStyle ?? null,
-    exportGeometry: overrides.exportGeometry ?? null,
-    transform: overrides.transform ?? createTransformState(id),
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
+    viewState: { mode: 'compare' },
     exportState: {
-      status: 'idle',
       fullResCapability: { status: 'supported', width: 6000, height: 4000 },
       ...overrides.exportState,
     },
-  }
+  })
 }
 
 /** The geometry the preview answers the test Transform with. */
@@ -295,7 +281,7 @@ const TRANSFORM_GEOMETRY: ExportGeometry = {
   constrainCrop: true,
 }
 
-let transformRequests = 0
+let transformRequests = 1
 
 /** Asks the session's Transform for a manual rotation; a new intent. */
 function editTransform(state: TransformState, rotate: number) {
@@ -335,47 +321,6 @@ function answerTransform(
     },
   ]
   return events.reduce(reduceTransformState, state)
-}
-
-/** A first edit and the events that bring its Transform to `status`. */
-function transformAt(status: TransformStatus, sourceId = 'session-1') {
-  const neutral = createTransformState(sourceId)
-  if (status === 'neutral') return neutral
-  if (status === 'accepted') return answerTransform(editTransform(neutral, 2))
-  const requestId = ++transformRequests
-  const captureKey = `frame-${requestId}`
-  const events: TransformEvent[] = [
-    { type: 'capture', sourceId, captureKey, clientEpoch: 1 },
-  ]
-  if (status === 'unavailable') {
-    events.push({
-      type: 'capture-failed',
-      sourceId,
-      captureKey,
-      clientEpoch: 1,
-    })
-  } else {
-    events.push({
-      type: 'request',
-      sourceId,
-      captureKey,
-      clientEpoch: 1,
-      requestId,
-      geometry: TRANSFORM_GEOMETRY,
-    })
-    if (status === 'invalid')
-      events.push({
-        type: 'render-failed',
-        sourceId,
-        captureKey,
-        clientEpoch: 1,
-        requestId,
-        failure: 'transform',
-      })
-  }
-  const state = events.reduce(reduceTransformState, editTransform(neutral, 2))
-  expect(deriveTransformStatus(state)).toBe(status)
-  return state
 }
 
 /** A session holding an accepted Transform and the geometry it answered. */
@@ -527,7 +472,6 @@ async function settle() {
 const cleanups: Array<() => void> = []
 
 const MARKER_PREFIX = 'lumaforge.export-interruption.v1.'
-const OWNER_LOCK_PREFIX = 'lumaforge-export-attempt-owner:'
 
 type MarkerStorageMode = 'available' | 'denied' | 'refuses-writes'
 
@@ -558,36 +502,6 @@ function createMarkerStorage(mode: MarkerStorageMode) {
         .map(([, value]) => JSON.parse(value) as Record<string, unknown>)
     },
   }
-}
-
-/** Exclusive `ifAvailable` Web Locks shared by every page of the harness. */
-function createMarkerLocks() {
-  const held = new Set<string>()
-  const locks = {
-    async request(
-      name: string,
-      _options: LockOptions,
-      callback: LockGrantedCallback<unknown>,
-    ) {
-      if (held.has(name)) return callback(null)
-      held.add(name)
-      try {
-        return await callback({ name, mode: 'exclusive' } as Lock)
-      } finally {
-        held.delete(name)
-      }
-    },
-  } as unknown as Pick<LockManager, 'request'>
-  return {
-    locks,
-    closePage(page: string) {
-      held.delete(`${OWNER_LOCK_PREFIX}${page}`)
-    },
-  }
-}
-
-function toSourceTuple(file: File): ExportSourceTuple {
-  return { name: file.name, size: file.size, lastModified: file.lastModified }
 }
 
 type HarnessOptions = {
@@ -628,7 +542,7 @@ function createHarness(options: HarnessOptions = {}) {
   const runtime = options.runtime ?? BLOB_RUNTIME
   const manifest = deferred<RenderManifest>()
   const markerStore = createMarkerStorage(options.markerStorage ?? 'available')
-  const markerLocks = createMarkerLocks()
+  const markerLocks = createFakeLocks()
   const beginStarted = deferred()
   const state: {
     status: ProcessingStatus | null
@@ -648,7 +562,7 @@ function createHarness(options: HarnessOptions = {}) {
     let attempts = 0
     return createExportInterruptionMarkers({
       getStorage: () => markerStore.storage,
-      getLocks: () => markerLocks.locks,
+      getLocks: () => markerLocks.forPage(page),
       createId: (kind) =>
         kind === 'owner' ? page : `${page}-attempt-${++attempts}`,
       now: () => FIXED_NOW,
@@ -863,7 +777,7 @@ function createHarness(options: HarnessOptions = {}) {
       file: File = SOURCE_FILE,
     ): Promise<SourceInterruptionHint> {
       const closedPage = createMarkerPage('closed-page')
-      const { stored } = await closedPage.begin(toSourceTuple(file))
+      const { stored } = await closedPage.begin(file)
       if (!stored)
         throw new Error('Expected the closed page to store a marker.')
       markerLocks.closePage('closed-page')
@@ -989,7 +903,7 @@ describe('orchestrateFullResExport success', () => {
         attempt: 'this-page-attempt-1',
         owner: 'this-page',
         ownerLocked: true,
-        source: encodeExportSourceHint(toSourceTuple(SOURCE_FILE)),
+        source: encodeExportSourceHint(SOURCE_FILE),
         startedAt: FIXED_NOW,
         updatedAt: FIXED_NOW,
         terminal: null,
@@ -1308,7 +1222,7 @@ describe('orchestrateFullResExport success', () => {
   it('asks for the resource-failure plan from a matching resource-failure hint', async () => {
     const h = createHarness()
     const failedPage = h.createMarkerPage('failed-page')
-    const { attempt } = await failedPage.begin(toSourceTuple(SOURCE_FILE))
+    const { attempt } = await failedPage.begin(SOURCE_FILE)
     failedPage.finish(attempt, 'resource-failure')
     const interruption = await readSourceInterruption(
       h.createMarkerPage('reader'),
@@ -1362,7 +1276,7 @@ describe('orchestrateFullResExport success', () => {
     expect(h.markerStore.markers()).toEqual([
       expect.objectContaining({
         attempt: 'closed-page-attempt-1',
-        source: encodeExportSourceHint(toSourceTuple(interruptedFile)),
+        source: encodeExportSourceHint(interruptedFile),
       }),
     ])
     expect(h.ctx.refreshExportInterruption).not.toHaveBeenCalled()
@@ -3182,8 +3096,8 @@ describe('orchestrateFullResExport color intent', () => {
   })
 
   it('names two identical attempts in the same millisecond apart without randomUUID', async () => {
-    vi.stubGlobal('crypto', {})
     const h = createHarness()
+    vi.stubGlobal('crypto', {})
 
     const first = await runToReady(h)
     h.manifest.resolve(SEALED_MANIFEST)

@@ -27,17 +27,12 @@ import {
   deriveLutContractExportRefusal,
 } from '../../model/derive-session'
 import type { FullResExportReason } from '../../model/export-result'
-import type { ImageSession, TransformState } from '../../model/session'
-import { createTransformState } from '../../model/session-factory'
-import type {
-  TransformEvent,
-  TransformStatus,
-} from '../transform/transform-state'
+import type { ImageSession } from '../../model/session'
 import {
-  deriveTransformStatus,
-  heldTransformGeometry,
-  reduceTransformState,
-} from '../transform/transform-state'
+  createLoadedTestSession,
+  transformAt,
+} from '../../test-support/builders'
+import { heldTransformGeometry } from '../transform/transform-state'
 import {
   deriveFullResExportReadiness,
   deriveTransformExportRefusalReason,
@@ -49,113 +44,27 @@ import {
 function createSession(
   exportState: Partial<ImageSession['exportState']> = {},
 ): ImageSession {
-  return {
-    id: 'session-export-readiness',
-    createdAt: 1,
+  return createLoadedTestSession({
     sourceFile: {
-      name: 'frame.ARW',
-      extension: 'arw',
+      file: undefined,
       sizeBytes: 12,
       supportLevel: 'experimental',
     },
     previewBundle: {
-      embeddedPreview: { status: 'idle' },
-      quickDecodePreview: { status: 'ready', width: 800, height: 600 },
       boundedHqPreview: { status: 'ready', width: 800, height: 600 },
-      displaySource: 'bounded-hq',
     },
-    activeStyle: null,
-    viewState: {
-      mode: 'compare',
-      compareSplit: 0.5,
-      zoom: 1,
-      panX: 0,
-      panY: 0,
-      fitMode: 'screen',
-    },
+    viewState: { mode: 'compare' },
     exportState: {
-      status: 'idle',
       fullResCapability: { status: 'supported', width: 4000, height: 3000 },
       ...exportState,
     },
-    exportGeometry: null,
-    transform: createTransformState('session-export-readiness'),
-  }
+  })
 }
 
 /** A committed geometry: a slight rotation with the crop constrained. */
 const SAMPLE_GEOMETRY = {
   matrix: [0.999, -0.035, 0.018, 0.035, 0.999, -0.017, 0, 0, 1],
   constrainCrop: true,
-}
-
-/**
- * The session's Transform after the events that reach each status: a first
- * edit whose request for `geometry` is unanswered, an answered one, and the
- * two failures.
- */
-function transformAt(
-  status: TransformStatus,
-  sourceId = 'session-export-readiness',
-  geometry: ExportGeometry = SAMPLE_GEOMETRY,
-): TransformState {
-  const events: TransformEvent[] = []
-  const edit: TransformEvent = {
-    type: 'edit',
-    sourceId,
-    intent: {
-      manual: { ...createTransformState(sourceId).intent.manual, rotate: 2 },
-    },
-  }
-  const capture: TransformEvent = {
-    type: 'capture',
-    sourceId,
-    captureKey: 'k',
-    clientEpoch: 1,
-  }
-  const request: TransformEvent = {
-    type: 'request',
-    sourceId,
-    captureKey: 'k',
-    clientEpoch: 1,
-    requestId: 1,
-    geometry,
-  }
-  if (status !== 'neutral') events.push(edit, capture)
-  if (status === 'pending' || status === 'accepted' || status === 'invalid')
-    events.push(request)
-  if (status === 'accepted')
-    events.push({
-      type: 'rendered',
-      sourceId,
-      captureKey: 'k',
-      clientEpoch: 1,
-      requestId: 1,
-      geometry,
-      frame: { width: 800, height: 600 },
-    })
-  if (status === 'invalid')
-    events.push({
-      type: 'render-failed',
-      sourceId,
-      captureKey: 'k',
-      clientEpoch: 1,
-      requestId: 1,
-      failure: 'transform',
-    })
-  if (status === 'unavailable')
-    events.push({
-      type: 'capture-failed',
-      sourceId,
-      captureKey: 'k',
-      clientEpoch: 1,
-    })
-  const state = events.reduce(
-    reduceTransformState,
-    createTransformState(sourceId),
-  )
-  expect(deriveTransformStatus(state)).toBe(status)
-  return state
 }
 
 /** A session whose accepted Transform answered and holds `geometry`. */
