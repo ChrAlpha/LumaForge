@@ -101,11 +101,6 @@ export function createMemoryFileBackedOutputResult(input: {
       bytes.byteOffset + bytes.byteLength,
     ) as ArrayBuffer
     const blob = new Blob([byteBuffer], { type: input.mimeType })
-    if (typeof blob.arrayBuffer !== 'function') {
-      Object.defineProperty(blob, 'arrayBuffer', {
-        value: async () => byteBuffer.slice(0),
-      })
-    }
     return blob
   }
 
@@ -254,11 +249,6 @@ export function createOpfsFileBackedOutputResult(
       const file = await fileHandle.getFile()
       const bytes = await file.arrayBuffer()
       const blob = new Blob([bytes], { type: input.mimeType })
-      if (typeof blob.arrayBuffer !== 'function') {
-        Object.defineProperty(blob, 'arrayBuffer', {
-          value: async () => bytes.slice(0),
-        })
-      }
       return blob
     },
     async cleanup() {

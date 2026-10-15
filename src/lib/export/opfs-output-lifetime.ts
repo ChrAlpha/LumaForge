@@ -98,18 +98,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function readBlobText(blob: Blob) {
-  if (typeof blob.text === 'function') return blob.text()
-
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () =>
-      reject(reader.error ?? new Error('OPFS_OUTPUT_MARKER_READ_FAILED'))
-    reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.readAsText(blob)
-  })
-}
-
 function createDefaultTabId() {
   return (
     globalThis.crypto?.randomUUID?.() ??
@@ -183,7 +171,7 @@ async function readLegacyOutputTime(
   if (markers.length > 0) {
     let newest = Number.NEGATIVE_INFINITY
     for (const marker of markers) {
-      const text = await readBlobText(await marker.handle.getFile())
+      const text = await (await marker.handle.getFile()).text()
       let parsed: unknown
       try {
         parsed = JSON.parse(text)
