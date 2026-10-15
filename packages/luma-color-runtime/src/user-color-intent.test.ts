@@ -23,7 +23,7 @@ import {
   normalizeSelectiveColorParams,
 } from './selective-color'
 import { normalizeToneParams } from './tone'
-import type { LUTData, ProcessingParams } from './types'
+import type { LUTData } from './types'
 import type {
   ColorGraphIntent,
   ColorGraphIntentInput,
@@ -770,39 +770,11 @@ describe('executor boundary', () => {
   /** The edited intent with its HSL left out, as persisted data can be. */
   const { selectiveColor: _omitted, ...WITHOUT_HSL } = EDITED
 
-  it('names exactly the color graph fields on the params', () => {
-    const params: ProcessingParams = { ...EDITED }
-
-    expect(Object.keys(params).sort()).toEqual(
-      [...COLOR_GRAPH_INTENT_KEYS].sort(),
-    )
-    expectTypeOf<keyof ProcessingParams>().toEqualTypeOf<
-      keyof ColorGraphIntent
-    >()
-    expectTypeOf<ProcessingParams['selectiveColor']>().toEqualTypeOf<
-      UserColorIntent['selectiveColor']
-    >()
-    expectTypeOf<ProcessingParams['styleKind']>().toEqualTypeOf<
-      LookSelection['styleKind']
-    >()
-    expectTypeOf<ProcessingParams['builtinPreset']>().toEqualTypeOf<
-      LookSelection['builtinPreset']
-    >()
-    expectTypeOf<ProcessingParams>().not.toHaveProperty('viewMode')
-    expectTypeOf<ProcessingParams>().not.toHaveProperty('compareSplit')
-  })
-
   it('requires HSL wherever a complete intent is read', () => {
-    // @ts-expect-error the params require selectiveColor
-    const params: ProcessingParams = WITHOUT_HSL
-    // @ts-expect-error the strict intent requires selectiveColor
-    const strict: UserColorIntent = WITHOUT_HSL
-    // @ts-expect-error view state is not part of the params
-    const withView: ProcessingParams = { ...EDITED, viewMode: 'compare' }
-
-    expect(params).not.toHaveProperty('selectiveColor')
-    expect(strict).not.toHaveProperty('selectiveColor')
-    expect(withView).toHaveProperty('viewMode')
+    expectTypeOf<typeof WITHOUT_HSL>().not.toExtend<ColorGraphIntent>()
+    expectTypeOf<typeof WITHOUT_HSL>().not.toExtend<UserColorIntent>()
+    expectTypeOf<ColorGraphIntent>().not.toHaveProperty('viewMode')
+    expectTypeOf<ColorGraphIntent>().not.toHaveProperty('compareSplit')
     expectTypeOf(pickUserColorIntent)
       .parameter(0)
       .toEqualTypeOf<UserColorIntent>()

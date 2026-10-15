@@ -8,6 +8,9 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 
 ### Breaking
 
+- Removed `ProcessingParams`, a duplicate of `ColorGraphIntent`. Use
+  `ColorGraphIntent` for the complete color intent and `LookSelection` for
+  its look fields.
 - Removed the `lookupStoredProfile` option of `parseCubeLUT` and
   `resolveLUTProfile`, and the `fingerprint` input that only fed it. The
   parser no longer reads stored contracts; a host that keeps user contracts

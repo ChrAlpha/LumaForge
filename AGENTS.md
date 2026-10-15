@@ -300,7 +300,7 @@ variant:
   frame-anchored compare split) and maps a mode to what each executor draws.
   The session's `viewState` owns the view once a source loads; zoom and pan
   stay with the preview viewport. Executors receive only their output
-  selection. The color params (`ProcessingParams`, `ColorGraphIntent`) carry
+  selection. The color params (`ColorGraphIntent`) carry
   no view fields.
 - Decoded preview frame identity: `DecodedPreviewFrame` in
   `src/lib/preview/preview-frame.ts`. Only

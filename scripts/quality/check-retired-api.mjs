@@ -66,6 +66,8 @@ const RETIRED_EXPORTS = Object.freeze({
     'readVerifiedManifestRenderParams',
   ]),
   '@lumaforge/luma-color-runtime': Object.freeze([
+    // The duplicate color graph intent.
+    'ProcessingParams',
     // Color intent whose HSL may be missing.
     'ColorGraphIntentSource',
     'UserColorIntentSource',
@@ -95,7 +97,6 @@ const RETIRED_MEMBERS = Object.freeze({
   '@lumaforge/luma-color-runtime': Object.freeze({
     // View state is not color.
     ColorGraphIntent: Object.freeze(['compareSplit', 'viewMode']),
-    ProcessingParams: Object.freeze(['compareSplit', 'viewMode']),
     // The binary LUT input projection.
     LUTData: Object.freeze(['inputProfile']),
     ParsedLUT: Object.freeze(['inputProfile']),
@@ -156,6 +157,7 @@ const RETIRED_IDENTIFIERS = Object.freeze([
   'LUTInputProfile',
   'LumaRenderContext',
   'NODE_DEFAULT_CAPABILITY',
+  'ProcessingParams',
   'RawDynamicRangeInfo',
   'RenderBudget',
   'ResumeFingerprint',

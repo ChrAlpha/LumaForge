@@ -1,10 +1,6 @@
-import type { LumaColorBalanceParams } from './color-balance'
 import type { ColorGamutId } from './constants'
 import type { TransferFunctionId } from './log-encoding'
 import type { LUTColorProfile, SignalRange } from './registry'
-import type { LumaColorSaturationParams } from './saturation'
-import type { LumaColorSelectiveColorParams } from './selective-color'
-import type { LumaColorToneParams } from './tone'
 
 export type BuiltinStylePreset =
   | 'neutral'
@@ -15,17 +11,6 @@ export type BuiltinStylePreset =
   | 'cinematic'
   | 'fade'
   | 'mono'
-
-export interface ProcessingParams
-  extends
-    LumaColorToneParams,
-    LumaColorBalanceParams,
-    LumaColorSaturationParams,
-    LumaColorSelectiveColorParams {
-  intensity: number
-  styleKind: 'none' | 'builtin' | 'custom'
-  builtinPreset: BuiltinStylePreset | null
-}
 
 export type LUTContractResolution =
   | {

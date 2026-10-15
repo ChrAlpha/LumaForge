@@ -28,7 +28,8 @@ import {
 } from './selective-color'
 import type { LumaColorToneParams } from './tone'
 import { resolveToneParams } from './tone'
-import type { LUTData, ProcessingParams } from './types'
+import type { BuiltinStylePreset, LUTData } from './types'
+import type { LookSelection } from './user-color-intent'
 
 export type ExportColorGraphStep =
   | { kind: 'input-linear-prophoto' }
@@ -90,7 +91,7 @@ export type ExportColorGraphStep =
     }
   | {
       kind: 'builtin-style'
-      preset: NonNullable<ProcessingParams['builtinPreset']>
+      preset: BuiltinStylePreset
       intensity: number
     }
   | {
@@ -225,10 +226,7 @@ export function resolveUnsupportedLUTOutputReason(
  * scalar user fields read as neutral; HSL is required as complete bands, so
  * partial HSL goes through `normalizeColorGraphIntent` first.
  */
-export interface ExportColorGraphInput {
-  styleKind: ProcessingParams['styleKind']
-  intensity: number
-  builtinPreset: ProcessingParams['builtinPreset']
+export interface ExportColorGraphInput extends LookSelection {
   lut: LUTData | null
   rawRenderExposure?: RawRenderExposure
   userExposureEv?: LumaColorToneParams['userExposureEv']
