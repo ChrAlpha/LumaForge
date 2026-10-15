@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createResourceRegistry } from '~/lib/export/resource-registry'
@@ -45,7 +45,7 @@ describe('useDecodedPreviewResource', () => {
       },
     ])
 
-    await registry.disposeOwners(['preview'])
+    await act(() => registry.disposeOwners(['preview']))
 
     expect(decodedImageRef.current).toBeNull()
     expect(readFrame()).toBeNull()
@@ -75,12 +75,11 @@ describe('useDecodedPreviewResource', () => {
       rawRenderExposureRef,
       invalidateExportGraph,
       sessionIdRef,
-      setDecodedImageRef: result.current.setDecodedImageRef,
-      /** The descriptor the hook publishes on its next render. */
-      readFrame: () => {
-        rerender()
-        return result.current.decodedFrame
-      },
+      setDecodedImageRef: (
+        ...args: Parameters<typeof result.current.setDecodedImageRef>
+      ) => act(() => result.current.setDecodedImageRef(...args)),
+      readFrame: () => result.current.decodedFrame,
+      rerender,
     }
   }
 
@@ -153,7 +152,7 @@ describe('useDecodedPreviewResource', () => {
     const quick = createDecodedImage(0.25, undefined, 'quick')
 
     setDecodedImageRef(quick)
-    await registry.disposeOwners(['preview'])
+    await act(() => registry.disposeOwners(['preview']))
 
     expect(decodedImageRef.current).toBeNull()
     expect(rawRenderExposureRef.current).toEqual(quick.renderExposure)
@@ -171,7 +170,7 @@ describe('useDecodedPreviewResource', () => {
 
   describe('accepted frame descriptors', () => {
     it('mints one frozen descriptor per accepted frame after the exposure pin', () => {
-      const { setDecodedImageRef, readFrame } = renderResource()
+      const { setDecodedImageRef, readFrame, rerender } = renderResource()
       expect(readFrame()).toBeNull()
 
       const quick = createDecodedImage(0.5, undefined, 'quick', {
@@ -194,6 +193,7 @@ describe('useDecodedPreviewResource', () => {
       expect(Object.isFrozen(frame?.exposure)).toBe(true)
       expect(Object.isFrozen(frame?.exposure.value)).toBe(true)
       // Renders without a new acceptance publish the same object.
+      rerender()
       expect(readFrame()).toBe(frame)
     })
 
@@ -331,7 +331,7 @@ describe('useDecodedPreviewResource', () => {
       await Promise.resolve()
 
       expect(readFrame()).toBe(live)
-      await registry.disposeOwners(['preview'])
+      await act(() => registry.disposeOwners(['preview']))
       expect(readFrame()).toBeNull()
     })
 
@@ -373,7 +373,7 @@ describe('useDecodedPreviewResource', () => {
       ])
 
       // The current owner still releases the frame and its descriptor.
-      await registry.disposeOwners(['preview'])
+      await act(() => registry.disposeOwners(['preview']))
       expect(decodedImageRef.current).toBeNull()
       expect(readFrame()).toBeNull()
       expect(rawRenderExposureRef.current).toEqual(quick.renderExposure)
@@ -414,7 +414,7 @@ describe('useDecodedPreviewResource', () => {
       setDecodedImageRef(quick)
       const accepted = readFrame()
 
-      await registry.disposeOwners(['preview'])
+      await act(() => registry.disposeOwners(['preview']))
 
       expect(readFrame()).toBeNull()
       expect(rawRenderExposureRef.current).toEqual(quick.renderExposure)
@@ -437,10 +437,11 @@ describe('useDecodedPreviewResource', () => {
     })
 
     it('publishes nothing for a frame released outside the resource', () => {
-      const { setDecodedImageRef, readFrame, decodedImageRef } =
+      const { setDecodedImageRef, readFrame, decodedImageRef, rerender } =
         renderResource()
       setDecodedImageRef(createDecodedImage(0, undefined, 'quick'))
       decodedImageRef.current = null
+      rerender()
 
       expect(readFrame()).toBeNull()
       setDecodedImageRef(createDecodedImage(0))
