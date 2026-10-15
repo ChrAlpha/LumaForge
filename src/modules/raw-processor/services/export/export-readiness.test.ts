@@ -43,6 +43,7 @@ import {
   deriveTransformExportRefusalReason,
   planFullResExport,
   planFullResExportRequest,
+  resolveDeliveredExportSize,
 } from './export-readiness'
 
 function createSession(
@@ -325,6 +326,17 @@ describe('export readiness helpers', () => {
       })
       if (!neutral.canExport) throw new Error('expected export readiness')
       expect(neutral.deliveredSize).toEqual(SOURCE)
+    }
+  })
+
+  it('states no delivered size until full resolution has been probed as supported', () => {
+    for (const capability of [
+      undefined,
+      { status: 'unknown' },
+      { status: 'probing' },
+      { status: 'unsupported', reason: 'no' },
+    ] as const) {
+      expect(resolveDeliveredExportSize(capability, null)).toBeNull()
     }
   })
 

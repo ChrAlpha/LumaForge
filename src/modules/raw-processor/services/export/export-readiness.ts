@@ -58,7 +58,7 @@ export type FullResExportReadiness =
       rawRenderExposure: RawRenderExposure
       fullResCapability: SupportedFullResCapability
       /** The frame the export delivers: the sensor, or the geometry's crop. */
-      deliveredSize: { width: number; height: number }
+      deliveredSize: DeliveredExportSize
     }
   | {
       canExport: false
@@ -169,20 +169,31 @@ function refuseFullResExport(
   return { canExport: false, refusal }
 }
 
+export type DeliveredExportSize = { width: number; height: number }
+
 /**
- * The frame a committed geometry delivers, or null when the engine would
- * refuse to plan it. Planning is cheap and synchronous, so a malformed or
- * folding geometry is refused here, before any export resource is touched,
- * rather than being sized as the sensor frame. The engine still validates
- * the geometry itself and stays the final authority.
+ * The frame a full-resolution export will write: the probed source size,
+ * cropped by the committed Transform geometry when there is one. Null while
+ * the source size is not known, and null when the engine would refuse to
+ * plan the geometry. Planning is cheap and synchronous, so a malformed or
+ * folding geometry is refused before any export resource is touched, and a
+ * recap never states a size the export will not deliver. The engine still
+ * validates the geometry itself and stays the final authority.
  */
-function planDeliveredSize(
-  geometry: ExportGeometry | null | undefined,
-  source: { width: number; height: number },
-) {
-  if (!geometry) return source
+export function resolveDeliveredExportSize(
+  fullResCapability:
+    | ImageSession['exportState']['fullResCapability']
+    | undefined,
+  exportGeometry: ExportGeometry | null | undefined,
+): DeliveredExportSize | null {
+  if (fullResCapability?.status !== 'supported') return null
+  const source = {
+    width: fullResCapability.width,
+    height: fullResCapability.height,
+  }
+  if (!exportGeometry) return source
   try {
-    const planned = planExportGeometry(geometry, source)
+    const planned = planExportGeometry(exportGeometry, source)
     return { width: planned.outputWidth, height: planned.outputHeight }
   } catch {
     return null
@@ -208,10 +219,10 @@ export function deriveFullResExportReadiness(input: {
     return refuseFullResExport({ code: 'capability-unchecked' })
   }
 
-  const deliveredSize = planDeliveredSize(input.session.exportGeometry, {
-    width: fullResCapability.width,
-    height: fullResCapability.height,
-  })
+  const deliveredSize = resolveDeliveredExportSize(
+    fullResCapability,
+    input.session.exportGeometry,
+  )
   if (!deliveredSize) {
     return refuseFullResExport({ code: 'geometry-unplannable' })
   }

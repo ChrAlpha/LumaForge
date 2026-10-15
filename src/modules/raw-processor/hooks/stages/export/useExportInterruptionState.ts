@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
+import type { SourceInterruptionHint } from '../../../services/export/export-interruption'
 import {
   getExportInterruptionMarkers,
   readSourceInterruption,
-} from '../../../services/export/export-recovery'
+} from '../../../services/export/export-interruption'
 
 /**
  * The page's interruption hint for the loaded source, read from the page's

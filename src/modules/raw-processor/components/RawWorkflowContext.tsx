@@ -18,7 +18,7 @@ import type {
   ExportShareCapability,
 } from '../model/export-result'
 import type { LUTContractSelectionState, SupportLevel } from '../model/session'
-import type { DeliveredExportSize } from '../services/export/delivered-export-size'
+import type { DeliveredExportSize } from '../services/export/export-readiness'
 import type {
   ToolAvailability,
   ToolSurface,

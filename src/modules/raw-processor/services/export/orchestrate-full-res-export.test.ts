@@ -63,18 +63,20 @@ import {
   heldTransformGeometry,
   reduceTransformState,
 } from '../transform/transform-state'
-import type { ExportSourceTuple } from './export-interruption'
+import type {
+  ExportSourceTuple,
+  SourceInterruptionHint,
+} from './export-interruption'
 import {
   createExportInterruptionMarkers,
   encodeExportSourceHint,
+  readSourceInterruption,
 } from './export-interruption'
 import type { BuildExportManifestInput } from './export-manifest'
 import {
   ExportManifestUnavailableError,
   resolveExportEnvironment,
 } from './export-manifest'
-import type { SourceInterruptionHint } from './export-recovery'
-import { readSourceInterruption } from './export-recovery'
 import {
   captureExportResultIdentity,
   isSameExportResult,

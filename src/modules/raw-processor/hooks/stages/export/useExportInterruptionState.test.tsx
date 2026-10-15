@@ -1,26 +1,31 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ExportInterruptionHint } from '../../../services/export/export-interruption'
+import type {
+  ExportInterruptionHint,
+  ExportInterruptionMarkers,
+} from '../../../services/export/export-interruption'
 import { encodeExportSourceHint } from '../../../services/export/export-interruption'
-import type { ExportInterruptionMarkers } from '../../../services/export/export-recovery'
 import { useExportInterruptionState } from './useExportInterruptionState'
 
 const markersMock = vi.hoisted(() => ({
   current: null as ExportInterruptionMarkers | null,
 }))
 
-vi.mock('../../../services/export/export-recovery', async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import('../../../services/export/export-recovery')
-    >()
-  return {
-    ...actual,
-    getExportInterruptionMarkers: () =>
-      markersMock.current ?? actual.getExportInterruptionMarkers(),
-  }
-})
+vi.mock(
+  '../../../services/export/export-interruption',
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import('../../../services/export/export-interruption')
+      >()
+    return {
+      ...actual,
+      getExportInterruptionMarkers: () =>
+        markersMock.current ?? actual.getExportInterruptionMarkers(),
+    }
+  },
+)
 
 const SOURCE = new File(['raw'], 'frame.dng', { lastModified: 123 })
 const OTHER_SOURCE = new File(['other'], 'other.dng', { lastModified: 456 })
@@ -113,11 +118,7 @@ describe('useExportInterruptionState', () => {
     })
     expect(view.result.current.exportInterruptionRef.current).toEqual(expected)
     expect(markers.inspect).toHaveBeenCalledTimes(1)
-    expect(markers.inspect).toHaveBeenCalledWith({
-      name: 'frame.dng',
-      size: SOURCE.size,
-      lastModified: 123,
-    })
+    expect(markers.inspect).toHaveBeenCalledWith(SOURCE)
     // Reading a hint only reads: no attempt begins, ends or retires.
     expect(markers.begin).not.toHaveBeenCalled()
     expect(markers.finish).not.toHaveBeenCalled()

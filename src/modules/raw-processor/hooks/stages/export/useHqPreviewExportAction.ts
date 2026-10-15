@@ -32,9 +32,11 @@ import {
   resolveHqPreviewExportSize,
   runPreviewExportJob,
 } from '../../../services/export/export-system'
-import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
 import { pipelineHoldsLook } from '../../../services/preview/pipeline-holds-look'
-import { HQ_PREVIEW_EXPORT_REASON_COPY } from '../../../services/surface/raw-reason'
+import {
+  HQ_PREVIEW_EXPORT_REASON_COPY,
+  resolvePreviewLookReason,
+} from '../../../services/surface/raw-reason'
 import type { SetImageSession } from '../../../state/session.atoms'
 import { useLatestTranslate } from '../../useLatestTranslate'
 
@@ -161,7 +163,7 @@ export function useHqPreviewExportAction({
     // look changed still refuses a look the preview has since left out.
     const intent = getColorIntent()
     const lut = getLutData()
-    if (resolveHqPreviewLookRefusal({ intent, lut })) {
+    if (resolvePreviewLookReason({ intent, lut, executor: 'webgpu' })) {
       refuse('look-dropped')
       return
     }

@@ -34,7 +34,15 @@ import {
   toUserFacingErrorCode,
 } from '../ingest/workflow-status'
 import { evacuateBeforeExport } from './export-evacuation'
-import type { ExportAttemptOutcome } from './export-interruption'
+import type {
+  ExportAttemptOutcome,
+  ExportInterruptionMarkers,
+  SourceInterruptionHint,
+} from './export-interruption'
+import {
+  classifyExportAttemptOutcome,
+  interruptionForSource,
+} from './export-interruption'
 import {
   buildManifestForExportResult,
   ExportManifestUnavailableError,
@@ -47,15 +55,6 @@ import {
   planFullResExport,
   planFullResExportRequest,
 } from './export-readiness'
-import type {
-  ExportInterruptionMarkers,
-  SourceInterruptionHint,
-} from './export-recovery'
-import {
-  classifyExportAttemptOutcome,
-  interruptionForSource,
-  toExportSourceTuple,
-} from './export-recovery'
 import { resolveExportCopyCapability } from './export-result-actions'
 import { captureExportResultIdentity } from './export-result-identity'
 import { createCompletedExportResult } from './export-result-materialization'
@@ -419,8 +418,7 @@ export async function orchestrateFullResExport(
     // Readiness, graph, geometry and plan have all passed, so only an export
     // that is about to run leaves a marker. The marker is a hint and never
     // blocks: when it cannot be stored the export goes ahead unmarked.
-    markedAttempt = (await markers.begin(toExportSourceTuple(activeSourceFile)))
-      .attempt
+    markedAttempt = (await markers.begin(activeSourceFile)).attempt
 
     if (!isCurrentExport()) {
       return

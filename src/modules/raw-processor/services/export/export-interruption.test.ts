@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
 import { createFakeLocks } from '../../test-support/web-locks'
-import type { ExportInterruptionEnvironment } from './export-interruption'
+import type {
+  ExportInterruptionEnvironment,
+  ExportInterruptionHint,
+  SourceInterruptionHint,
+} from './export-interruption'
 import {
+  classifyExportAttemptOutcome,
   createExportInterruptionMarkers,
   encodeExportSourceHint,
   EXPORT_INTERRUPTION_MARKER_LIMIT,
   EXPORT_INTERRUPTION_MARKER_TTL_MS,
+  interruptionForSource,
+  isInterruptedSource,
+  readSourceInterruption,
 } from './export-interruption'
 
 const KEY_PREFIX = 'lumaforge.export-interruption.v1.'
@@ -687,5 +695,121 @@ describe('createExportInterruptionMarkers', () => {
       `write:${KEY_PREFIX}page-a-attempt-1`,
       `write:${KEY_PREFIX}page-a-attempt-2`,
     ])
+  })
+})
+
+describe('source-scoped interruption hints', () => {
+  const SOURCE = new File(['raw'], 'frame.RAF', { lastModified: 123 })
+  const OTHER_SOURCE = new File(['other raw'], 'other.RAF', {
+    lastModified: 456,
+  })
+
+  function hintFor(
+    file: File,
+    hint: ExportInterruptionHint = {
+      previousCrashLikeInterruption: true,
+      previousResourceFailure: false,
+      attempts: ['attempt-a'],
+    },
+  ): SourceInterruptionHint {
+    const source = encodeExportSourceHint(file)
+    if (source === null) throw new Error('Expected an encodable file tuple.')
+    return { source, hint }
+  }
+
+  it('applies a hint only to the file tuple it was read for', () => {
+    const interruption = hintFor(SOURCE)
+
+    expect(interruptionForSource(interruption, SOURCE)).toBe(interruption.hint)
+    // The same tuple on a fresh File object is the same hint location.
+    expect(
+      interruptionForSource(
+        interruption,
+        new File(['raw'], 'frame.RAF', { lastModified: 123 }),
+      ),
+    ).toBe(interruption.hint)
+    expect(interruptionForSource(interruption, OTHER_SOURCE)).toBeNull()
+    expect(
+      interruptionForSource(
+        interruption,
+        new File(['raw'], 'frame.RAF', { lastModified: 124 }),
+      ),
+    ).toBeNull()
+    expect(interruptionForSource(interruption, null)).toBeNull()
+    expect(interruptionForSource(null, SOURCE)).toBeNull()
+    expect(
+      interruptionForSource(
+        hintFor(SOURCE, {
+          previousCrashLikeInterruption: false,
+          previousResourceFailure: false,
+          attempts: [],
+        }),
+        SOURCE,
+      ),
+    ).toBeNull()
+  })
+
+  it('notes only a crash-like interruption, keeping a resource failure for the plan', () => {
+    const crash = hintFor(SOURCE)
+    expect(isInterruptedSource(crash, SOURCE)).toBe(true)
+    expect(isInterruptedSource(crash, OTHER_SOURCE)).toBe(false)
+    expect(isInterruptedSource(null, SOURCE)).toBe(false)
+
+    const failure = hintFor(SOURCE, {
+      previousCrashLikeInterruption: false,
+      previousResourceFailure: true,
+      attempts: ['attempt-failed'],
+    })
+    expect(isInterruptedSource(failure, SOURCE)).toBe(false)
+    expect(interruptionForSource(failure, SOURCE)).toBe(failure.hint)
+  })
+
+  it('reads a source hint from the markers without starting anything', async () => {
+    const markers = createPage('page-a', { storage: createMemoryStorage() })
+
+    await expect(readSourceInterruption(markers, SOURCE)).resolves.toBeNull()
+
+    const { attempt } = await markers.begin(SOURCE)
+    markers.finish(attempt, 'resource-failure')
+
+    await expect(readSourceInterruption(markers, SOURCE)).resolves.toEqual({
+      source: encodeExportSourceHint(SOURCE),
+      hint: {
+        previousCrashLikeInterruption: false,
+        previousResourceFailure: true,
+        attempts: [attempt],
+      },
+    })
+    await expect(
+      readSourceInterruption(markers, OTHER_SOURCE),
+    ).resolves.toBeNull()
+  })
+
+  it.each([
+    [
+      { aborted: true, errorCode: 'FULL_RES_EXPORT_RESOURCE_FAILURE' },
+      'cancelled',
+    ],
+    [
+      {
+        aborted: false,
+        errorCode: 'EXPORT_RENDER_FAILED',
+        error: new DOMException('Aborted', 'AbortError'),
+      },
+      'cancelled',
+    ],
+    [{ aborted: false, errorCode: 'EXPORT_ABORTED' }, 'failed'],
+    [
+      { aborted: false, errorCode: 'FULL_RES_EXPORT_RESOURCE_FAILURE' },
+      'resource-failure',
+    ],
+    [
+      { aborted: false, errorCode: 'FULL_RES_EXPORT_WORKER_FAILED' },
+      'resource-failure',
+    ],
+    [{ aborted: false, errorCode: 'EXPORT_RENDER_FAILED' }, 'failed'],
+    [{ aborted: false, errorCode: 'EXPORT_POLICY_CANNOT_COMPLETE' }, 'failed'],
+  ] as const)('classifies a failed attempt %j as %s', (input, outcome) => {
+    expect(classifyExportAttemptOutcome(input)).toBe(outcome)
   })
 })

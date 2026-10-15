@@ -16,16 +16,18 @@ import type {
 import type { DisplaySource, ImageSession } from '../../../model/session'
 import type { ProcessingStatus } from '../../../model/workflow'
 import { isSessionPreviewReleased } from '../../../services/compare/view-session-state'
-import { resolveDeliveredExportSize } from '../../../services/export/delivered-export-size'
-import { deriveFullResExportReadiness } from '../../../services/export/export-readiness'
-import type { SourceInterruptionHint } from '../../../services/export/export-recovery'
-import { isInterruptedSource } from '../../../services/export/export-recovery'
+import type { SourceInterruptionHint } from '../../../services/export/export-interruption'
+import { isInterruptedSource } from '../../../services/export/export-interruption'
+import {
+  deriveFullResExportReadiness,
+  resolveDeliveredExportSize,
+} from '../../../services/export/export-readiness'
 import {
   resolveExportShareButtonCapability,
   unavailableExportShare,
 } from '../../../services/export/export-result-actions'
-import { resolveHqPreviewLookRefusal } from '../../../services/export/hq-preview-look'
 import type { PipelineFacts } from '../../../services/preview/pipeline-stats'
+import { resolvePreviewLookReason } from '../../../services/surface/raw-reason'
 
 type UseExportDerivedStateInput = {
   session: ImageSession | null
@@ -61,7 +63,12 @@ export function useExportDerivedState({
   // answer reaches the state below, so a scrub that keeps it rebuilds none
   // of the export decisions.
   const hqPreviewLookRefusal = useMemo(
-    () => resolveHqPreviewLookRefusal({ intent: params, lut: lutData }),
+    () =>
+      resolvePreviewLookReason({
+        intent: params,
+        lut: lutData,
+        executor: 'webgpu',
+      }),
     [lutData, params],
   )
   // The HQ export reads only whether the preview has measured its input.
@@ -77,7 +84,7 @@ export function useExportDerivedState({
   const fullResCapability = session?.exportState.fullResCapability
   const exportGeometry = session?.exportGeometry
   const deliveredExportSize = useMemo(
-    () => resolveDeliveredExportSize({ fullResCapability, exportGeometry }),
+    () => resolveDeliveredExportSize(fullResCapability, exportGeometry),
     [exportGeometry, fullResCapability],
   )
   // The decoded image is read as this render finds it, so the decisions

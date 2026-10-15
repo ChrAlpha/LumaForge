@@ -1,3 +1,8 @@
+import {
+  isAbortError,
+  isRetryableFullResExportFailure,
+} from '../ingest/workflow-status'
+
 type LockManagerLike = Pick<LockManager, 'request'>
 type StorageLike = Pick<
   Storage,
@@ -451,4 +456,93 @@ export function createExportInterruptionMarkers(
   }
 
   return { begin, finish, inspect, retire }
+}
+
+export type ExportInterruptionMarkers = ReturnType<
+  typeof createExportInterruptionMarkers
+>
+
+/**
+ * The interruption hint read for one source tuple. It belongs to that tuple
+ * alone: another file never inherits its safer plan.
+ */
+export type SourceInterruptionHint = {
+  /** The encoded file tuple the hint was read for. */
+  source: string
+  hint: ExportInterruptionHint
+}
+
+let pageMarkers: ExportInterruptionMarkers | null = null
+
+/**
+ * The page's one marker owner. Every export attempt and every hint read on
+ * the page goes through it, so the page holds one owner lock for its life.
+ */
+export function getExportInterruptionMarkers() {
+  pageMarkers ??= createExportInterruptionMarkers()
+  return pageMarkers
+}
+
+function hasInterruption(hint: ExportInterruptionHint) {
+  return hint.previousCrashLikeInterruption || hint.previousResourceFailure
+}
+
+/**
+ * Reads the hint for a loaded source. It only reads: nothing here starts,
+ * resumes or sizes an export.
+ */
+export async function readSourceInterruption(
+  markers: Pick<ExportInterruptionMarkers, 'inspect'>,
+  file: File,
+): Promise<SourceInterruptionHint | null> {
+  const source = encodeExportSourceHint(file)
+  if (source === null) return null
+  const hint = await markers.inspect(file)
+  return hasInterruption(hint) ? { source, hint } : null
+}
+
+/**
+ * The hint when it was read for this file's tuple, otherwise null. The
+ * export applies only this, so a hint read for another file asks nothing.
+ */
+export function interruptionForSource(
+  interruption: SourceInterruptionHint | null | undefined,
+  file: File | null,
+): ExportInterruptionHint | null {
+  if (!interruption || !file || !hasInterruption(interruption.hint)) {
+    return null
+  }
+  return encodeExportSourceHint(file) === interruption.source
+    ? interruption.hint
+    : null
+}
+
+/**
+ * Whether surfaces note an interrupted export for this file, read from the
+ * same hint the next explicit export uses. Only a crash-like interruption
+ * reads as one; a resource failure already reported its own error.
+ */
+export function isInterruptedSource(
+  interruption: SourceInterruptionHint | null | undefined,
+  file: File | null,
+): boolean {
+  return (
+    interruptionForSource(interruption, file)?.previousCrashLikeInterruption ===
+    true
+  )
+}
+
+/**
+ * How a failed attempt ended. A cancellation is not an interruption; only a
+ * failure a lighter plan addresses counts as a resource failure.
+ */
+export function classifyExportAttemptOutcome(input: {
+  aborted: boolean
+  errorCode: string
+  error?: unknown
+}): Exclude<ExportAttemptOutcome, 'completed'> {
+  if (input.aborted || isAbortError(input.error)) return 'cancelled'
+  return isRetryableFullResExportFailure(input.errorCode)
+    ? 'resource-failure'
+    : 'failed'
 }

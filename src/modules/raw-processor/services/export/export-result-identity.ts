@@ -16,7 +16,6 @@ import type {
   ExportResultLutContract,
   ExportResultLutIdentity,
 } from '../../model/export-result'
-import { toExportSourceTuple } from './export-recovery'
 
 /** What a producer reads when it captures its request, before any work. */
 export type ExportResultIdentityInput = {
@@ -127,7 +126,8 @@ export function captureExportResultIdentity(
   if (!input.attemptId || !input.sessionId) {
     throw new Error('EXPORT_RESULT_IDENTITY_INVALID')
   }
-  const source = Object.freeze(toExportSourceTuple(input.sourceFile))
+  const { name, size, lastModified } = input.sourceFile
+  const source = Object.freeze({ name, size, lastModified })
   const colorIntent = captureColorIntent(input.intent)
   const lut = captureLut(input.intent, input.lut)
   const rawRenderExposure = input.rawRenderExposure

@@ -3,7 +3,6 @@ import { toLUTData } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
-import { withInterruptionHistory } from '../services/export/export-recovery'
 import { hasActiveExport } from '../services/export/export-state'
 import {
   useDetachedPreviewViewValue,
@@ -240,7 +239,8 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
   // chooses nothing: the JPEG quality is fixed. The loaded source's
   // interruption hint asks it for the safer plan.
   const exportWithInterruptionHistory = useCallback(
-    () => exportImage(withInterruptionHistory(exportInterruptionRef.current)),
+    () =>
+      exportImage({ interruption: exportInterruptionRef.current ?? undefined }),
     [exportImage, exportInterruptionRef],
   )
   const exportResultActions = useExportResultActions({

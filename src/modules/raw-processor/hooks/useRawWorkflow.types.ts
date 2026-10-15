@@ -34,7 +34,7 @@ import type {
 } from '../model/session'
 import type { ProcessingStatus } from '../model/workflow'
 import type { OriginalReferenceSnapshot } from '../services/compare/original-reference-snapshot'
-import type { DeliveredExportSize } from '../services/export/delivered-export-size'
+import type { DeliveredExportSize } from '../services/export/export-readiness'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import type { PipelineFacts } from '../services/preview/pipeline-stats'
 import type { PreviewViewport } from '../services/preview/preview-viewport'

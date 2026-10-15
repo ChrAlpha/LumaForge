@@ -1,6 +1,6 @@
 import type { NormalizedSelectiveColorBands } from '@lumaforge/luma-color-runtime'
 
-import type { DeliveredExportSize } from '../../services/export/delivered-export-size'
+import type { DeliveredExportSize } from '../../services/export/export-readiness'
 import type { PreviewLookReason } from '../../services/surface/raw-reason'
 import type { ColorValue } from '../color-fields'
 import type { ToneValue } from '../tone-fields'

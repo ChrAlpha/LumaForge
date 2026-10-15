@@ -852,7 +852,6 @@ Export lifecycle and resource tests:
 - `src/modules/raw-processor/services/export/export-evacuation.test.ts`
 - `src/modules/raw-processor/hooks/stages/export/useExportResourceManagement.test.tsx`
 - `src/modules/raw-processor/services/export/export-interruption.test.ts`
-- `src/modules/raw-processor/services/export/export-recovery.test.ts`
 - `src/lib/raw/raw-runtime-host.test.ts`
 - `tests/browser/raw-mobile-workflow.spec.ts`
 - `tests/browser/raw-export-storage.spec.ts`

@@ -29,8 +29,8 @@ import {
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import enMessages from '~/locales/en.json'
 
+import type { ExportInterruptionMarkers } from '../services/export/export-interruption'
 import { createExportInterruptionMarkers } from '../services/export/export-interruption'
-import type { ExportInterruptionMarkers } from '../services/export/export-recovery'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
 import { getDetachedPreviewView } from '../state/preview-view.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
@@ -151,9 +151,11 @@ vi.mock('../services/export/export-system', async (importOriginal) => ({
 
 // Each test gets its own page of markers over jsdom's localStorage and a
 // shared fake Web Locks, so a closed page's attempt reads as crash-like.
-vi.mock('../services/export/export-recovery', async (importOriginal) => {
+vi.mock('../services/export/export-interruption', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../services/export/export-recovery')>()
+    await importOriginal<
+      typeof import('../services/export/export-interruption')
+    >()
   return {
     ...actual,
     getExportInterruptionMarkers: () =>
