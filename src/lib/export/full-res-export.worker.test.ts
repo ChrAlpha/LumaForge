@@ -22,10 +22,8 @@ import type {
   FullResExportWorkerResponse,
   FullResExportWorkerStartMessage,
 } from './full-res-export-client'
-import {
-  createMemoryFileBackedOutputResult,
-  createOpfsOutputWritable,
-} from './output-sink'
+import { createMemoryFileBackedOutputResult } from './output-result.fixture'
+import { createOpfsOutputWritable } from './output-sink'
 
 vi.mock('@lumaforge/luma-raw-runtime', () => ({
   createLumaRawRuntime: vi.fn(),

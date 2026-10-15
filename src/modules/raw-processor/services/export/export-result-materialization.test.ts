@@ -7,7 +7,7 @@ import {
 } from '@lumaforge/render-engine/export'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
+import { createMemoryFileBackedOutputResult } from '~/lib/export/output-result.fixture'
 
 import type { ExportCopyCapability } from '../../model/export-result'
 import { createMockExportResultIdentity } from '../../model/export-result.fixture'

@@ -12,7 +12,7 @@ import { createBlobOutputResult } from '@lumaforge/render-engine/export'
 import type { RenderManifest } from '@lumaforge/render-engine/manifest'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
-import { createMemoryFileBackedOutputResult } from '~/lib/export/output-sink'
+import { createMemoryFileBackedOutputResult } from '~/lib/export/output-result.fixture'
 
 import type { ExportResult, ExportResultKind } from '../../model/export-result'
 import { createExportResult } from '../../model/export-result'
