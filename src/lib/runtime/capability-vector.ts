@@ -70,7 +70,7 @@ export function classifyDeviceFormFactor(
   return touch ? 'mobile' : 'unknown'
 }
 
-async function detectThreads(coi: boolean): Promise<boolean> {
+function detectThreads(coi: boolean): boolean {
   if (!coi) return false
 
   try {
@@ -81,60 +81,41 @@ async function detectThreads(coi: boolean): Promise<boolean> {
 }
 
 let cached: CapabilityVector | null = null
-let inFlight: Promise<CapabilityVector> | null = null
-let testOverride: CapabilityVector | null = null
 
-export async function detectCapabilityVector(): Promise<CapabilityVector> {
-  if (testOverride) return testOverride
+export function detectCapabilityVector(): CapabilityVector {
   if (cached) return cached
-  if (inFlight) return inFlight
 
-  inFlight = (async () => {
-    const nav = globalThis.navigator as CapabilityNavigator | undefined
-    const ua = nav?.userAgent ?? ''
-    const touch =
-      typeof nav?.maxTouchPoints === 'number' ? nav.maxTouchPoints > 0 : false
-    const coi = Boolean(globalThis.crossOriginIsolated)
-    const pthread = await detectThreads(coi)
-    const deviceMemory = nav?.deviceMemory
-    const deviceMemoryGB =
-      typeof deviceMemory === 'number' &&
-      Number.isFinite(deviceMemory) &&
-      deviceMemory > 0
-        ? deviceMemory
-        : null
-    const maybeOpfsSupported =
-      typeof nav?.storage?.getDirectory === 'function' &&
-      typeof nav.storage.estimate === 'function'
+  const nav = globalThis.navigator as CapabilityNavigator | undefined
+  const ua = nav?.userAgent ?? ''
+  const touch =
+    typeof nav?.maxTouchPoints === 'number' ? nav.maxTouchPoints > 0 : false
+  const coi = Boolean(globalThis.crossOriginIsolated)
+  const pthread = detectThreads(coi)
+  const deviceMemory = nav?.deviceMemory
+  const deviceMemoryGB =
+    typeof deviceMemory === 'number' &&
+    Number.isFinite(deviceMemory) &&
+    deviceMemory > 0
+      ? deviceMemory
+      : null
+  const maybeOpfsSupported =
+    typeof nav?.storage?.getDirectory === 'function' &&
+    typeof nav.storage.estimate === 'function'
 
-    const vector: CapabilityVector = Object.freeze({
-      coi,
-      pthread,
-      deviceMemoryGB,
-      hwConcurrency: clampInteger(nav?.hardwareConcurrency, 1, 64, 1),
-      webKitClass: classifyUserAgent(ua, touch),
-      deviceFormFactor: classifyDeviceFormFactor(ua, touch),
-      maybeOpfsSupported,
-    })
-    cached = vector
-    inFlight = null
+  const vector: CapabilityVector = Object.freeze({
+    coi,
+    pthread,
+    deviceMemoryGB,
+    hwConcurrency: clampInteger(nav?.hardwareConcurrency, 1, 64, 1),
+    webKitClass: classifyUserAgent(ua, touch),
+    deviceFormFactor: classifyDeviceFormFactor(ua, touch),
+    maybeOpfsSupported,
+  })
+  cached = vector
 
-    return vector
-  })()
-
-  return inFlight
+  return vector
 }
 
 export function getCapabilityVectorSnapshot(): CapabilityVector | null {
-  return testOverride ?? cached
-}
-
-export function setCapabilityVectorForTest(vector: CapabilityVector): void {
-  testOverride = Object.freeze({ ...vector })
-}
-
-export function resetCapabilityVectorForTest(): void {
-  testOverride = null
-  cached = null
-  inFlight = null
+  return cached
 }

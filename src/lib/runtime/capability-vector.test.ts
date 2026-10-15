@@ -1,15 +1,16 @@
 import type { CapabilityVector } from '@lumaforge/render-engine/policy'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  detectCapabilityVector,
-  getCapabilityVectorSnapshot,
-  resetCapabilityVectorForTest,
-  setCapabilityVectorForTest,
-} from './capability-vector'
+let detectCapabilityVector: typeof import('./capability-vector').detectCapabilityVector
+let getCapabilityVectorSnapshot: typeof import('./capability-vector').getCapabilityVectorSnapshot
+
+beforeEach(async () => {
+  vi.resetModules()
+  ;({ detectCapabilityVector, getCapabilityVectorSnapshot } =
+    await import('./capability-vector'))
+})
 
 afterEach(() => {
-  resetCapabilityVectorForTest()
   vi.unstubAllGlobals()
 })
 
@@ -216,7 +217,7 @@ describe('detectCapabilityVector', () => {
     expect(vector.pthread).toBe(true)
   })
 
-  it('caches the first detection until reset', async () => {
+  it('caches the first detection for the module lifetime', () => {
     vi.stubGlobal('navigator', {
       userAgent: '',
       hardwareConcurrency: 4,
@@ -224,33 +225,14 @@ describe('detectCapabilityVector', () => {
     vi.stubGlobal('crossOriginIsolated', false)
     expect(getCapabilityVectorSnapshot()).toBeNull()
 
-    const first = await detectCapabilityVector()
+    const first = detectCapabilityVector()
     vi.stubGlobal('navigator', {
       userAgent: '',
       hardwareConcurrency: 16,
     } as never)
 
-    expect(await detectCapabilityVector()).toBe(first)
+    expect(detectCapabilityVector()).toBe(first)
     expect(getCapabilityVectorSnapshot()).toBe(first)
     expect(first.hwConcurrency).toBe(4)
-  })
-
-  it('uses a frozen test override as the current snapshot', async () => {
-    const override: CapabilityVector = {
-      coi: true,
-      pthread: true,
-      deviceMemoryGB: 8,
-      hwConcurrency: 8,
-      webKitClass: 'chromium',
-      deviceFormFactor: 'desktop',
-      maybeOpfsSupported: true,
-    }
-
-    setCapabilityVectorForTest(override)
-
-    const vector = await detectCapabilityVector()
-    expect(vector).toEqual(override)
-    expect(vector).toBe(getCapabilityVectorSnapshot())
-    expect(Object.isFrozen(vector)).toBe(true)
   })
 })
