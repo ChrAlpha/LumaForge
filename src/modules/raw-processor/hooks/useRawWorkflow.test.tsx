@@ -707,7 +707,7 @@ describe('useRawWorkflow', () => {
       // source and the graph renders the current look.
       const [retry] = exportSystemMock.runFullResolutionExportJob.mock.calls[0]!
       expect(retry).toMatchObject({
-          executionPlan: {
+        executionPlan: {
           productCopy: 'interrupted-retry',
           runtimeMemoryProfile: 'low-memory',
           request: { source: defaultSourceDimensions },
