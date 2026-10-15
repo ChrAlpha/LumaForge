@@ -691,7 +691,7 @@ describe('raw runtime host sessions', () => {
     vi.doMock('@lumaforge/luma-raw-runtime', () => ({ createLumaRawRuntime }))
     try {
       const capability = await import('~/lib/runtime/capability-vector')
-      capability.setCapabilityVectorForTest({
+      vi.spyOn(capability, 'getCapabilityVectorSnapshot').mockReturnValue({
         coi: true,
         pthread: true,
         deviceMemoryGB: 4,
@@ -711,8 +711,8 @@ describe('raw runtime host sessions', () => {
         requireCrossOriginIsolation: false,
       })
       host.dispose()
-      capability.resetCapabilityVectorForTest()
     } finally {
+      vi.restoreAllMocks()
       vi.doUnmock('@lumaforge/luma-raw-runtime')
       vi.resetModules()
     }

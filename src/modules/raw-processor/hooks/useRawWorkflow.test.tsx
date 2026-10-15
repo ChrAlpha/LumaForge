@@ -23,8 +23,8 @@ import type {
   RawRuntimeHostSnapshot,
 } from '~/lib/raw/raw-runtime-host'
 import {
-  resetCapabilityVectorForTest,
-  setCapabilityVectorForTest,
+  detectCapabilityVector,
+  getCapabilityVectorSnapshot,
 } from '~/lib/runtime/capability-vector'
 import { NEUTRAL_TRANSFORM } from '~/lib/transform/transform-types'
 import enMessages from '~/locales/en.json'
@@ -47,6 +47,12 @@ import { acceptTransformGeometry } from './transform-session.fixture'
 import { useRawToolAdjustments } from './useRawToolState'
 import type { UseRawWorkflowReturn } from './useRawWorkflow'
 import { useRawWorkflow } from './useRawWorkflow'
+
+vi.mock('~/lib/runtime/capability-vector', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/lib/runtime/capability-vector')>()),
+  detectCapabilityVector: vi.fn(),
+  getCapabilityVectorSnapshot: vi.fn(),
+}))
 
 const rawRuntimeMock = vi.hoisted(() => ({
   openSession: vi.fn(),
@@ -421,7 +427,17 @@ async function loadForHqExport() {
 }
 
 describe('useRawWorkflow', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.resetModules()
+    const capability = await vi.importActual<
+      typeof import('~/lib/runtime/capability-vector')
+    >('~/lib/runtime/capability-vector')
+    vi.mocked(detectCapabilityVector).mockImplementation(
+      capability.detectCapabilityVector,
+    )
+    vi.mocked(getCapabilityVectorSnapshot).mockImplementation(
+      capability.getCapabilityVectorSnapshot,
+    )
     resetToDefaults()
     jotaiStore.set(currentSessionAtom, null)
     for (const mock of [
@@ -449,7 +465,6 @@ describe('useRawWorkflow', () => {
       .mockReset()
       .mockRejectedValue(new Error('No original reference in hook tests'))
     localStorage.clear()
-    resetCapabilityVectorForTest()
     fakeLocks = createFakeLocks()
     interruptionMarkersMock.current = createMarkerPage('this-page')
     vi.stubGlobal('URL', {
@@ -465,7 +480,6 @@ describe('useRawWorkflow', () => {
     })
     vi.unstubAllGlobals()
     localStorage.clear()
-    resetCapabilityVectorForTest()
     interruptionMarkersMock.current = null
     realRawRuntimeHostOptions.current = null
   })
@@ -1283,7 +1297,7 @@ describe('useRawWorkflow', () => {
   it('prepares no original reference snapshot in compare when CSS clipping is unavailable', async () => {
     vi.stubGlobal('CSS', { supports: vi.fn(() => false) })
     // Without dual GPU compare, compare would otherwise prepare a snapshot.
-    setCapabilityVectorForTest({
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue({
       coi: false,
       pthread: false,
       deviceMemoryGB: 4,

@@ -10,7 +10,6 @@ import { getExportModeCopy } from '~/lib/export/execution-profile'
 import type { ExportExecutionPlan } from '~/lib/export/export-plan'
 import { selectExportPlan } from '~/lib/export/export-plan'
 import type { RunFullResolutionJpegExportInWorkerInput } from '~/lib/export/full-res-export-client'
-import { resetCapabilityVectorForTest } from '~/lib/runtime/capability-vector'
 
 import {
   buildExportFilename,
@@ -588,7 +587,6 @@ describe('runFullResolutionExportJob attempt diagnostics', () => {
 
 describe('runFullResolutionExportJob retry facts', () => {
   afterEach(() => {
-    resetCapabilityVectorForTest()
     vi.unstubAllGlobals()
   })
 

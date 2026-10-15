@@ -1,19 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  resetCapabilityVectorForTest,
-  setCapabilityVectorForTest,
-} from './capability-vector'
+import { getCapabilityVectorSnapshot } from './capability-vector'
 import { snapshotExportRuntimeResources } from './export-runtime-resources'
 
+vi.mock('./capability-vector', () => ({
+  getCapabilityVectorSnapshot: vi.fn(() => null),
+}))
+
 afterEach(() => {
-  resetCapabilityVectorForTest()
+  vi.mocked(getCapabilityVectorSnapshot).mockReturnValue(null)
   vi.unstubAllGlobals()
 })
 
 describe('snapshotExportRuntimeResources', () => {
   it('computes available MB from quota minus usage', async () => {
-    setCapabilityVectorForTest({
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue({
       coi: true,
       pthread: true,
       deviceMemoryGB: 16,
@@ -42,7 +43,7 @@ describe('snapshotExportRuntimeResources', () => {
   })
 
   it('marks opfs unavailable when capability vector says so', async () => {
-    setCapabilityVectorForTest({
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue({
       coi: true,
       pthread: true,
       deviceMemoryGB: 16,
@@ -125,7 +126,7 @@ describe('snapshotExportRuntimeResources', () => {
   ] as const)(
     'keeps the OPFS resource table: %s',
     async (_label, estimateResult, directory, expected, probed) => {
-      setCapabilityVectorForTest({
+      vi.mocked(getCapabilityVectorSnapshot).mockReturnValue({
         coi: true,
         pthread: true,
         deviceMemoryGB: 16,
@@ -158,7 +159,7 @@ describe('snapshotExportRuntimeResources', () => {
   )
 
   it('fails closed when the storage estimate throws', async () => {
-    setCapabilityVectorForTest({
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue({
       coi: true,
       pthread: true,
       deviceMemoryGB: 16,

@@ -43,10 +43,7 @@ import { selectExportPlan } from '~/lib/export/export-plan'
 import type { ResourceRegistry } from '~/lib/export/resource-registry'
 import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import {
-  resetCapabilityVectorForTest,
-  setCapabilityVectorForTest,
-} from '~/lib/runtime/capability-vector'
+import { getCapabilityVectorSnapshot } from '~/lib/runtime/capability-vector'
 import { composeManualTransform } from '~/lib/transform/transform-render'
 import { FOLDING_TRANSFORM } from '~/modules/raw-processor/test-support/transform-geometry-test-cases'
 
@@ -961,6 +958,11 @@ function stubOpfsDirectory() {
   })
 }
 
+vi.mock('~/lib/runtime/capability-vector', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/lib/runtime/capability-vector')>()),
+  getCapabilityVectorSnapshot: vi.fn(() => null),
+}))
+
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset()
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -973,7 +975,7 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  resetCapabilityVectorForTest()
+  vi.mocked(getCapabilityVectorSnapshot).mockReturnValue(null)
   window.localStorage.clear()
   delete (window as { __LUMAFORGE_EXPORT_DEBUG_HISTORY__?: unknown })
     .__LUMAFORGE_EXPORT_DEBUG_HISTORY__
@@ -1803,7 +1805,7 @@ describe('orchestrateFullResExport refusals', () => {
 
   it('fails closed when the run-time plan cannot safely complete after readiness passed', async () => {
     // Readiness assumes OPFS has room; the run-time quota says it does not.
-    setCapabilityVectorForTest(MOBILE_CAPABILITY)
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue(MOBILE_CAPABILITY)
     stubOpfsDirectory()
     const h = createHarness({
       capability: MOBILE_CAPABILITY,
@@ -1893,7 +1895,7 @@ describe('orchestrateFullResExport refusal order', () => {
   it('refuses a plan no storage could rescue before sampling device facts', async () => {
     // No reachable OPFS: readiness already knows the large mobile export can
     // only hand its output over in memory, which it refuses.
-    setCapabilityVectorForTest(MOBILE_CAPABILITY)
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue(MOBILE_CAPABILITY)
     const h = createHarness({
       capability: MOBILE_CAPABILITY,
       session: createSession('session-1', {

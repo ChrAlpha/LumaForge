@@ -7,10 +7,7 @@ import { createResourceRegistry } from '~/lib/export/resource-registry'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
 import type { PreviewViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
-import {
-  resetCapabilityVectorForTest,
-  setCapabilityVectorForTest,
-} from '~/lib/runtime/capability-vector'
+import { getCapabilityVectorSnapshot } from '~/lib/runtime/capability-vector'
 
 import type { DisplaySource } from '../../../model/session'
 import { createImageSession } from '../../../model/session-factory'
@@ -18,6 +15,11 @@ import type { OriginalReferenceSnapshot } from '../../../services/compare/origin
 import { setCurrentSession } from '../../../state/session.atoms'
 import { createTestDecodedImage } from '../../../test-support/builders'
 import { useOriginalReference } from './useOriginalReference'
+
+vi.mock('~/lib/runtime/capability-vector', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/lib/runtime/capability-vector')>()),
+  getCapabilityVectorSnapshot: vi.fn(() => null),
+}))
 
 const rendererMock = vi.hoisted(() => ({
   renderOriginalReferenceSnapshot: vi.fn(),
@@ -189,7 +191,7 @@ function liveResources(registry: ResourceRegistry, kind: string) {
 }
 
 function simulateDualGpuDevice() {
-  setCapabilityVectorForTest({
+  vi.mocked(getCapabilityVectorSnapshot).mockReturnValue({
     coi: true,
     pthread: true,
     deviceMemoryGB: 8,
@@ -224,7 +226,7 @@ describe('useOriginalReference', () => {
     )
     // Without dual-GPU compare the stage prepares a snapshot in compare mode.
     vi.stubGlobal('CSS', { supports: vi.fn(() => true) })
-    setCapabilityVectorForTest({
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue({
       coi: false,
       pthread: false,
       deviceMemoryGB: 4,
@@ -237,7 +239,7 @@ describe('useOriginalReference', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    resetCapabilityVectorForTest()
+    vi.mocked(getCapabilityVectorSnapshot).mockReturnValue(null)
     gpuBudget.current = null
     setCurrentSession(null)
   })
