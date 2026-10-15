@@ -118,17 +118,10 @@ function createOpfsJpegRowSink(input: {
     createSession({ width, height, quality }) {
       let byteLength = 0
       let state: 'open' | 'closed' | 'aborted' = 'open'
-      const openedWritable = input.takeOpenedWritable()
-      const writablePromise = openedWritable
-        ? Promise.resolve(openedWritable)
-        : createOpfsOutputWritable({
-            tabDirectory: input.location.tabDirectory,
-            exportId: input.location.exportId,
-            outputFileName,
-          })
+      const writable = input.takeOpenedWritable()
+      if (!writable) throw new Error('JPEG_WRITER_CLOSED')
       const runtime = createLumaJpegRuntime({
         async onChunk(chunk) {
-          const writable = await writablePromise
           const byteBuffer = chunk.bytes.buffer.slice(
             chunk.bytes.byteOffset,
             chunk.bytes.byteOffset + chunk.bytes.byteLength,
@@ -153,12 +146,9 @@ function createOpfsJpegRowSink(input: {
         }
       }
 
-      async function abortWritable() {
+      const abortWritable = async () => {
         try {
-          const writable = await writablePromise
-          if ('abort' in writable && typeof writable.abort === 'function') {
-            await writable.abort()
-          }
+          await writable.abort()
         } catch {
           // Preserve the primary encoder/export failure.
         }
@@ -196,7 +186,6 @@ function createOpfsJpegRowSink(input: {
           assertOpen()
           try {
             await encoder.finish()
-            const writable = await writablePromise
             // File-backed output stays metadata-free on disk; the app injects
             // EXIF on delivery, so the recorded hash must describe that layout.
             const finalized = await writable.close({
