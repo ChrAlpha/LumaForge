@@ -1,4 +1,4 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import {
   getLUTColorProfile,
   parseCubeLUT,
@@ -95,7 +95,7 @@ describe('shader specialization features', () => {
   it('uses the same normalized HSL activation as the texture uploader', () => {
     const selectiveColor = {
       red: { hue: Number.NaN, saturation: 0, lightness: -0 },
-    } as NonNullable<ProcessingParams['selectiveColor']>
+    } as NonNullable<ColorGraphIntent['selectiveColor']>
     expect(
       getShaderSpecialization({ ...DEFAULT_PARAMS, selectiveColor }, null)
         .selectiveColorActive,

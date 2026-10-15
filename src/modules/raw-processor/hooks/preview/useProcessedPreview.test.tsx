@@ -1,4 +1,4 @@
-import type { LUTData, ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
   parseCubeLUT,
@@ -43,7 +43,7 @@ function createPipeline() {
 
 type TestPipeline = ReturnType<typeof createPipeline>
 
-const defaultParams: ProcessingParams = {
+const defaultParams: ColorGraphIntent = {
   userExposureEv: 0,
   userContrast: 0,
   userHighlights: 0,

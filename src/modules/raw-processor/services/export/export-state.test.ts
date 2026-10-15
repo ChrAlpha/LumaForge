@@ -1,7 +1,4 @@
-import type {
-  ColorGraphIntent,
-  ProcessingParams,
-} from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import {
   COLOR_GRAPH_INTENT_KEYS,
   NEUTRAL_SELECTIVE_COLOR,
@@ -125,7 +122,7 @@ function createCapability(
 
 type ProcessingParamClass = 'render' | 'look'
 
-// Every ProcessingParams key must be classified; a new field fails the
+// Every ColorGraphIntent key must be classified; a new field fails the
 // typecheck until it is placed here. 'render' (user tone/color intent) and
 // 'look' (style, preset, intensity) keys reach the export color graph, so
 // changing them must invalidate a ready export.
@@ -144,7 +141,7 @@ const PROCESSING_PARAM_CLASSES = {
   userSaturation: 'render',
   userVibrance: 'render',
   selectiveColor: 'render',
-} satisfies Record<keyof ProcessingParams, ProcessingParamClass>
+} satisfies Record<keyof ColorGraphIntent, ProcessingParamClass>
 
 type ProcessingParamKey = keyof typeof PROCESSING_PARAM_CLASSES
 
@@ -171,7 +168,7 @@ const DEFAULT_PARAMS: ColorGraphIntent = {
 
 // A meaningful value for every key that differs from DEFAULT_PARAMS.
 const NON_DEFAULT_VALUES: {
-  [K in ProcessingParamKey]-?: NonNullable<ProcessingParams[K]>
+  [K in ProcessingParamKey]-?: NonNullable<ColorGraphIntent[K]>
 } = {
   styleKind: 'custom',
   builtinPreset: 'film-contrast',
@@ -210,9 +207,9 @@ function keysOfClass(...classes: ProcessingParamClass[]) {
 
 function patchOf<K extends ProcessingParamKey>(
   key: K,
-  value: ProcessingParams[K],
-): Partial<ProcessingParams> {
-  return { [key]: value } as Partial<ProcessingParams>
+  value: ColorGraphIntent[K],
+): Partial<ColorGraphIntent> {
+  return { [key]: value } as Partial<ColorGraphIntent>
 }
 
 describe('render graph param classification', () => {

@@ -1,4 +1,4 @@
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_SELECTIVE_COLOR,
   pickColorGraphIntent,
@@ -168,7 +168,7 @@ function acceptedFrame(
 const quickFrame = acceptedFrame({ frameId: 'decoded-frame-1', stage: 'quick' })
 const hqImage = { ...image, source: 'bounded-hq' } as DecodedImage
 
-const baseParams: ProcessingParams = {
+const baseParams: ColorGraphIntent = {
   intensity: 1,
   styleKind: 'none',
   builtinPreset: null,

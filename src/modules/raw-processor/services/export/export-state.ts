@@ -1,6 +1,5 @@
 import type {
   ColorGraphIntent,
-  ProcessingParams,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
 import {
@@ -191,7 +190,7 @@ export function hasSameRawRenderExposure(
  */
 export function changesRenderGraphParams(
   current: ColorGraphIntent,
-  next: Partial<ProcessingParams>,
+  next: Partial<ColorGraphIntent>,
 ) {
   return COLOR_GRAPH_INTENT_KEYS.some((key) => {
     if (!Object.hasOwn(next, key)) return false
@@ -204,7 +203,7 @@ export function changesRenderGraphParams(
 
 function changesSelectiveColor(
   current: ColorGraphIntent['selectiveColor'],
-  next: Partial<ProcessingParams>['selectiveColor'],
+  next: Partial<ColorGraphIntent>['selectiveColor'],
 ) {
   // The export color graph and the LUT bake read the normalized record, so
   // this compares the contract that actually feeds the renderer.

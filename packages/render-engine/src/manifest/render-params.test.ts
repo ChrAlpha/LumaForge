@@ -1,5 +1,5 @@
 // @vitest-environment node
-import type { ProcessingParams } from '@lumaforge/luma-color-runtime'
+import type { ColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import { NEUTRAL_USER_COLOR_INTENT } from '@lumaforge/luma-color-runtime'
 import { describe, expect, it } from 'vitest'
 
@@ -176,7 +176,7 @@ describe('projectManifestRenderParams canonical bytes', () => {
   })
 
   it('accepts the app processing params as user color', () => {
-    const processing: ProcessingParams = {
+    const processing: ColorGraphIntent = {
       intensity: 0.7,
       styleKind: 'builtin',
       builtinPreset: 'warm',
