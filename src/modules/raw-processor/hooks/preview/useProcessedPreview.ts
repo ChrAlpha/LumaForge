@@ -68,7 +68,7 @@ export interface ProcessedPreviewOptions<
   /** The color the processed surface draws; it carries no view state. */
   color: ColorGraphIntent
   viewMode: PreviewViewMode
-  /** The HDR rendition the processed surface draws in place of SDR, if any. */
+  /** The HDR view the processed surface draws in place of SDR, if any. */
   hdrOutput?: PreviewHdrOutput
   /**
    * The LUT record the processed surface draws through; a new record is a
