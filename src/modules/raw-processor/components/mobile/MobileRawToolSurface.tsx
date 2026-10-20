@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import { useI18n } from '~/lib/i18n'
 
 import {
@@ -8,6 +10,7 @@ import {
   useRawToolStatus,
 } from '../../hooks/useRawToolState'
 import { supportLevelMessageKey } from '../../services/surface/raw-reason'
+import { setHdrPreviewChoice } from '../../state/hdr-preview.atoms'
 import {
   useRawPreviewStats,
   useRawToolCommands,
@@ -106,6 +109,9 @@ function MobileExportPanelSlot({
   const { isExporting } = useRawToolStatus()
   const progress = useRawToolProgress()
   const hdrExport = useRawToolHdrExport()
+  // An HDR preview view is chosen only here, so the preview goes back to
+  // its default when the panel closes rather than outlive its control.
+  useEffect(() => () => setHdrPreviewChoice(null), [])
 
   // The recap names a catalog look the way its tile does.
   const lookTitle = resolveAppliedLookTitle({
@@ -154,6 +160,9 @@ function MobileExportPanelSlot({
       hdrExport={hdrExport}
       hdrExportDisabled={!props.toolAvailability.mobile.hdrExport.available}
       onHdrExportChange={commands.onHdrExportChange}
+      hasImage={props.hasImage}
+      hdrPreview={props.toolAvailability.mobile.hdrPreview}
+      onHdrPreviewChange={commands.onHdrPreviewChange}
     />
   )
 }

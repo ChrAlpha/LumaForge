@@ -11,11 +11,13 @@ import type { RawTransformFeature } from '../hooks/useRawTransformFeature'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow.types'
 import { deriveLutContractExportRefusal } from '../model/derive-session'
 import type { LutLoadOutcome } from '../services/look/orchestrate-lut-load'
+import type { HdrPreviewChoice } from '../services/preview/hdr-preview-output'
 import type { ActionAvailability } from '../services/surface/derive-tool-availability'
 import { deriveToolAvailability } from '../services/surface/derive-tool-availability'
 import type { ExportActionReason } from '../services/surface/raw-reason'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
 import { setHdrExport } from '../state/export-options.atoms'
+import { setHdrPreviewChoice } from '../state/hdr-preview.atoms'
 import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import { usePipelineStatsValue } from '../state/workflow.atoms'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
@@ -195,6 +197,8 @@ interface ToolCommandTargets {
   hqExportAvailable: boolean
   /** The action policy's decision on the HDR gain map option. */
   hdrExportAvailable: boolean
+  /** The action policy's decision on the HDR preview views. */
+  hdrPreviewAvailable: boolean
 }
 
 /**
@@ -234,18 +238,27 @@ function createToolCommands(
     onViewModeChange: forward((to) => to.workflow.setViewMode),
     onCompareSplitChange: forward((to) => to.workflow.setCompareSplit),
     onCompareReset: forward((to) => to.onCompareReset),
+    // An export replaces the controls that chose an HDR preview view, so
+    // the preview goes back to its default as the export starts.
     onExport: () => {
       const targets = latest.current
-      if (targets.fullExportAvailable) targets.onExport()
+      if (!targets.fullExportAvailable) return
+      setHdrPreviewChoice(null)
+      targets.onExport()
     },
     onHdrExportChange: (on: boolean) => {
-      if (latest.current.hdrExportAvailable) setHdrExport(on)
+      if (!latest.current.hdrExportAvailable) return
+      setHdrExport(on)
+      if (!on) setHdrPreviewChoice(null)
+    },
+    onHdrPreviewChange: (choice: HdrPreviewChoice) => {
+      if (latest.current.hdrPreviewAvailable) setHdrPreviewChoice(choice)
     },
     onPreviewExport: () => {
       const targets = latest.current
-      return targets.hqExportAvailable
-        ? targets.workflow.exportPreviewImage()
-        : undefined
+      if (!targets.hqExportAvailable) return undefined
+      setHdrPreviewChoice(null)
+      return targets.workflow.exportPreviewImage()
     },
     onShareExport: forward((to) => to.workflow.shareExportResult),
     onDownloadExport: forward((to) => to.workflow.downloadExportResult),
@@ -414,7 +427,8 @@ export function RawWorkflowToolProvider({
   // export controls, and desktop always reaches them, so its decisions are
   // the ones every export panel states. Transform names a block only where
   // the workflow has nothing earlier to say.
-  const { fullExport, hqExport, hdrExport } = toolAvailability.desktop
+  const { fullExport, hqExport, hdrExport, hdrPreview } =
+    toolAvailability.desktop
   commandTargetsRef.current = {
     workflow,
     onLutDrop,
@@ -426,6 +440,7 @@ export function RawWorkflowToolProvider({
     fullExportAvailable: fullExport.available,
     hqExportAvailable: hqExport.available,
     hdrExportAvailable: hdrExport.available,
+    hdrPreviewAvailable: hdrPreview.available,
   }
   // The reasons and facts below are rebuilt only when what they say moves,
   // so the memoized export and file-facts tools skip a workflow render that

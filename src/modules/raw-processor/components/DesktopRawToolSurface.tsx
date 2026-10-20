@@ -74,6 +74,9 @@ export function DesktopRawToolSurface() {
             hdrExport={hdrExport}
             hdrExportDisabled={!availability.hdrExport.available}
             onHdrExportChange={commands.onHdrExportChange}
+            hasImage={props.hasImage}
+            hdrPreview={availability.hdrPreview}
+            onHdrPreviewChange={commands.onHdrPreviewChange}
           />
         </section>
       }

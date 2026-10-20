@@ -35,6 +35,7 @@ import type {
   ToolSurface,
 } from '../services/surface/derive-tool-availability'
 import { getHdrExport } from '../state/export-options.atoms'
+import { getHdrPreviewChoice } from '../state/hdr-preview.atoms'
 import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import { setCurrentSession } from '../state/session.atoms'
 import { toolCardOpenAtom } from '../state/tool-card.atoms'
@@ -682,6 +683,39 @@ describe('rawWorkflowToolProvider tool commands', () => {
     ).toEqual({ available: false, reason: 'export-running' })
     held.onHdrExportChange(false)
     expect(getHdrExport()).toBe(true)
+  })
+
+  it('chooses an HDR preview view where the policy allows, and goes back to the default when the option goes off or an export starts', () => {
+    onTestFinished(resetToDefaults)
+    const view = renderProvider()
+    const held = view.result.current.commands
+
+    held.onHdrExportChange(true)
+    held.onHdrPreviewChange('above-sdr')
+    expect(getHdrPreviewChoice()).toBe('above-sdr')
+    held.onHdrExportChange(false)
+    expect(getHdrPreviewChoice()).toBeNull()
+
+    held.onHdrExportChange(true)
+    held.onHdrPreviewChange('stop-down')
+    held.onExport()
+    expect(view.props.onExport).toHaveBeenCalledOnce()
+    expect(getHdrPreviewChoice()).toBeNull()
+
+    held.onHdrPreviewChange('stop-down')
+    void held.onPreviewExport()
+    expect(view.props.workflow.exportPreviewImage).toHaveBeenCalledOnce()
+    expect(getHdrPreviewChoice()).toBeNull()
+
+    // A Transform overlay over the photo refuses the views.
+    view.update({
+      transform: transformFeatureFixture({ hasImage: true, showOverlay: true }),
+    })
+    expect(
+      view.result.current.surface.toolAvailability.desktop.hdrPreview,
+    ).toEqual({ available: false, reason: 'transform-hdr-preview' })
+    held.onHdrPreviewChange('above-sdr')
+    expect(getHdrPreviewChoice()).toBeNull()
   })
 
   it('refuses every edit while the preview is released, through what a surface held before, and keeps delivery, Export and catalog listing', async () => {

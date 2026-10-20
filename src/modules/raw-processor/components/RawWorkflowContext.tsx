@@ -19,6 +19,7 @@ import type {
 } from '../model/export-result'
 import type { LUTContractSelectionState, SupportLevel } from '../model/session'
 import type { DeliveredExportSize } from '../services/export/export-readiness'
+import type { HdrPreviewChoice } from '../services/preview/hdr-preview-output'
 import type {
   ToolAvailability,
   ToolSurface,
@@ -165,6 +166,8 @@ export interface RawToolCommands {
   onExport: () => void
   /** Turn the full-resolution export's HDR gain map on or off. */
   onHdrExportChange: (on: boolean) => void
+  /** Choose what the preview shows of the HDR gain map's picture. */
+  onHdrPreviewChange: (choice: HdrPreviewChoice) => void
   onPreviewExport: () => void | Promise<void>
   onShareExport: () => void
   onDownloadExport: () => void

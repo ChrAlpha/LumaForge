@@ -14,6 +14,8 @@ import type {
   ExportShareCapability,
 } from '../../model/export-result'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import type { HdrPreviewChoice } from '../../services/preview/hdr-preview-output'
+import type { ActionAvailability } from '../../services/surface/derive-tool-availability'
 import type { ExportPanelKind } from '../../services/surface/export-panel-state'
 import {
   deriveExportPanelState,
@@ -28,6 +30,7 @@ import { currentSessionAtom } from '../../state/session.atoms'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
 import { CHECKBOX_CHROME } from '../shared/checkbox-chrome'
+import { HdrPreviewControl } from '../shared/HdrPreviewControl'
 
 // Both export buttons refuse on one plate, so neither reads as the one still
 // on offer.
@@ -115,6 +118,9 @@ export const ExportTool = memo(
     hdrExport = false,
     hdrExportDisabled = false,
     onHdrExportChange,
+    hasImage = false,
+    hdrPreview,
+    onHdrPreviewChange,
   }: {
     canExport: boolean
     disabledReason?: FullExportActionReason
@@ -140,6 +146,11 @@ export const ExportTool = memo(
     hdrExport?: boolean
     hdrExportDisabled?: boolean
     onHdrExportChange?: (on: boolean) => void
+    /** A photo is loaded, so the HDR preview views have one to draw. */
+    hasImage?: boolean
+    /** The action policy's decision on the HDR preview views. */
+    hdrPreview?: ActionAvailability
+    onHdrPreviewChange?: (choice: HdrPreviewChoice) => void
   }) => {
     const { t } = useI18n()
     const fullReasonId = useId()
@@ -369,9 +380,14 @@ export const ExportTool = memo(
                   {t('raw.export.hdr.label')}
                 </label>
                 {hdrExport && (
-                  <p id={hdrHintId} className={noteClassName}>
-                    {t('raw.export.hdr.hint')}
-                  </p>
+                  <HdrPreviewControl
+                    density="pointer"
+                    hasImage={hasImage}
+                    availability={hdrPreview}
+                    onSelect={onHdrPreviewChange}
+                    hintId={hdrHintId}
+                    hintClassName={noteClassName}
+                  />
                 )}
               </div>
             )}

@@ -22,6 +22,8 @@ import type {
 } from '../../model/export-result'
 import { TAP_SPRING } from '../../motion'
 import { manifestActionTitleKey } from '../../services/export/manifest-state-copy'
+import type { HdrPreviewChoice } from '../../services/preview/hdr-preview-output'
+import type { ActionAvailability } from '../../services/surface/derive-tool-availability'
 import {
   deriveExportPanelState,
   exportProgressPercent,
@@ -34,6 +36,7 @@ import { exportCopyActionLabel } from '../../services/surface/raw-reason'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
 import { CHECKBOX_CHROME } from '../shared/checkbox-chrome'
+import { HdrPreviewControl } from '../shared/HdrPreviewControl'
 import type { MobileExportRecap } from './export-recap'
 
 // The standard ease over 220ms, so the idle/busy/done transitions read as
@@ -228,6 +231,11 @@ export function MobileExportPanel(props: {
   hdrExport?: boolean
   hdrExportDisabled?: boolean
   onHdrExportChange?: (on: boolean) => void
+  /** A photo is loaded, so the HDR preview views have one to draw. */
+  hasImage?: boolean
+  /** The action policy's decision on the HDR preview views. */
+  hdrPreview?: ActionAvailability
+  onHdrPreviewChange?: (choice: HdrPreviewChoice) => void
 }) {
   const { t } = useI18n()
   const previewReasonId = useId()
@@ -449,12 +457,14 @@ export function MobileExportPanel(props: {
               {t('raw.export.hdr.label')}
             </label>
             {hdrExport && (
-              <p
-                id={hdrHintId}
-                className="m-0 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/72"
-              >
-                {t('raw.export.hdr.hint')}
-              </p>
+              <HdrPreviewControl
+                density="touch"
+                hasImage={props.hasImage === true}
+                availability={props.hdrPreview}
+                onSelect={props.onHdrPreviewChange}
+                hintId={hdrHintId}
+                hintClassName="m-0 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/72"
+              />
             )}
           </div>
         )}

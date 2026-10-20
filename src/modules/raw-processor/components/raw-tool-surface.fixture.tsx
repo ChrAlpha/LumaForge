@@ -166,6 +166,7 @@ function createFixtureCommands(latest: {
     onCompareReset: () => latest.current.onCompareReset?.(),
     onExport: () => latest.current.onExport?.(),
     onHdrExportChange: (on) => latest.current.onHdrExportChange?.(on),
+    onHdrPreviewChange: (choice) => latest.current.onHdrPreviewChange?.(choice),
     onPreviewExport: () => latest.current.onPreviewExport?.(),
     onShareExport: () => latest.current.onShareExport?.(),
     onDownloadExport: () => latest.current.onDownloadExport?.(),

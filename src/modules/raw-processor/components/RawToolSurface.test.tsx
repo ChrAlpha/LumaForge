@@ -16,6 +16,10 @@ import { jotaiStore } from '~/lib/jotai'
 import type { UseOnlineLutSourcesResult } from '../hooks/useOnlineLutSources'
 import { createMockExportResultIdentity } from '../model/export-result.fixture'
 import {
+  getHdrPreviewChoice,
+  setHdrPreviewChoice,
+} from '../state/hdr-preview.atoms'
+import {
   DEFAULT_OPEN_TOOL_CARDS,
   toolCardOpenAtom,
 } from '../state/tool-card.atoms'
@@ -468,5 +472,29 @@ describe('rawToolSurface', () => {
     for (const command of Object.values(delivery)) {
       expect(command).toHaveBeenCalledOnce()
     }
+  })
+
+  it('puts the mobile HDR preview back to SDR when the export panel that chose it closes', async () => {
+    const user = userEvent.setup()
+    showMobile()
+    renderRawToolSurface({
+      hasImage: true,
+      canExport: true,
+      hdrExport: true,
+      onHdrPreviewChange: setHdrPreviewChoice,
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'Export ready: open options' }),
+    )
+    const views = await screen.findByRole('group', { name: 'HDR preview' })
+    await user.click(within(views).getByRole('button', { name: 'Above SDR' }))
+    expect(getHdrPreviewChoice()).toBe('above-sdr')
+
+    await user.click(screen.getByRole('button', { name: 'Close export' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('group', { name: 'HDR preview' })).toBeNull()
+    })
+    expect(getHdrPreviewChoice()).toBeNull()
   })
 })

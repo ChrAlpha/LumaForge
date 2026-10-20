@@ -1,16 +1,20 @@
 import { Buffer } from 'node:buffer'
 
-import type { Page } from '@playwright/test'
+import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 import { downloadJpeg, downloadManifest } from './support/files'
 import { dngFile, PUBLIC_DNG_SIZE } from './support/fixtures'
+import { readCanvas } from './support/frames'
 import {
   chooseRaw,
+  cpuCanvas,
   exportFullResolution,
   exportSurface,
+  isChromium,
   openLab,
   openTool,
+  previewFrame,
   waitForLoaded,
 } from './support/lab'
 
@@ -85,6 +89,95 @@ function withoutApp2(jpeg: Buffer) {
 function hdrOption(page: Page) {
   return exportSurface(page).getByRole('checkbox', { name: 'HDR gain map' })
 }
+
+const PHOTO_ONLY_STYLE = `
+  .raw-lab-compare-handle, .raw-lab-compare-label, [data-mobile-lab-chrome],
+  [data-mobile-compare-lens], [data-sonner-toaster] {
+    visibility: hidden !important;
+  }
+`
+
+/**
+ * The photo's mean light, 0-255: the CPU canvas as drawn, or the WebGPU
+ * stage as the page composites it, since a presented WebGPU canvas cannot
+ * be read back from script.
+ */
+async function photoLight(page: Page, testInfo: TestInfo) {
+  if (!isChromium(testInfo))
+    return (await readCanvas(cpuCanvas(page))).meanLight
+  const png = await previewFrame(page).screenshot({
+    animations: 'disabled',
+    style: PHOTO_ONLY_STYLE,
+  })
+  return page.evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+    const bitmap = await createImageBitmap(
+      new Blob([bytes], { type: 'image/png' }),
+    )
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const context = canvas.getContext('2d')!
+    context.drawImage(bitmap, 0, 0)
+    const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height)
+    let sum = 0
+    for (let index = 0; index < data.length; index += 4)
+      sum +=
+        0.2126 * data[index] +
+        0.7152 * data[index + 1] +
+        0.0722 * data[index + 2]
+    return sum / (data.length / 4)
+  }, png.toString('base64'))
+}
+
+test('HDR preview views: chosen beside the option, drawn on the photo, SDR again once it goes off', async ({
+  page,
+}, testInfo) => {
+  testInfo.setTimeout(300_000)
+  const raw = await dngFile(testInfo, 'hdr-preview.dng')
+  await openLab(page, testInfo)
+  await chooseRaw(page, raw)
+  await waitForLoaded(page, raw.name)
+  await openTool(page, 'Export')
+  await hdrOption(page).check()
+
+  const views = exportSurface(page).getByRole('group', { name: 'HDR preview' })
+  const view = (name: string) =>
+    views.getByRole('button', { name, exact: true })
+  // A headless screen reports no high dynamic range, so the preview offers
+  // the views any screen shows and opens on the SDR picture.
+  await expect(views.getByRole('button')).toHaveText([
+    'SDR',
+    'Above SDR',
+    'Stop down',
+  ])
+  await expect(view('SDR')).toHaveAttribute('aria-pressed', 'true')
+  const sdr = await photoLight(page, testInfo)
+  await page.screenshot({ path: testInfo.outputPath('hdr-preview-sdr.png') })
+
+  await view('Stop down').click()
+  await expect(view('Stop down')).toHaveAttribute('aria-pressed', 'true')
+  await expect(exportSurface(page).getByText(/2\.3 stops darker/)).toBeVisible()
+  await expect.poll(() => photoLight(page, testInfo)).toBeLessThan(sdr - 8)
+  await page.screenshot({
+    path: testInfo.outputPath('hdr-preview-stop-down.png'),
+  })
+
+  await view('Above SDR').click()
+  await expect(view('Above SDR')).toHaveAttribute('aria-pressed', 'true')
+  await expect(exportSurface(page).getByText(/amber to magenta/)).toBeVisible()
+  await expect
+    .poll(async () => Math.abs((await photoLight(page, testInfo)) - sdr))
+    .toBeGreaterThan(4)
+  await page.screenshot({
+    path: testInfo.outputPath('hdr-preview-above-sdr.png'),
+  })
+
+  // Off, the views go with the option and the photo is the SDR picture.
+  await hdrOption(page).uncheck()
+  await expect(views).toHaveCount(0)
+  await expect
+    .poll(async () => Math.abs((await photoLight(page, testInfo)) - sdr))
+    .toBeLessThan(0.5)
+})
 
 test('HDR gain map export: the SDR JPEG unchanged, its gain map indexed beside it', async ({
   page,
