@@ -1,4 +1,6 @@
 import { createStreamingSha256 } from '../../manifest/streaming-sha256'
+import type { JpegGainMapLayout } from './gain-map-container'
+import { createGainMapPrimarySegments } from './gain-map-container'
 
 export type JpegExportMetadata = {
   make?: string
@@ -17,6 +19,8 @@ export type PreserveJpegMetadataInput = {
   metadata?: JpegExportMetadata | null
   width: number
   height: number
+  /** Set when `jpeg` is a stored gain-map export (primary, then gain map). */
+  gainMap?: JpegGainMapLayout | null
 }
 
 type TiffEntry = {
@@ -429,6 +433,11 @@ function findJpegMetadataInsertionOffset(bytes: Uint8Array, fullSize: number) {
  * derived from the leading marker segments only, so producers can compute the
  * identity of the delivered bytes (`sha256OfJpegWithMetadata`) without
  * materializing a second copy of the file.
+ *
+ * A gain-map export inserts its primary's ICC, ISO 21496-1 version, and MPF
+ * segments in the same block, after the EXIF segment. Its plan always exists:
+ * without those segments a decoder would show only the SDR image, so a
+ * header the plan cannot place them in throws instead.
  */
 export type JpegMetadataInjectionPlan = {
   insertionOffset: number
@@ -441,6 +450,7 @@ export function planJpegMetadataInjection({
   metadata,
   width,
   height,
+  gainMap,
 }: {
   /** Leading bytes of the JPEG (at least the SOI and APP0 segments). */
   header: Uint8Array
@@ -448,12 +458,26 @@ export function planJpegMetadataInjection({
   metadata?: JpegExportMetadata | null
   width: number
   height: number
+  gainMap?: JpegGainMapLayout | null
 }): JpegMetadataInjectionPlan | null {
-  const segment = createApp1ExifSegment({ metadata, width, height })
-  if (!segment) return null
+  const exif = createApp1ExifSegment({ metadata, width, height })
   const insertionOffset = findJpegMetadataInsertionOffset(header, fullSize)
-  if (insertionOffset === null) return null
-  return { insertionOffset, segment }
+  if (gainMap) {
+    if (insertionOffset === null) {
+      throw new Error('JPEG_GAIN_MAP_LAYOUT_INVALID')
+    }
+    return {
+      insertionOffset,
+      segment: createGainMapPrimarySegments({
+        layout: gainMap,
+        storedByteLength: fullSize,
+        insertionOffset,
+        leading: exif,
+      }),
+    }
+  }
+  if (!exif || insertionOffset === null) return null
+  return { insertionOffset, segment: exif }
 }
 
 /** SHA-256 of `jpeg` as it will be delivered once `plan` is applied. */
@@ -477,8 +501,11 @@ export async function preserveJpegMetadata({
   metadata,
   width,
   height,
+  gainMap,
 }: PreserveJpegMetadataInput) {
-  if (!createApp1ExifSegment({ metadata, width, height })) return jpeg
+  if (!gainMap && !createApp1ExifSegment({ metadata, width, height })) {
+    return jpeg
+  }
 
   const header = await readBlobHead(jpeg)
   const plan = planJpegMetadataInjection({
@@ -487,6 +514,7 @@ export async function preserveJpegMetadata({
     metadata,
     width,
     height,
+    gainMap,
   })
   if (!plan) return jpeg
 
@@ -505,6 +533,7 @@ export type PreserveJpegMetadataBytesInput = {
   metadata?: JpegExportMetadata | null
   width: number
   height: number
+  gainMap?: JpegGainMapLayout | null
 }
 
 export function preserveJpegMetadataBytes({
@@ -512,6 +541,7 @@ export function preserveJpegMetadataBytes({
   metadata,
   width,
   height,
+  gainMap,
 }: PreserveJpegMetadataBytesInput): Uint8Array {
   const plan = planJpegMetadataInjection({
     header: jpeg.subarray(0, Math.min(jpeg.length, JPEG_HEADER_SCAN_BYTES)),
@@ -519,6 +549,7 @@ export function preserveJpegMetadataBytes({
     metadata,
     width,
     height,
+    gainMap,
   })
   if (!plan) return jpeg
 

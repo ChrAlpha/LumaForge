@@ -33,6 +33,12 @@ export {
   type RunFullResolutionJpegExportInput,
 } from './full-res-export'
 export {
+  assertGainMapJpeg,
+  type GainMapJpegSource,
+  type JpegGainMapLayout,
+  verifyGainMapJpeg,
+} from './jpeg/gain-map-container'
+export {
   JPEG_HEADER_SCAN_BYTES,
   type JpegExportMetadata,
   type JpegMetadataInjectionPlan,

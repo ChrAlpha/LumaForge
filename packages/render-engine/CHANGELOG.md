@@ -64,6 +64,20 @@ predates this file.
   session's begin and end hooks, so the bracket cost two worker round trips
   per export and did nothing; call `runFullResolutionJpegExport` directly.
 
+### Added
+
+- ISO 21496-1 gain-map JPEGs, stored as the metadata-free primary followed by
+  the gain map container (the gain map with its ISO 21496-1 metadata and a
+  BT.2020 linear ICC profile).
+  `planJpegMetadataInjection`, `preserveJpegMetadata` and
+  `preserveJpegMetadataBytes` take the stored `JpegGainMapLayout` and insert
+  the primary's sRGB ICC profile, ISO 21496-1 version and MPF index after the
+  EXIF segment, in the one block they already insert; with a layout the plan
+  is never null, and a header it cannot place them in throws
+  `JPEG_GAIN_MAP_LAYOUT_INVALID`. `assertGainMapJpeg` and the ranged
+  `verifyGainMapJpeg` refuse delivered bytes whose index or segments a
+  decoder would not find (`JPEG_GAIN_MAP_VERIFICATION_FAILED`).
+
 ### Changed
 
 - `createStreamingSha256` and `sha256Hex` hash about three times faster: the
