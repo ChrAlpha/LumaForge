@@ -4,6 +4,7 @@ import {
   USER_REGIONAL_TONE_PIVOT,
 } from './tone'
 
+export { LUMA_COLOR_HDR_PREVIEW_WGSL } from './hdr-preview'
 export { LUMA_COLOR_OKLAB_WGSL } from './oklab-wgsl'
 export { LUMA_COLOR_USER_SATURATION_WGSL } from './saturation-wgsl'
 export { LUMA_COLOR_SELECTIVE_COLOR_WGSL } from './selective-color-wgsl'

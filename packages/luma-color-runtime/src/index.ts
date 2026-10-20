@@ -29,6 +29,14 @@ export {
   hdrGainMapLog2FromCode,
   resolveHdrGainMapSupport,
 } from './hdr-gain-map'
+export type { HdrPreviewView } from './hdr-preview'
+export {
+  HDR_ABOVE_SDR_BASE_SCALE,
+  HDR_ABOVE_SDR_FADE_STOPS,
+  HDR_ABOVE_SDR_HIGH_TINT,
+  HDR_ABOVE_SDR_LOW_TINT,
+  HDR_PREVIEW_VIEWS,
+} from './hdr-preview'
 export * from './hdr-reference'
 export * from './histogram'
 export type {

@@ -4,6 +4,8 @@ import type {
 } from './color-graph'
 import { EXPORT_LUT_STEP_KINDS, EXPORT_PLAIN_STEP_KINDS } from './color-graph'
 import { encodeHdrGainMapRows, resolveHdrGainMapSupport } from './hdr-gain-map'
+import type { HdrPreviewView } from './hdr-preview'
+import { encodeHdrPreviewRows } from './hdr-preview'
 import { compressLutInputToDomain } from './lut-domain'
 import { clamp01, mix, sampleLutTrilinear } from './lut3d'
 import { getGamutMatrix } from './matrix'
@@ -613,6 +615,54 @@ export function createHdrGainMapRowBandProcessor({
       applyGraph(linear, sdr, sceneScratch)
       encodeHdrGainMapRows(sceneScratch, sdr, gainMap, length)
       return { sdr, gainMap }
+    },
+  }
+}
+
+export type HdrPreviewRowBandProcessor = {
+  rowBandRows: number
+  /** Preview bytes (sRGB, three per pixel) for the view; reused per call. */
+  processUint16Rows: (source: Uint16Array, rowCount: number) => Uint8Array
+}
+
+/**
+ * The row-band processor of an HDR preview view: what the gain-map export's
+ * HDR rendition holds, drawn for an SDR display. It refuses a graph without
+ * an HDR rendition, as the gain-map export does.
+ */
+export function createHdrPreviewRowBandProcessor({
+  width,
+  rowBandRows,
+  graph,
+  view,
+}: CreateRowBandProcessorInput & {
+  view: HdrPreviewView
+}): HdrPreviewRowBandProcessor {
+  const gainMapRows = createHdrGainMapRowBandProcessor({
+    width,
+    rowBandRows,
+    graph,
+  })
+  const maxLength = expectedRowLength(width, rowBandRows)
+  const applyGraph = compilePlainGraphApplier(graph.steps as PlainSteps)
+  const floatScratch = new Float32Array(maxLength)
+  const sceneScratch = new Float32Array(maxLength)
+  const sdrScratch = new Uint8Array(maxLength)
+  const outScratch = new Uint8Array(maxLength)
+
+  return {
+    rowBandRows: gainMapRows.rowBandRows,
+    processUint16Rows(source, rowCount) {
+      const length = validateRows(source.length, width, rowBandRows, rowCount)
+      const linear = floatScratch.subarray(0, length)
+      for (let index = 0; index < length; index += 1) {
+        linear[index] = (source[index] ?? 0) / UINT16_MAX
+      }
+      const sdr = sdrScratch.subarray(0, length)
+      const out = outScratch.subarray(0, length)
+      applyGraph(linear, sdr, sceneScratch)
+      encodeHdrPreviewRows(sceneScratch, sdr, view, out, length)
+      return out
     },
   }
 }

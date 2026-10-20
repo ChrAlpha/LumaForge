@@ -127,6 +127,15 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   `HDR_GAIN_MAP_OUT_OF_RANGE` before anything is encoded.
   `resolveHdrGainMapSupport` gives only a graph without a LUT an HDR
   rendition (`lut-look` otherwise).
+- HDR preview views for a display of any range (`HdrPreviewView`,
+  `HDR_PREVIEW_VIEWS`): `above-sdr` dims the SDR picture to gray and tints
+  what the HDR rendition lifts above SDR white, from
+  `HDR_ABOVE_SDR_LOW_TINT` to `HDR_ABOVE_SDR_HIGH_TINT` at the nominal peak
+  (`HDR_ABOVE_SDR_BASE_SCALE`, `HDR_ABOVE_SDR_FADE_STOPS`); `stop-down`
+  divides the HDR rendition by the nominal peak.
+  `createHdrPreviewRowBandProcessor` draws them from the scene values the
+  gain map is computed from, and `LUMA_COLOR_HDR_PREVIEW_WGSL` holds the
+  same views plus the HDR rendition as extended linear sRGB.
 
 ### Fixed
 
