@@ -10,6 +10,7 @@ import type { ManualTransform } from '~/lib/transform/transform-types'
 
 import type { RawTransformFeature } from '../../hooks/useRawTransformFeature'
 import type { ToolAvailability } from '../../services/surface/derive-tool-availability'
+import { CHECKBOX_CHROME } from '../shared/checkbox-chrome'
 import {
   SEGMENTED_FOCUS_RING,
   SEGMENTED_ITEM_TEXT,
@@ -167,7 +168,7 @@ export const TransformTool = memo(
                 feature.setConstrainCrop(value === true)
               }
               disabled={controlsDisabled}
-              className="size-4 border border-[oklch(0.96_0.006_255/0.24)] bg-[oklch(0.96_0.006_255/0.06)] data-[state=checked]:border-lf-green data-[state=checked]:bg-lf-green data-[state=checked]:text-lf-surface"
+              className={clsxm('size-4', CHECKBOX_CHROME)}
             />
             {t('transform.crop')}
           </label>
