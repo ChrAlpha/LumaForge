@@ -328,6 +328,16 @@ describe('captureExportResultIdentity', () => {
     expect(changed.colorIntent).not.toHaveProperty('zoom')
   })
 
+  it('records the HDR gain map without making a result of the same picture stale', () => {
+    const hdr = captureExportResultIdentity(makeInput({ hdrGainMap: true }))
+
+    expect(baseline.hdrGainMap).toBe(false)
+    expect(hdr.hdrGainMap).toBe(true)
+    // The SDR picture is the same either way, so turning the option over
+    // after an export keeps that export deliverable.
+    expect(isSameExportResultInput(hdr, baseline)).toBe(true)
+  })
+
   it('is deeply frozen and detached from the inputs it was captured from', () => {
     const intent: Mutable<ColorGraphIntent> = makeIntent({
       selectiveColor: {

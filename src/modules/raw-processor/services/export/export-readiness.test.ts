@@ -433,6 +433,41 @@ describe('export readiness helpers', () => {
     ).toBeUndefined()
   })
 
+  it('refuses an HDR export of a LUT look after the session refusals', () => {
+    const style: ImageSession['activeStyle'] = {
+      kind: 'custom',
+      name: 'LUT',
+      defaultIntensity: 0.7,
+      currentIntensity: 0.7,
+      lutAsset: {
+        format: 'cube',
+        dimension: 33,
+        profileResolution: {
+          kind: 'confirmed',
+          confidence: 'metadata',
+          profile: getLUTColorProfile('display-srgb')!,
+        },
+      },
+    }
+    const input = {
+      sourceFile: new File(['raw'], 'frame.ARW'),
+      session: { ...createSession(), activeStyle: style },
+      rawRenderExposure: IDENTITY_EXPOSURE,
+    }
+
+    expect(deriveFullResExportReadiness(input).canExport).toBe(true)
+    expect(
+      deriveFullResExportReadiness({ ...input, hdrGainMap: true }),
+    ).toEqual({ canExport: false, refusal: { code: 'hdr-look-unsupported' } })
+    expect(
+      deriveFullResExportReadiness({
+        ...input,
+        session: createSession(),
+        hdrGainMap: true,
+      }).canExport,
+    ).toBe(true)
+  })
+
   it('decides on the runtime verdict, never on its diagnostic text', () => {
     for (const reason of ['', 'Quick preview is still being prepared.']) {
       const session = createSession({

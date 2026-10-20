@@ -2,6 +2,7 @@ import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import {
   pickColorGraphIntent,
   resolveExportColorGraph,
+  resolveHdrGainMapSupport,
 } from '@lumaforge/luma-color-runtime'
 import type {
   ExportGeometry,
@@ -227,6 +228,8 @@ function discardUnadoptedOutput(output: ExportOutputResult | undefined) {
 export type FullResExportRequest = {
   /** How hard the plan may push this device; never the JPEG quality. */
   performancePreference?: PerformancePreference
+  /** Also write the HDR gain map, as the export option read at the action. */
+  hdrGainMap?: boolean
   /** The hint read for the loaded source; it applies only to that file. */
   interruption?: SourceInterruptionHint
 }
@@ -236,6 +239,7 @@ export async function orchestrateFullResExport(
   ctx: ExportContext,
 ): Promise<void> {
   const performancePreference = options.performancePreference ?? 'balanced'
+  const hdrGainMap = options.hdrGainMap === true
 
   const rawRenderExposure = ctx.decodedImageRef.current?.renderExposure ?? null
   const sourceFile = ctx.loadedImage.file
@@ -246,6 +250,7 @@ export async function orchestrateFullResExport(
     sourceFile,
     session: currentSession?.id === ctx.session?.id ? currentSession : null,
     rawRenderExposure,
+    hdrGainMap,
   })
   // The refusal stays structured up to the caller, which alone turns it into
   // copy. Runtime diagnostics travel as given.
@@ -315,6 +320,11 @@ export async function orchestrateFullResExport(
     refuse({ code: 'look-unsupported' })
     return
   }
+  // The color runtime decides which looks have an HDR rendition.
+  if (hdrGainMap && !resolveHdrGainMapSupport(graph).supported) {
+    refuse({ code: 'hdr-look-unsupported' })
+    return
+  }
   // The request the result will answer, fixed from the same reads the graph
   // took; the result and its manifest carry it whatever moves meanwhile.
   const identity = captureExportResultIdentity({
@@ -326,6 +336,7 @@ export async function orchestrateFullResExport(
     lut,
     rawRenderExposure: activeRawRenderExposure,
     geometry: exportGeometry,
+    hdrGainMap,
   })
 
   const exportSessionId = activeSession.id
@@ -488,6 +499,7 @@ export async function orchestrateFullResExport(
       graph,
       // The geometry the session committed; the worker reproduces exactly it.
       ...(exportGeometry ? { geometry: exportGeometry } : {}),
+      ...(hdrGainMap ? { hdrGainMap } : {}),
       onAttempt: (attempt) => {
         if (!isCurrentExport()) return
 

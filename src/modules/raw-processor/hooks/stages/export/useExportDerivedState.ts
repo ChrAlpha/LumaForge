@@ -43,6 +43,8 @@ type UseExportDerivedStateInput = {
   /** The selected custom LUT's data the preview pipeline holds. */
   lutData: LUTData | null
   previewFacts: PipelineFacts | null
+  /** The export option to also write the HDR gain map; off when absent. */
+  hdrGainMap?: boolean
 }
 
 export function useExportDerivedState({
@@ -57,6 +59,7 @@ export function useExportDerivedState({
   params,
   lutData,
   previewFacts,
+  hdrGainMap = false,
 }: UseExportDerivedStateInput) {
   // The HQ JPEG is the WebGPU preview's render, so it refuses while that
   // preview leaves out the selected look its name would claim. Only that
@@ -95,6 +98,7 @@ export function useExportDerivedState({
       sourceFile,
       session,
       rawRenderExposure,
+      hdrGainMap,
     })
     const canExport = fullResExportReadiness.canExport
     const exportRefusal: FullResExportReason | undefined =
@@ -153,6 +157,7 @@ export function useExportDerivedState({
     exportResult,
     exportShareCapability,
     hasImage,
+    hdrGainMap,
     hqPreviewLookRefusal,
     previewMeasured,
     rawRenderExposure,

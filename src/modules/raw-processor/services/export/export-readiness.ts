@@ -204,6 +204,8 @@ export function deriveFullResExportReadiness(input: {
   sourceFile: File | null
   session: ImageSession | null
   rawRenderExposure: RawRenderExposure | null | undefined
+  /** The export would also write the HDR gain map. */
+  hdrGainMap?: boolean
 }): FullResExportReadiness {
   if (!input.sourceFile || !input.session) {
     return refuseFullResExport({ code: 'source-loading' })
@@ -212,6 +214,13 @@ export function deriveFullResExportReadiness(input: {
   const sessionRefusal = deriveExportRefusal(input.session)
   if (sessionRefusal) {
     return refuseFullResExport(sessionRefusal)
+  }
+
+  // Only a look without a LUT has an HDR rendition: a LUT outputs an SDR
+  // display signal. The export resolves its graph and asks the color runtime
+  // again before any work; this is the session's view of the same rule.
+  if (input.hdrGainMap && input.session.activeStyle) {
+    return refuseFullResExport({ code: 'hdr-look-unsupported' })
   }
 
   const fullResCapability = input.session.exportState.fullResCapability

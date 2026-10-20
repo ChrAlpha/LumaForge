@@ -539,6 +539,23 @@ describe('buildManifestForExportResult current record', () => {
     })
     expect(manifest.output.dimensions).toEqual({ width: 4, height: 2 })
   })
+
+  it('records the HDR gain map only on an export that wrote one', async () => {
+    const plain = await buildManifestForExportResult(setup().input)
+    const hdr = await buildManifestForExportResult(
+      setup({ identity: { hdrGainMap: true } }).input,
+    )
+
+    expect(plain.output).not.toHaveProperty('hdr_gain_map')
+    expect(hdr.output.hdr_gain_map).toEqual({
+      format: 'iso-21496-1',
+      gamut: 'rec2020',
+      reference_white_nits: 203,
+      nominal_peak_nits: 1000,
+      quality: 98,
+    })
+    expect(parseRenderManifest(hdr)).toEqual({ ok: true, manifest: hdr })
+  })
 })
 
 describe('sealExportResultManifest', () => {

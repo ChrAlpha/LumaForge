@@ -32,6 +32,8 @@ export type ExportResultIdentityInput = {
   rawRenderExposure: RawRenderExposure | null
   /** The geometry the session committed; null when none is applied. */
   geometry: ExportGeometry | null
+  /** The export also writes the HDR gain map; false when absent. */
+  hdrGainMap?: boolean
 }
 
 // Parsed LUT tables of this page, each named the first time a request
@@ -166,6 +168,7 @@ export function captureExportResultIdentity(
     lut,
     rawRenderExposure,
     geometry,
+    hdrGainMap: input.hdrGainMap === true,
     inputSignature,
   })
 }

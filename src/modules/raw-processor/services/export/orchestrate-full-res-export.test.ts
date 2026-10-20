@@ -1158,6 +1158,23 @@ describe('orchestrateFullResExport success', () => {
     })
   })
 
+  it('asks the job for the gain map and records it on the result and manifest', async () => {
+    for (const hdrGainMap of [false, true]) {
+      const h = createHarness()
+      const job = h.installJob()
+
+      const run = orchestrateFullResExport({ ...OPTIONS, hdrGainMap }, h.ctx)
+      const input = await job.started
+      job.resolve()
+      await run
+
+      expect(input.hdrGainMap).toBe(hdrGainMap ? true : undefined)
+      const published = h.state.session?.exportState.result
+      expect(published?.identity.hdrGainMap).toBe(hdrGainMap)
+      expect(h.manifestInputs[0].result).toBe(published)
+    }
+  })
+
   it.each([
     { sink: 'blob-handoff', runtime: BLOB_RUNTIME },
     { sink: 'opfs-file', runtime: OPFS_RUNTIME },
@@ -1647,6 +1664,26 @@ describe('orchestrateFullResExport refusals', () => {
     expect(h.state.session).toBe(session)
     expect(otherExport.signal.aborted).toBe(false)
     expect(h.ctx.exportAbortControllerRef.current).toBe(otherExport)
+    expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
+  })
+
+  it('refuses an HDR export of a stored LUT look the gain map cannot render', async () => {
+    const lut = tealLut({
+      kind: 'confirmed',
+      confidence: 'metadata',
+      profile: getLUTColorProfile('display-srgb')!,
+    })
+    const h = createHarness({
+      params: { ...DEFAULT_PARAMS, styleKind: 'custom' },
+      lut,
+    })
+
+    await orchestrateFullResExport({ ...OPTIONS, hdrGainMap: true }, h.ctx)
+
+    expect(h.notifications).toEqual([
+      { kind: 'refused', refusal: { code: 'hdr-look-unsupported' } },
+    ])
+    expect(mocks.runFullResolutionExportJob).not.toHaveBeenCalled()
     expect(mocks.sampleExportPlanFacts).not.toHaveBeenCalled()
   })
 

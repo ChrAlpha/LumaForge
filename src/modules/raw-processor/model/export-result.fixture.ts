@@ -40,6 +40,7 @@ export function createMockExportResultIdentity(
     lut: null,
     rawRenderExposure: null,
     geometry: null,
+    hdrGainMap: false,
     inputSignature: 'mock-signature',
     ...overrides,
   }

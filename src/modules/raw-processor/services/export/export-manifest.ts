@@ -179,6 +179,7 @@ export async function buildManifestForExportResult(
       quality: Math.round(EXPORT_JPEG_QUALITY * 100),
       filename: result.filename,
       sha256: outputSha256,
+      hdrGainMap: identity.hdrGainMap,
     },
     parent_manifest_sha256: null,
     produced_at: input.now?.().toISOString(),

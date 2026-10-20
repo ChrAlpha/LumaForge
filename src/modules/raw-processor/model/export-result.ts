@@ -26,6 +26,7 @@ export const FULL_RES_EXPORT_REASON_CODES = [
   'lut-output-unsupported',
   'lut-output-refused',
   'look-unsupported',
+  'hdr-look-unsupported',
   'geometry-unplannable',
   'exposure-pending',
   'cannot-safely-complete',
@@ -166,7 +167,13 @@ export type ExportResultIdentity = Readonly<{
     matrix: readonly number[]
     constrainCrop: boolean
   }> | null
-  /** Every input above except the result kind and attempt, as one string. */
+  /**
+   * The JPEG also carries the HDR gain map. It changes the file, not the
+   * photo, so it is not part of the input signature: switching the option
+   * leaves a finished result deliverable as what it is.
+   */
+  hdrGainMap: boolean
+  /** Every input above except the result kind, attempt and gain map, as one string. */
   inputSignature: string
 }>
 

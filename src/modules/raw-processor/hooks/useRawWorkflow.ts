@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { hasActiveExport } from '../services/export/export-state'
+import { getHdrExport, useHdrExportValue } from '../state/export-options.atoms'
 import {
   useDetachedPreviewViewValue,
   useSetDetachedPreviewView,
@@ -232,15 +233,20 @@ export function useRawWorkflow(): UseRawWorkflowReturn {
     params,
     lutData: lut,
     previewFacts,
+    hdrGainMap: useHdrExportValue(),
   })
   const { previewSuspended, previewExportRefusal } = exportState
   previewSuspendedRef.current = previewSuspended
-  // Full-resolution export starts only from an explicit user action, which
-  // chooses nothing: the JPEG quality is fixed. The loaded source's
-  // interruption hint asks it for the safer plan.
+  // Full-resolution export starts only from an explicit user action. The
+  // JPEG quality is fixed; the HDR gain map option is read from the store as
+  // the action runs. The loaded source's interruption hint asks it for the
+  // safer plan.
   const exportWithInterruptionHistory = useCallback(
     () =>
-      exportImage({ interruption: exportInterruptionRef.current ?? undefined }),
+      exportImage({
+        interruption: exportInterruptionRef.current ?? undefined,
+        hdrGainMap: getHdrExport(),
+      }),
     [exportImage, exportInterruptionRef],
   )
   const exportResultActions = useExportResultActions({
