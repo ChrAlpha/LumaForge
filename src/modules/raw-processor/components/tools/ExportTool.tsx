@@ -3,6 +3,7 @@ import { Copy, Download, FileJson, LoaderCircle, Share2 } from 'lucide-react'
 import { memo, useId, useState } from 'react'
 
 import { Button } from '~/components/ui/button'
+import { Checkbox } from '~/components/ui/checkbox'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 
@@ -26,6 +27,7 @@ import { exportCopyActionLabel } from '../../services/surface/raw-reason'
 import { currentSessionAtom } from '../../state/session.atoms'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
+import { CHECKBOX_CHROME } from '../shared/checkbox-chrome'
 
 // Both export buttons refuse on one plate, so neither reads as the one still
 // on offer.
@@ -110,6 +112,9 @@ export const ExportTool = memo(
     onDownloadExportManifest,
     onCopyExport,
     interruptionNote,
+    hdrExport = false,
+    hdrExportDisabled = false,
+    onHdrExportChange,
   }: {
     canExport: boolean
     disabledReason?: FullExportActionReason
@@ -131,10 +136,15 @@ export const ExportTool = memo(
      * offers no file picker for it.
      */
     interruptionNote?: ExportInterruptionNote | null
+    /** The full-resolution export also writes the HDR gain map. */
+    hdrExport?: boolean
+    hdrExportDisabled?: boolean
+    onHdrExportChange?: (on: boolean) => void
   }) => {
     const { t } = useI18n()
     const fullReasonId = useId()
     const previewReasonId = useId()
+    const hdrHintId = useId()
     // Both exports run under one workflow status, so the panel remembers
     // which button started the one running.
     const [startedKind, setStartedKind] = useState<ExportPanelKind>('full')
@@ -221,6 +231,19 @@ export const ExportTool = memo(
               <dd className="font-medium tabular-nums text-lf-on-surface/85">
                 {formatBytes(exportResult.size)}
               </dd>
+              {exportResult.identity?.hdrGainMap && (
+                <>
+                  <dt className="tracking-tight text-lf-on-surface/62">
+                    {t('raw.export.hdr.term')}
+                  </dt>
+                  <dd
+                    data-export-result-hdr
+                    className="font-medium text-lf-on-surface/85"
+                  >
+                    {t('raw.export.hdr.value')}
+                  </dd>
+                </>
+              )}
             </dl>
             <div className="flex flex-wrap gap-1.5">
               <Button
@@ -328,6 +351,29 @@ export const ExportTool = memo(
               >
                 {previewReason}
               </p>
+            )}
+            {/* The option sits with the button it shapes; its hint grows
+                the block upward like the notes, so the buttons stay put. */}
+            {onHdrExportChange && (
+              <div data-export-hdr className="grid gap-1">
+                <label className="flex min-h-8 cursor-pointer items-center gap-2.5 text-[0.8rem] text-lf-on-surface/80 has-disabled:cursor-not-allowed has-disabled:text-lf-on-surface/44">
+                  <Checkbox
+                    checked={hdrExport}
+                    onCheckedChange={(value) =>
+                      onHdrExportChange(value === true)
+                    }
+                    disabled={hdrExportDisabled}
+                    aria-describedby={hdrExport ? hdrHintId : undefined}
+                    className={clsxm('size-4', CHECKBOX_CHROME)}
+                  />
+                  {t('raw.export.hdr.label')}
+                </label>
+                {hdrExport && (
+                  <p id={hdrHintId} className={noteClassName}>
+                    {t('raw.export.hdr.hint')}
+                  </p>
+                )}
+              </div>
             )}
             <Button
               type="button"

@@ -17,6 +17,7 @@ import { jotaiStore } from '~/lib/jotai'
 
 import type { ProcessingStatus } from '../model/workflow'
 import { DEFAULT_LOOK_INTENSITY } from '../services/look/style-system'
+import { setHdrExport } from '../state/export-options.atoms'
 import { setCurrentSession } from '../state/session.atoms'
 import {
   getProcessingParams,
@@ -58,6 +59,8 @@ interface RawToolStoreFacts {
   /** The stage is `exporting`; otherwise `processing` or `ready`. */
   isExporting?: boolean
   progress?: number
+  /** The full-resolution export also writes the HDR gain map. */
+  hdrExport?: boolean
 }
 
 /**
@@ -134,6 +137,7 @@ function seedToolStore(props: RawToolSurfaceFixtureProps) {
   setLut(lutName ? { ...generateIdentityLUT(2), title: lutName } : null)
   setProcessingStatus(statusFor(props))
   setProgress(props.progress ?? 0)
+  setHdrExport(props.hdrExport === true)
 }
 
 /**
@@ -161,6 +165,7 @@ function createFixtureCommands(latest: {
       latest.current.onCompareSplitChange?.(split),
     onCompareReset: () => latest.current.onCompareReset?.(),
     onExport: () => latest.current.onExport?.(),
+    onHdrExportChange: (on) => latest.current.onHdrExportChange?.(on),
     onPreviewExport: () => latest.current.onPreviewExport?.(),
     onShareExport: () => latest.current.onShareExport?.(),
     onDownloadExport: () => latest.current.onDownloadExport?.(),
@@ -188,6 +193,7 @@ function contextFacts(
     selectiveColor: _selectiveColor,
     isExporting: _isExporting,
     progress: _progress,
+    hdrExport: _hdrExport,
     histogram: _histogram,
     stats: _stats,
     ...rest

@@ -1,5 +1,6 @@
 import { DEFAULT_PREVIEW_VIEW } from '~/lib/preview/preview-view'
 
+import { setHdrExport } from '../state/export-options.atoms'
 import { setDetachedPreviewView } from '../state/preview-view.atoms'
 import {
   DEFAULT_COLOR_INTENT,
@@ -20,4 +21,5 @@ export function resetToDefaults(): void {
   setLut(null)
   setProcessingParams({ ...DEFAULT_COLOR_INTENT })
   setDetachedPreviewView(DEFAULT_PREVIEW_VIEW)
+  setHdrExport(false)
 }

@@ -614,3 +614,84 @@ describe('exportTool in progress', () => {
     expect(copy).not.toHaveAttribute('aria-busy')
   })
 })
+
+describe('exportTool HDR gain map', () => {
+  const HDR_HINT =
+    'Full resolution only. HDR screens show highlights up to 1000 nits; other viewers and this preview show the SDR picture.'
+  const props: ExportToolProps = {
+    canExport: true,
+    canPreviewExport: true,
+    isProcessing: false,
+    onExport: vi.fn(),
+    onPreviewExport: vi.fn(),
+    exportResult: null,
+    exportShareCapability: { available: false, reasonCode: 'no-result' },
+    onShareExport: vi.fn(),
+    onDownloadExport: vi.fn(),
+    onCopyExport: vi.fn(),
+  }
+
+  it('offers the option above the export buttons and explains it once on', async () => {
+    const user = userEvent.setup()
+    const onHdrExportChange = vi.fn()
+    const { rerender } = render(
+      <ExportTool {...props} onHdrExportChange={onHdrExportChange} />,
+    )
+
+    const option = screen.getByRole('checkbox', { name: 'HDR gain map' })
+    expect(option).not.toBeChecked()
+    expect(screen.queryByText(HDR_HINT)).toBeNull()
+    expect(
+      option.compareDocumentPosition(
+        screen.getByRole('button', { name: 'Export full-resolution JPEG' }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    await user.click(option)
+    expect(onHdrExportChange).toHaveBeenCalledExactlyOnceWith(true)
+
+    rerender(
+      <ExportTool {...props} hdrExport onHdrExportChange={onHdrExportChange} />,
+    )
+    const checked = screen.getByRole('checkbox', { name: 'HDR gain map' })
+    expect(checked).toBeChecked()
+    expect(checked).toHaveAccessibleDescription(HDR_HINT)
+
+    rerender(
+      <ExportTool
+        {...props}
+        hdrExport
+        hdrExportDisabled
+        onHdrExportChange={onHdrExportChange}
+      />,
+    )
+    expect(
+      screen.getByRole('checkbox', { name: 'HDR gain map' }),
+    ).toBeDisabled()
+  })
+
+  it('says a delivered JPEG carries a gain map, and offers no option over it', () => {
+    const { rerender } = render(
+      <ExportTool
+        {...props}
+        hdrExport
+        onHdrExportChange={vi.fn()}
+        exportResult={createResult({
+          identity: createMockExportResultIdentity({ hdrGainMap: true }),
+        })}
+      />,
+    )
+
+    expect(screen.getByText('HDR')).toBeVisible()
+    expect(screen.getByText('Gain map')).toBeVisible()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+
+    rerender(
+      <ExportTool
+        {...props}
+        onHdrExportChange={vi.fn()}
+        exportResult={createResult()}
+      />,
+    )
+    expect(screen.queryByText('Gain map')).toBeNull()
+  })
+})

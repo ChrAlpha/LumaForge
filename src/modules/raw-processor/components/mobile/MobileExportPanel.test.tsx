@@ -704,3 +704,55 @@ describe('mobileExportPanel', () => {
     expect(onExport).not.toHaveBeenCalled()
   })
 })
+
+describe('mobileExportPanel HDR gain map', () => {
+  const HDR_HINT =
+    'Full resolution only. HDR screens show highlights up to 1000 nits; other viewers and this preview show the SDR picture.'
+
+  it('offers the option with the actions, above the export button, and explains it once on', async () => {
+    const user = userEvent.setup()
+    const onHdrExportChange = vi.fn()
+    const { rerender } = renderPanel({ onHdrExportChange })
+
+    const option = screen.getByRole('checkbox', { name: 'HDR gain map' })
+    expect(option).not.toBeChecked()
+    expect(option.closest('label')).toHaveClass('min-h-11')
+    expect(
+      option.compareDocumentPosition(
+        screen.getByRole('button', { name: 'Export full-resolution JPEG' }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    await user.click(option)
+    expect(onHdrExportChange).toHaveBeenCalledExactlyOnceWith(true)
+
+    rerender(panel({ hdrExport: true, onHdrExportChange }))
+    expect(
+      screen.getByRole('checkbox', { name: 'HDR gain map' }),
+    ).toHaveAccessibleDescription(HDR_HINT)
+
+    rerender(
+      panel({ hdrExport: true, hdrExportDisabled: true, onHdrExportChange }),
+    )
+    expect(
+      screen.getByRole('checkbox', { name: 'HDR gain map' }),
+    ).toBeDisabled()
+  })
+
+  it('names the gain map on a delivered JPEG that carries one', () => {
+    const { container, rerender } = renderPanel({
+      onHdrExportChange: vi.fn(),
+      exportResult: createResult({
+        kind: 'full-resolution',
+        identity: createMockExportResultIdentity({ hdrGainMap: true }),
+      }),
+    })
+
+    expect(
+      container.querySelector('[data-export-result-hdr]'),
+    ).toHaveTextContent('HDR gain map')
+    expect(screen.queryByRole('checkbox')).toBeNull()
+
+    rerender(panel({ exportResult: createResult() }))
+    expect(container.querySelector('[data-export-result-hdr]')).toBeNull()
+  })
+})

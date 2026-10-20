@@ -3,6 +3,7 @@ import { useI18n } from '~/lib/i18n'
 import {
   useRawToolAdjustments,
   useRawToolAdjustmentsSummary,
+  useRawToolHdrExport,
   useRawToolProgress,
   useRawToolStatus,
 } from '../../hooks/useRawToolState'
@@ -104,6 +105,7 @@ function MobileExportPanelSlot({
   const adjustments = useRawToolAdjustments()
   const { isExporting } = useRawToolStatus()
   const progress = useRawToolProgress()
+  const hdrExport = useRawToolHdrExport()
 
   // The recap names a catalog look the way its tile does.
   const lookTitle = resolveAppliedLookTitle({
@@ -149,6 +151,9 @@ function MobileExportPanelSlot({
         props.exportBlockedByLutContract ? onChooseLutContract : undefined
       }
       recap={recap}
+      hdrExport={hdrExport}
+      hdrExportDisabled={!props.toolAvailability.mobile.hdrExport.available}
+      onHdrExportChange={commands.onHdrExportChange}
     />
   )
 }

@@ -6,6 +6,7 @@ import { useI18n } from '~/lib/i18n'
 
 import {
   useRawToolAdjustments,
+  useRawToolHdrExport,
   useRawToolIntensity,
   useRawToolStatus,
 } from '../hooks/useRawToolState'
@@ -30,6 +31,7 @@ export function DesktopRawToolSurface() {
   const props = useRawWorkflowContext()
   const commands = useRawToolCommands()
   const { isExporting } = useRawToolStatus()
+  const hdrExport = useRawToolHdrExport()
   const { t } = useI18n()
   // Each control is off exactly where the shared action policy refuses its
   // action. Reset returns the stage to its split, so it is off where the
@@ -69,6 +71,9 @@ export function DesktopRawToolSurface() {
             onDownloadExport={commands.onDownloadExport}
             onDownloadExportManifest={commands.onDownloadExportManifest}
             onCopyExport={commands.onCopyExport}
+            hdrExport={hdrExport}
+            hdrExportDisabled={!availability.hdrExport.available}
+            onHdrExportChange={commands.onHdrExportChange}
           />
         </section>
       }

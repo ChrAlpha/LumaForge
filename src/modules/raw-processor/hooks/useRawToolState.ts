@@ -13,6 +13,7 @@ import type { ToneValue } from '../components/tone-fields'
 import type { ProcessingStatus } from '../model/workflow'
 import { resolveActiveLook } from '../services/look/look-session-state'
 import { DEFAULT_LOOK_INTENSITY } from '../services/look/style-system'
+import { useHdrExportValue } from '../state/export-options.atoms'
 import { currentSessionAtom } from '../state/session.atoms'
 import {
   effectiveColorIntentAtom,
@@ -117,6 +118,11 @@ export function useRawToolAdjustments(): RawToolAdjustments {
     () => ({ activeIntensity, tone, color, selectiveColor }),
     [activeIntensity, color, selectiveColor, tone],
   )
+}
+
+/** Whether the full-resolution export also writes the HDR gain map. */
+export function useRawToolHdrExport(): boolean {
+  return useHdrExportValue()
 }
 
 /** How much of the look reaches the photo, 0..1, alone: a tone or colour edit leaves its reader alone. */

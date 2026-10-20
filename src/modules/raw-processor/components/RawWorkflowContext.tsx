@@ -158,8 +158,13 @@ export interface RawToolCommands {
   onViewModeChange: (mode: 'processed' | 'original' | 'compare') => void
   onCompareSplitChange: (split: number) => void
   onCompareReset: () => void
-  /** Starts the full-resolution export; it takes no choices. */
+  /**
+   * Starts the full-resolution export. Its one choice, the HDR gain map, is
+   * the export option it reads from the store as it starts.
+   */
   onExport: () => void
+  /** Turn the full-resolution export's HDR gain map on or off. */
+  onHdrExportChange: (on: boolean) => void
   onPreviewExport: () => void | Promise<void>
   onShareExport: () => void
   onDownloadExport: () => void

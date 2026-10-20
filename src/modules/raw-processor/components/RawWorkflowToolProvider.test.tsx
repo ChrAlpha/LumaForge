@@ -34,6 +34,7 @@ import type {
   ToolAvailability,
   ToolSurface,
 } from '../services/surface/derive-tool-availability'
+import { getHdrExport } from '../state/export-options.atoms'
 import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import { setCurrentSession } from '../state/session.atoms'
 import { toolCardOpenAtom } from '../state/tool-card.atoms'
@@ -665,6 +666,22 @@ describe('rawWorkflowToolProvider tool commands', () => {
     for (const command of commandEdits(first)) {
       expect(command).not.toHaveBeenCalled()
     }
+  })
+
+  it('sets the HDR gain map option, and holds it still while an export runs', () => {
+    onTestFinished(resetToDefaults)
+    const view = renderProvider()
+    const held = view.result.current.commands
+
+    held.onHdrExportChange(true)
+    expect(getHdrExport()).toBe(true)
+
+    view.updateWorkflow({ status: 'exporting' })
+    expect(
+      view.result.current.surface.toolAvailability.desktop.hdrExport,
+    ).toEqual({ available: false, reason: 'export-running' })
+    held.onHdrExportChange(false)
+    expect(getHdrExport()).toBe(true)
   })
 
   it('refuses every edit while the preview is released, through what a surface held before, and keeps delivery, Export and catalog listing', async () => {

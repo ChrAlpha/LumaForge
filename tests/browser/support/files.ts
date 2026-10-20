@@ -161,6 +161,7 @@ export type ExportManifest = {
     filename: string
     quality: number
     dimensions: { width: number; height: number }
+    hdr_gain_map?: Record<string, unknown>
   }
   render_params: {
     intensity?: number

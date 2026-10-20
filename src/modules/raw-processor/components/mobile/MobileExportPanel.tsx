@@ -10,6 +10,7 @@ import {
 import { AnimatePresence, m, useReducedMotion } from 'motion/react'
 import { useId, useState } from 'react'
 
+import { Checkbox } from '~/components/ui/checkbox'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import { surfaceFade } from '~/lib/spring'
@@ -32,6 +33,7 @@ import type {
 import { exportCopyActionLabel } from '../../services/surface/raw-reason'
 import type { ExportInterruptionNote } from '../RawWorkflowContext'
 import { EXPORT_INTERRUPTION_NOTE_COPY } from '../RawWorkflowContext'
+import { CHECKBOX_CHROME } from '../shared/checkbox-chrome'
 import type { MobileExportRecap } from './export-recap'
 
 // The standard ease over 220ms, so the idle/busy/done transitions read as
@@ -222,10 +224,16 @@ export function MobileExportPanel(props: {
    * panel offers to go and choose it.
    */
   onChooseLutContract?: () => void
+  /** The full-resolution export also writes the HDR gain map. */
+  hdrExport?: boolean
+  hdrExportDisabled?: boolean
+  onHdrExportChange?: (on: boolean) => void
 }) {
   const { t } = useI18n()
   const previewReasonId = useId()
   const titleId = useId()
+  const hdrHintId = useId()
+  const hdrExport = props.hdrExport === true
   const isExporting = props.isExporting === true
   // Both exports run under one workflow status, so the panel remembers
   // which button started the one running.
@@ -303,6 +311,12 @@ export function MobileExportPanel(props: {
           <p className="m-0 text-[0.7rem] text-lf-on-photo-ink/68 tabular-nums">
             {props.exportResult.width} x {props.exportResult.height} ·{' '}
             {formatBytes(props.exportResult.size)}
+            {props.exportResult.identity?.hdrGainMap && (
+              <span data-export-result-hdr>
+                {' · '}
+                {t('raw.export.hdr.label')}
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -418,6 +432,32 @@ export function MobileExportPanel(props: {
         data-export-actions
         className="sticky bottom-0 z-[1] grid gap-2 bg-[oklch(0.085_0.006_255)]"
       >
+        {/* The option shapes the primary action, so it holds the deck's
+            bottom edge with it and its hint never scrolls under it. */}
+        {props.onHdrExportChange && (
+          <div data-export-hdr className="grid gap-0.5">
+            <label className="flex min-h-11 cursor-pointer items-center gap-3 px-0.5 text-[0.82rem] font-medium text-lf-on-photo-ink has-disabled:cursor-not-allowed has-disabled:text-lf-on-photo-ink/44">
+              <Checkbox
+                checked={hdrExport}
+                onCheckedChange={(value) =>
+                  props.onHdrExportChange?.(value === true)
+                }
+                disabled={props.hdrExportDisabled}
+                aria-describedby={hdrExport ? hdrHintId : undefined}
+                className={clsxm('size-[22px]', CHECKBOX_CHROME)}
+              />
+              {t('raw.export.hdr.label')}
+            </label>
+            {hdrExport && (
+              <p
+                id={hdrHintId}
+                className="m-0 px-0.5 text-[0.72rem] leading-snug text-lf-on-photo-ink/72"
+              >
+                {t('raw.export.hdr.hint')}
+              </p>
+            )}
+          </div>
+        )}
         <m.button
           type="button"
           disabled={!props.canExport || props.isProcessing}

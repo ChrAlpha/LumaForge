@@ -32,6 +32,8 @@ export type ToolAction =
   | 'exportEntry'
   | 'fullExport'
   | 'hqExport'
+  /** Whether the full-resolution export also writes the HDR gain map. */
+  | 'hdrExport'
   /** Share, download, manifest and copy of the delivered JPEG. */
   | 'delivery'
   /** Bringing the preview back after export released it. */
@@ -257,6 +259,13 @@ export function deriveToolAvailability(
         : input.canPreviewExport
           ? AVAILABLE
           : refused(hasImage ? null : 'no-source')
+  // The option holds still while an export runs, so the running export
+  // and the option on screen agree.
+  const hdrExport = !exportEntry.available
+    ? exportEntry
+    : exporting
+      ? refused(busy)
+      : AVAILABLE
   const delivery = !exportEntry.available
     ? exportEntry
     : input.hasExportResult
@@ -313,6 +322,7 @@ export function deriveToolAvailability(
     exportEntry,
     fullExport,
     hqExport,
+    hdrExport,
     delivery,
     restorePreview,
     transformGeometry,

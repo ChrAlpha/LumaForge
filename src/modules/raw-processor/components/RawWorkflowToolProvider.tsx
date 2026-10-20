@@ -15,6 +15,7 @@ import type { ActionAvailability } from '../services/surface/derive-tool-availab
 import { deriveToolAvailability } from '../services/surface/derive-tool-availability'
 import type { ExportActionReason } from '../services/surface/raw-reason'
 import { resolvePreviewLookReason } from '../services/surface/raw-reason'
+import { setHdrExport } from '../state/export-options.atoms'
 import { previewHistogramStateAtom } from '../state/histogram.atoms'
 import { usePipelineStatsValue } from '../state/workflow.atoms'
 import type { CpuPreviewNotice } from './CpuPreviewBanner'
@@ -192,6 +193,8 @@ interface ToolCommandTargets {
   /** The action policy's full-resolution and HQ preview export decisions. */
   fullExportAvailable: boolean
   hqExportAvailable: boolean
+  /** The action policy's decision on the HDR gain map option. */
+  hdrExportAvailable: boolean
 }
 
 /**
@@ -234,6 +237,9 @@ function createToolCommands(
     onExport: () => {
       const targets = latest.current
       if (targets.fullExportAvailable) targets.onExport()
+    },
+    onHdrExportChange: (on: boolean) => {
+      if (latest.current.hdrExportAvailable) setHdrExport(on)
     },
     onPreviewExport: () => {
       const targets = latest.current
@@ -405,7 +411,7 @@ export function RawWorkflowToolProvider({
   // export controls, and desktop always reaches them, so its decisions are
   // the ones every export panel states. Transform names a block only where
   // the workflow has nothing earlier to say.
-  const { fullExport, hqExport } = toolAvailability.desktop
+  const { fullExport, hqExport, hdrExport } = toolAvailability.desktop
   commandTargetsRef.current = {
     workflow,
     onLutDrop,
@@ -416,6 +422,7 @@ export function RawWorkflowToolProvider({
     onPrepareRuntime,
     fullExportAvailable: fullExport.available,
     hqExportAvailable: hqExport.available,
+    hdrExportAvailable: hdrExport.available,
   }
   // The reasons and facts below are rebuilt only when what they say moves,
   // so the memoized export and file-facts tools skip a workflow render that

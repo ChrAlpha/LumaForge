@@ -47,6 +47,7 @@ const ACTIONS: SurfaceAction[] = [
   'exportEntry',
   'fullExport',
   'hqExport',
+  'hdrExport',
   'delivery',
   'restorePreview',
 ]
@@ -112,6 +113,7 @@ function currentSurfaceRules(
       exportEntry: true,
       fullExport,
       hqExport,
+      hdrExport: !exporting,
       delivery,
       restorePreview,
     }
@@ -135,6 +137,7 @@ function currentSurfaceRules(
     // topbar action.
     fullExport: exportEntry && fullExport,
     hqExport: exportEntry && hqExport,
+    hdrExport: exportEntry && !exporting,
     delivery: exportEntry && delivery,
     restorePreview,
   }
