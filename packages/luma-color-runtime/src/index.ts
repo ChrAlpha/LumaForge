@@ -16,6 +16,19 @@ export type {
   DcpInterpolationResult,
 } from './dcp-interpolate'
 export { solveDcpInterpolation } from './dcp-interpolate'
+export type { HdrGainMapSupport } from './hdr-gain-map'
+export {
+  HDR_GAIN_MAP_ALTERNATE_HEADROOM,
+  HDR_GAIN_MAP_BASE_HEADROOM,
+  HDR_GAIN_MAP_GAMMA,
+  HDR_GAIN_MAP_GAMUT,
+  HDR_GAIN_MAP_LOG2_MAX,
+  HDR_GAIN_MAP_LOG2_MIN,
+  HDR_GAIN_MAP_NEUTRAL_CODE,
+  HDR_GAIN_MAP_OFFSET,
+  hdrGainMapLog2FromCode,
+  resolveHdrGainMapSupport,
+} from './hdr-gain-map'
 export * from './hdr-reference'
 export * from './histogram'
 export type {

@@ -114,6 +114,19 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 - Built-in input profiles `rec2100-pq` and `rec2100-hlg` (BT.2020 primaries
   with PQ or HLG), and `Rec.2100`, `BT.2100` and `ITU-R BT.2100` as aliases of
   the `rec2020` gamut.
+- The HDR rendition of a gain-map export and its ISO 21496-1 gain map.
+  `createHdrGainMapRowBandProcessor` writes the SDR bytes
+  `createRowBandProcessor` writes, plus one gain map code per sample that
+  lifts them to the scene in linear BT.2020 (1.0 is HDR Reference White,
+  clipped at the nominal peak). Every gain map shares one fixed range
+  (`HDR_GAIN_MAP_LOG2_MIN`, `HDR_GAIN_MAP_LOG2_MAX`, with zero gain at
+  `HDR_GAIN_MAP_NEUTRAL_CODE`), primaries `HDR_GAIN_MAP_GAMUT`, offsets
+  `HDR_GAIN_MAP_OFFSET`, gamma `HDR_GAIN_MAP_GAMMA`, and headrooms `HDR_GAIN_MAP_BASE_HEADROOM` and
+  `HDR_GAIN_MAP_ALTERNATE_HEADROOM`; `hdrGainMapLog2FromCode` reads a code as
+  a decoder does. A gain outside the range throws
+  `HDR_GAIN_MAP_OUT_OF_RANGE` before anything is encoded.
+  `resolveHdrGainMapSupport` gives only a graph without a LUT an HDR
+  rendition (`lut-look` otherwise).
 
 ### Fixed
 

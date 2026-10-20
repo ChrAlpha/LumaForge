@@ -3,6 +3,7 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from './color-graph'
 import { EXPORT_LUT_STEP_KINDS, EXPORT_PLAIN_STEP_KINDS } from './color-graph'
+import { encodeHdrGainMapRows, resolveHdrGainMapSupport } from './hdr-gain-map'
 import { compressLutInputToDomain } from './lut-domain'
 import { clamp01, mix, sampleLutTrilinear } from './lut3d'
 import { getGamutMatrix } from './matrix'
@@ -256,6 +257,39 @@ type GraphApplier = (
   sceneScratch: Float32Array,
 ) => void
 
+function compilePlainGraphApplier(steps: PlainSteps): GraphApplier {
+  const applyScene = compileSceneStage(steps)
+
+  return (linear, bytes, sceneScratch) => {
+    const length = linear.length
+    applyScene(linear, sceneScratch)
+
+    for (let index = 0; index < length; index += 3) {
+      const sceneR = sceneScratch[index]
+      const sceneG = sceneScratch[index + 1]
+      const sceneB = sceneScratch[index + 2]
+      const displayLinearR = clampMin0(
+        PROPHOTO_TO_SRGB_MATRIX[0] * sceneR +
+          PROPHOTO_TO_SRGB_MATRIX[1] * sceneG +
+          PROPHOTO_TO_SRGB_MATRIX[2] * sceneB,
+      )
+      const displayLinearG = clampMin0(
+        PROPHOTO_TO_SRGB_MATRIX[3] * sceneR +
+          PROPHOTO_TO_SRGB_MATRIX[4] * sceneG +
+          PROPHOTO_TO_SRGB_MATRIX[5] * sceneB,
+      )
+      const displayLinearB = clampMin0(
+        PROPHOTO_TO_SRGB_MATRIX[6] * sceneR +
+          PROPHOTO_TO_SRGB_MATRIX[7] * sceneG +
+          PROPHOTO_TO_SRGB_MATRIX[8] * sceneB,
+      )
+      bytes[index] = toSrgbByte(displayLinearR)
+      bytes[index + 1] = toSrgbByte(displayLinearG)
+      bytes[index + 2] = toSrgbByte(displayLinearB)
+    }
+  }
+}
+
 function compileGraphApplier(
   graph: SupportedExportColorGraphDescriptor,
 ): GraphApplier {
@@ -264,36 +298,7 @@ function compileGraphApplier(
     graph.lutProfile === null &&
     hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
   ) {
-    const applyScene = compileSceneStage(steps)
-
-    return (linear, bytes, sceneScratch) => {
-      const length = linear.length
-      applyScene(linear, sceneScratch)
-
-      for (let index = 0; index < length; index += 3) {
-        const sceneR = sceneScratch[index]
-        const sceneG = sceneScratch[index + 1]
-        const sceneB = sceneScratch[index + 2]
-        const displayLinearR = clampMin0(
-          PROPHOTO_TO_SRGB_MATRIX[0] * sceneR +
-            PROPHOTO_TO_SRGB_MATRIX[1] * sceneG +
-            PROPHOTO_TO_SRGB_MATRIX[2] * sceneB,
-        )
-        const displayLinearG = clampMin0(
-          PROPHOTO_TO_SRGB_MATRIX[3] * sceneR +
-            PROPHOTO_TO_SRGB_MATRIX[4] * sceneG +
-            PROPHOTO_TO_SRGB_MATRIX[5] * sceneB,
-        )
-        const displayLinearB = clampMin0(
-          PROPHOTO_TO_SRGB_MATRIX[6] * sceneR +
-            PROPHOTO_TO_SRGB_MATRIX[7] * sceneG +
-            PROPHOTO_TO_SRGB_MATRIX[8] * sceneB,
-        )
-        bytes[index] = toSrgbByte(displayLinearR)
-        bytes[index + 1] = toSrgbByte(displayLinearG)
-        bytes[index + 2] = toSrgbByte(displayLinearB)
-      }
-    }
+    return compilePlainGraphApplier(steps)
   }
 
   if (!hasStepKinds(steps, EXPORT_LUT_STEP_KINDS)) {
@@ -546,5 +551,68 @@ export function createRowBandProcessor({
     reusesOutputBuffer: true,
     processFloatRows,
     processUint16Rows,
+  }
+}
+
+export type HdrGainMapRows = {
+  /** The SDR export's bytes, exactly as `createRowBandProcessor` writes them. */
+  sdr: Uint8Array
+  /** One gain map code per SDR sample (3 channels, full resolution). */
+  gainMap: Uint8Array
+}
+
+export type HdrGainMapRowBandProcessor = {
+  rowBandRows: number
+  processUint16Rows: (source: Uint16Array, rowCount: number) => HdrGainMapRows
+}
+
+/**
+ * The row-band processor of a gain-map export: the plain graph's SDR bytes
+ * plus the gain map that lifts them to the HDR rendition. It refuses a graph
+ * without an HDR rendition (`resolveHdrGainMapSupport`).
+ */
+export function createHdrGainMapRowBandProcessor({
+  width,
+  rowBandRows,
+  graph,
+}: CreateRowBandProcessorInput): HdrGainMapRowBandProcessor {
+  assertPositiveSafeInteger(width, 'ROW_BAND_PROCESSOR_INVALID_WIDTH')
+  assertPositiveSafeInteger(
+    rowBandRows,
+    'ROW_BAND_PROCESSOR_INVALID_ROW_BAND_ROWS',
+  )
+
+  const maxLength = expectedRowLength(width, rowBandRows)
+  if (!Number.isSafeInteger(maxLength)) {
+    throw new TypeError('ROW_BAND_PROCESSOR_INVALID_ROW_BAND_ROWS')
+  }
+  const { steps } = graph
+  if (
+    !resolveHdrGainMapSupport(graph).supported ||
+    !hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
+  ) {
+    throw new Error('HDR_GAIN_MAP_UNSUPPORTED_PIPELINE')
+  }
+
+  const applyGraph = compilePlainGraphApplier(steps)
+  const floatScratch = new Float32Array(maxLength)
+  const sceneScratch = new Float32Array(maxLength)
+  const sdrScratch = new Uint8Array(maxLength)
+  const gainMapScratch = new Uint8Array(maxLength)
+
+  return {
+    rowBandRows,
+    processUint16Rows(source, rowCount) {
+      const length = validateRows(source.length, width, rowBandRows, rowCount)
+      const linear = floatScratch.subarray(0, length)
+      for (let index = 0; index < length; index += 1) {
+        linear[index] = (source[index] ?? 0) / UINT16_MAX
+      }
+      const sdr = sdrScratch.subarray(0, length)
+      const gainMap = gainMapScratch.subarray(0, length)
+      applyGraph(linear, sdr, sceneScratch)
+      encodeHdrGainMapRows(sceneScratch, sdr, gainMap, length)
+      return { sdr, gainMap }
+    },
   }
 }
