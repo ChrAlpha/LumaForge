@@ -34,6 +34,7 @@ export {
 } from './full-res-export'
 export {
   assertGainMapJpeg,
+  createGainMapContainer,
   type GainMapJpegSource,
   type JpegGainMapLayout,
   verifyGainMapJpeg,

@@ -40,6 +40,8 @@ export type BuildManifestInput = {
     quality: number
     filename: string
     sha256: string
+    /** The export wrote the HDR gain map. */
+    hdrGainMap?: boolean
   }
   parentManifestSha256: string | null
   producedAt?: Date

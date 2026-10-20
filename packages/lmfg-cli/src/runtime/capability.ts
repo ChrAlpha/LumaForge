@@ -21,6 +21,7 @@ export const CPU_TIER_SUPPORTS = [
   'contact-sheet',
   'metrics',
   'cpu-export',
+  'hdr-gain-map-export',
 ] as const
 
 export const BROWSER_TIER_SUPPORTS = [

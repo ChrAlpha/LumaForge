@@ -37,6 +37,8 @@ export type FileJpegRowSink = JpegRowSink & {
 export function createFileJpegRowSink(input: {
   path: string
   metadata?: JpegExportMetadata | null
+  /** The export appends a gain map (`close(trailer)`) after the primary. */
+  gainMap?: boolean
   createRuntime?: typeof createLumaJpegRuntimeForNode
 }): FileJpegRowSink {
   let finished: StreamedJpegFile | null = null
@@ -52,10 +54,15 @@ export function createFileJpegRowSink(input: {
         metadata: input.metadata,
         width,
         height,
+        gainMap: input.gainMap,
       })
       let runtime: LumaJpegNodeRuntime | null = null
+      let primaryByteLength = 0
       const encoderPromise = createRuntime({
-        onChunk: (chunk) => writer.write(chunk.bytes),
+        onChunk: (chunk) => {
+          primaryByteLength += chunk.bytes.byteLength
+          return writer.write(chunk.bytes)
+        },
       }).then((created) => {
         runtime = created
         return created.createEncoder({
@@ -110,17 +117,18 @@ export function createFileJpegRowSink(input: {
             await fail(error)
           }
         },
-        async close() {
+        async close(trailer) {
           if (state !== 'open') throw new Error('JPEG_WRITER_CLOSED')
           try {
             const encoder = await encoderPromise
             await encoder.finish()
             disposeRuntime()
-            finished = await writer.finish()
+            finished = await writer.finish(trailer)
             state = 'closed'
             return createBytesOutputResult({
               filename: basename(input.path),
               bytes: new Uint8Array(0),
+              ...(trailer ? { gainMap: { primaryByteLength } } : {}),
             })
           } catch (error) {
             return fail(error)
@@ -129,6 +137,59 @@ export function createFileJpegRowSink(input: {
         async abort() {
           recorded.push(...(await abortSession()))
         },
+      }
+    },
+  }
+}
+
+/**
+ * Row sink that keeps one small JPEG in memory: the gain map image of a
+ * gain-map export, which the engine hands to the file sink on close.
+ */
+export function createMemoryJpegRowSink(
+  createRuntime: typeof createLumaJpegRuntimeForNode = createLumaJpegRuntimeForNode,
+): JpegRowSink {
+  return {
+    createSession({ width, height, quality }) {
+      let runtime: LumaJpegNodeRuntime | null = null
+      const encoderPromise = createRuntime().then((created) => {
+        runtime = created
+        return created.createEncoder({ width, height, quality })
+      })
+      let state: 'open' | 'closed' | 'aborted' = 'open'
+
+      function disposeRuntime(): void {
+        const created = runtime
+        runtime = null
+        created?.dispose()
+      }
+
+      async function abortSession(): Promise<void> {
+        if (state !== 'open') return
+        state = 'aborted'
+        try {
+          const encoder = await encoderPromise.catch(() => null)
+          await encoder?.abort()
+        } finally {
+          disposeRuntime()
+        }
+      }
+
+      return {
+        async writeRows(rows, rowCount) {
+          if (state !== 'open') throw new Error('JPEG_WRITER_CLOSED')
+          const encoder = await encoderPromise
+          await encoder.writeRows(rows, rowCount)
+        },
+        async close() {
+          if (state !== 'open') throw new Error('JPEG_WRITER_CLOSED')
+          const encoder = await encoderPromise
+          const bytes = await encoder.finish()
+          state = 'closed'
+          disposeRuntime()
+          return createBytesOutputResult({ filename: 'gain-map.jpg', bytes })
+        },
+        abort: abortSession,
       }
     },
   }

@@ -11,6 +11,7 @@ import type {
 import {
   JPEG_HEADER_SCAN_BYTES,
   planJpegMetadataInjection,
+  verifyGainMapJpeg,
 } from '@lumaforge/render-engine/export'
 import { createStreamingSha256 } from '@lumaforge/render-engine/manifest'
 
@@ -21,6 +22,8 @@ import {
   withCleanupFailures,
 } from '../protocol/errors'
 import { ensureDir, renameWithRetry } from '../workspace/atomic-fs'
+
+const HASH_READ_BYTES = 1 << 20
 
 export type StreamedJpegFile = {
   /** Final path the file will occupy after `commit()`. */
@@ -43,7 +46,13 @@ export type StreamedJpegFile = {
 
 export type StreamingJpegFileWriter = {
   write: (bytes: Uint8Array) => Promise<void>
-  finish: () => Promise<StreamedJpegFile>
+  /**
+   * Validate and hand back the file. A gain-map writer takes the gain map
+   * container here and appends it after the primary.
+   */
+  finish: (trailer?: {
+    gainMapContainer: Uint8Array
+  }) => Promise<StreamedJpegFile>
   /** Drop the partial file; resolves the cleanup steps that failed. */
   abort: () => Promise<CleanupFailure[]>
 }
@@ -100,12 +109,18 @@ export async function assertJpegFile(path: string): Promise<void> {
  * verification) pass; an existing file at `path` is never touched before
  * that. Only the leading 64 KiB are ever buffered, so export memory no
  * longer scales with the JPEG.
+ *
+ * A gain-map writer (`gainMap`) cannot size the primary's MPF index until
+ * the primary ends, so it streams a placeholder of the same length, appends
+ * the gain map container on `finish`, writes the real segments over the
+ * placeholder, then verifies and hashes the finished file by reading it back.
  */
 export function createStreamingJpegFileWriter(input: {
   path: string
   metadata?: JpegExportMetadata | null
   width: number
   height: number
+  gainMap?: boolean
 }): StreamingJpegFileWriter {
   const tmp = `${input.path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`
   const hasher = createStreamingSha256()
@@ -114,20 +129,25 @@ export function createStreamingJpegFileWriter(input: {
   let headLength = 0
   let planned = false
   let byteLength = 0
+  /** A gain-map writer's header and the placeholder it streamed. */
+  let gainMapHead: {
+    header: Uint8Array
+    plan: JpegMetadataInjectionPlan
+  } | null = null
   let created = false
   let state: 'open' | 'finished' | 'aborted' = 'open'
 
   async function ensureHandle(): Promise<FileHandle> {
     if (!handle) {
       await ensureDir(dirname(input.path))
-      handle = await open(tmp, 'w')
+      // A gain-map file is read back once it is complete.
+      handle = await open(tmp, input.gainMap ? 'w+' : 'w')
       created = true
     }
     return handle
   }
 
-  async function writeHashed(bytes: Uint8Array): Promise<void> {
-    if (bytes.byteLength === 0) return
+  async function writeAt(bytes: Uint8Array, position: number | null) {
     const target = await ensureHandle()
     let offset = 0
     while (offset < bytes.byteLength) {
@@ -135,11 +155,36 @@ export function createStreamingJpegFileWriter(input: {
         bytes,
         offset,
         bytes.byteLength - offset,
+        position === null ? null : position + offset,
       )
       offset += bytesWritten
     }
-    hasher.update(bytes)
+  }
+
+  async function writeHashed(bytes: Uint8Array): Promise<void> {
+    if (bytes.byteLength === 0) return
+    await writeAt(bytes, null)
+    // A gain-map file is hashed once it is complete.
+    if (!input.gainMap) hasher.update(bytes)
     byteLength += bytes.byteLength
+  }
+
+  /**
+   * Sizes the gain-map segments for a header: their length does not depend
+   * on the values the MPF index will hold, only on the EXIF segment.
+   */
+  function planGainMapHead(header: Uint8Array, storedByteLength: number) {
+    return planJpegMetadataInjection({
+      header: header.subarray(
+        0,
+        Math.min(header.byteLength, JPEG_HEADER_SCAN_BYTES),
+      ),
+      fullSize: storedByteLength + 1,
+      metadata: input.metadata,
+      width: input.width,
+      height: input.height,
+      gainMap: { primaryByteLength: storedByteLength },
+    })!
   }
 
   async function flushHead(): Promise<void> {
@@ -152,6 +197,14 @@ export function createStreamingJpegFileWriter(input: {
       offset += part.byteLength
     }
     head = []
+    if (input.gainMap) {
+      const plan = planGainMapHead(header, header.byteLength)
+      gainMapHead = { header, plan }
+      await writeHashed(header.subarray(0, plan.insertionOffset))
+      await writeHashed(new Uint8Array(plan.segment.byteLength))
+      await writeHashed(header.subarray(plan.insertionOffset))
+      return
+    }
     const plan: JpegMetadataInjectionPlan | null = planJpegMetadataInjection({
       header: header.subarray(
         0,
@@ -169,6 +222,63 @@ export function createStreamingJpegFileWriter(input: {
     await writeHashed(header.subarray(0, plan.insertionOffset))
     await writeHashed(plan.segment)
     await writeHashed(header.subarray(plan.insertionOffset))
+  }
+
+  /**
+   * Appends the gain map and writes the primary's segments over the
+   * placeholder, sized from the primary that was streamed.
+   */
+  async function completeGainMapFile(
+    streamed: { header: Uint8Array; plan: JpegMetadataInjectionPlan },
+    container: Uint8Array,
+  ) {
+    const primaryStoredLength = byteLength - streamed.plan.segment.byteLength
+    await writeHashed(container)
+    const plan = planJpegMetadataInjection({
+      header: streamed.header.subarray(
+        0,
+        Math.min(streamed.header.byteLength, JPEG_HEADER_SCAN_BYTES),
+      ),
+      fullSize: primaryStoredLength + container.byteLength,
+      metadata: input.metadata,
+      width: input.width,
+      height: input.height,
+      gainMap: { primaryByteLength: primaryStoredLength },
+    })!
+    if (
+      plan.insertionOffset !== streamed.plan.insertionOffset ||
+      plan.segment.byteLength !== streamed.plan.segment.byteLength
+    ) {
+      throw new Error('JPEG_GAIN_MAP_LAYOUT_INVALID')
+    }
+    await writeAt(plan.segment, plan.insertionOffset)
+  }
+
+  /** Verifies the finished gain-map file and hashes it, reading it back. */
+  async function hashWrittenFile(target: FileHandle) {
+    const read = async (start: number, end: number) => {
+      const bytes = new Uint8Array(end - start)
+      let offset = 0
+      while (offset < bytes.byteLength) {
+        const { bytesRead } = await target.read(
+          bytes,
+          offset,
+          bytes.byteLength - offset,
+          start + offset,
+        )
+        if (bytesRead === 0) throw new Error('JPEG_FILE_WRITER_SHORT_READ')
+        offset += bytesRead
+      }
+      return bytes
+    }
+    await verifyGainMapJpeg({ byteLength, read })
+    const fileHasher = createStreamingSha256()
+    for (let start = 0; start < byteLength; start += HASH_READ_BYTES) {
+      fileHasher.update(
+        await read(start, Math.min(byteLength, start + HASH_READ_BYTES)),
+      )
+    }
+    return fileHasher.digestHex()
   }
 
   /** Closes and removes the partial file, recording the steps that fail. */
@@ -197,11 +307,21 @@ export function createStreamingJpegFileWriter(input: {
       headLength += bytes.byteLength
       if (headLength >= JPEG_HEADER_SCAN_BYTES) await flushHead()
     },
-    async finish() {
+    async finish(trailer) {
       if (state !== 'open') throw new Error('JPEG_FILE_WRITER_CLOSED')
+      let sha256: string
       try {
+        if (Boolean(trailer) !== Boolean(input.gainMap)) {
+          throw new Error('JPEG_FILE_WRITER_GAIN_MAP_MISMATCH')
+        }
         await flushHead()
         const target = await ensureHandle()
+        if (trailer && gainMapHead) {
+          await completeGainMapFile(gainMapHead, trailer.gainMapContainer)
+          sha256 = await hashWrittenFile(target)
+        } else {
+          sha256 = hasher.digestHex()
+        }
         // A failed close is not retried: the descriptor is gone either way.
         handle = null
         await target.close()
@@ -220,7 +340,7 @@ export function createStreamingJpegFileWriter(input: {
         path: input.path,
         tmpPath: tmp,
         byteLength,
-        sha256: hasher.digestHex(),
+        sha256,
         async commit() {
           if (published) return
           if (discarded) {

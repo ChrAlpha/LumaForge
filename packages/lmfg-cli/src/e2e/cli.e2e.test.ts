@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { assertGainMapJpeg } from '@lumaforge/render-engine/export'
 import { sealRenderManifest } from '@lumaforge/render-engine/manifest'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 
@@ -43,6 +44,24 @@ async function exportApp1Sha256(path: string): Promise<string> {
   return createHash('sha256')
     .update(jpeg.subarray(20, 20 + 391))
     .digest('hex')
+}
+
+/** The primary image of a gain-map JPEG with its APP2 segments removed. */
+function primaryWithoutApp2(jpeg: Buffer): Buffer {
+  const parts: Buffer[] = [jpeg.subarray(0, 2)]
+  let offset = 2
+  let primaryEnd = jpeg.length
+  while (jpeg[offset] === 0xFF && jpeg[offset + 1] >= 0xE0) {
+    const end = offset + 2 + jpeg.readUInt16BE(offset + 2)
+    const segment = jpeg.subarray(offset, end)
+    if (segment.subarray(4, 8).toString('latin1') === 'MPF\0') {
+      primaryEnd = segment.readUInt32BE(4 + 4 + 50 + 4)
+    }
+    if (jpeg[offset + 1] !== 0xE2) parts.push(segment)
+    offset = end
+  }
+  parts.push(jpeg.subarray(offset, primaryEnd))
+  return Buffer.concat(parts)
 }
 
 beforeAll(async () => {
@@ -814,6 +833,80 @@ describeWithFixture('lmfg agent loop', () => {
     expect(mismatch.code).toBe(6)
     expect(mismatch.envelope.error).toMatchObject({ code: 'hash.mismatch' })
   }, 180_000)
+
+  it('render export --hdr adds a gain map to the unchanged SDR export and replays it', async () => {
+    const params = JSON.stringify({ exposure_ev: 1, contrast: 10 })
+    const exportAs = (name: string, ...extra: string[]) =>
+      cli.run(
+        'render',
+        'export',
+        '--session',
+        sessionId,
+        '--params-json',
+        params,
+        '--output',
+        name,
+        ...extra,
+      )
+    const sdr = await exportAs('look-sdr')
+    expect(sdr.code, sdr.stdout).toBe(0)
+    expect(sdr.envelope.result!.hdr_gain_map).toBe(false)
+    const hdr = await exportAs('look-hdr', '--hdr')
+    expect(hdr.code, hdr.stdout).toBe(0)
+    expect(hdr.envelope.result!.hdr_gain_map).toBe(true)
+
+    const output = (result: Record<string, unknown>) =>
+      readFile((result.output as { path: string }).path)
+    const sdrBytes = await output(sdr.envelope.result!)
+    const hdrBytes = await output(hdr.envelope.result!)
+    expect(() => assertGainMapJpeg(new Uint8Array(hdrBytes))).not.toThrow()
+    // Without its APP2 segments and the gain map after it, the primary is
+    // the SDR export byte for byte.
+    expect(Buffer.compare(primaryWithoutApp2(hdrBytes), sdrBytes)).toBe(0)
+
+    const manifestPath = fileURLToPath(
+      hdr.envelope.result!.manifest_uri as string,
+    )
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(manifest.output.hdr_gain_map).toEqual({
+      format: 'iso-21496-1',
+      gamut: 'rec2020',
+      reference_white_nits: 203,
+      nominal_peak_nits: 1000,
+      quality: 98,
+    })
+    const replayed = await cli.run(
+      'render',
+      'replay',
+      '--session',
+      sessionId,
+      '--manifest',
+      manifestPath,
+      '--name',
+      'look-hdr',
+    )
+    expect(replayed.code, replayed.stdout).toBe(0)
+    expect(replayed.envelope.result).toMatchObject({
+      kind: 'export',
+      reproduced: true,
+      hdr_gain_map: true,
+      actual_sha256: manifest.output.sha256,
+    })
+
+    const withLut = await cli.run(
+      'render',
+      'export',
+      '--session',
+      sessionId,
+      '--params',
+      'params.json',
+      '--output',
+      'lut-hdr',
+      '--hdr',
+    )
+    expect(withLut.code).toBe(8)
+    expect(withLut.envelope.error).toMatchObject({ code: 'export.refused' })
+  }, 240_000)
 
   it('fails closed with spec exit codes', async () => {
     const browser = await cli.run(

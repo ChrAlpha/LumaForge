@@ -3,6 +3,13 @@
 All notable changes to `@lumaforge/lmfg-mcp` are documented here. The format
 follows Keep a Changelog; versions follow semver.
 
+## Unreleased
+
+### Added
+
+- `lmfg_render_export` takes `hdr` (`render export --hdr`): also write an
+  ISO 21496-1 gain map to the HDR rendition.
+
 ## 0.1.0 - 2026-10-12
 
 First release. Requires `@lumaforge/lmfg-cli` 0.2.0 and

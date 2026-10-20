@@ -259,6 +259,7 @@ type ExportOptions = {
   output: string
   preferredRows?: number
   paramsJson?: string
+  hdr?: boolean
 }
 
 type ExportInputs = Awaited<ReturnType<typeof openRenderSession>> & {
@@ -288,6 +289,10 @@ function registerExport(render: Command, host: CommandHost): void {
       '--preferred-rows <n>',
       'strip height in rows',
       parsePositiveInteger,
+    )
+    .option(
+      '--hdr',
+      'also write an ISO 21496-1 gain map to the HDR rendition (looks without a LUT only)',
     )
     .action(async function (this: Command, options: ExportOptions) {
       const ctx = host.context(this)
@@ -385,6 +390,7 @@ function registerExport(render: Command, host: CommandHost): void {
                 lut,
                 exposure,
                 quality: options.quality,
+                hdr: options.hdr === true,
                 name: options.output,
                 outputPath,
                 preferredRows: options.preferredRows,
@@ -417,6 +423,7 @@ function registerExport(render: Command, host: CommandHost): void {
               parent_manifest_sha256: parent,
               output_path: outputPath,
               quality: options.quality,
+              hdr_gain_map: options.hdr === true,
             }
           },
         ),

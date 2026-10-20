@@ -391,6 +391,8 @@ export const ExportResultSchema = z.object({
   parent_manifest_sha256: sha256.nullable(),
   color_graph_fingerprint: sha256,
   raw_render_exposure: ExposureSchema,
+  /** The JPEG carries an ISO 21496-1 gain map to the HDR rendition. */
+  hdr_gain_map: z.boolean(),
   strips: z.int(),
   timings_ms: z.record(z.string(), z.number()),
   resource: ResourceUsageSchema.optional(),
@@ -406,6 +408,8 @@ export const ReplayResultSchema = z.object({
   actual_sha256: sha256,
   fingerprint_match: z.literal(true),
   output: RenderOutputSchema,
+  /** The replayed JPEG carries the gain map its manifest records. */
+  hdr_gain_map: z.boolean(),
   manifest_uri: z.string(),
   manifest_sha256: sha256,
   parent_manifest_sha256: sha256,

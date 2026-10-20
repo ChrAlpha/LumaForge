@@ -4,7 +4,11 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { preserveJpegMetadataBytes } from '@lumaforge/render-engine/export'
+import {
+  assertGainMapJpeg,
+  createGainMapContainer,
+  preserveJpegMetadataBytes,
+} from '@lumaforge/render-engine/export'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -75,6 +79,70 @@ describe('createStreamingJpegFileWriter', () => {
         expect.stringMatching(/\.tmp$/),
       )
     }
+  })
+
+  it('writes a gain-map file as the in-memory delivery does, hashed as written', async () => {
+    const container = createGainMapContainer(fakeJpeg(5_000))
+    for (const size of [1_000, 70_000, 200_000]) {
+      const primary = fakeJpeg(size)
+      const stored = new Uint8Array(primary.byteLength + container.byteLength)
+      stored.set(primary)
+      stored.set(container, primary.byteLength)
+      const expected = preserveJpegMetadataBytes({
+        jpeg: stored,
+        metadata,
+        width: 4,
+        height: 2,
+        gainMap: { primaryByteLength: primary.byteLength },
+      })
+      const path = join(dir, `hdr-${size}.jpg`)
+      const writer = createStreamingJpegFileWriter({
+        path,
+        metadata,
+        width: 4,
+        height: 2,
+        gainMap: true,
+      })
+      for (const part of chunk(primary, [3, 100, 65_000, 1])) {
+        await writer.write(part)
+      }
+      const result = await writer.finish({ gainMapContainer: container })
+      await result.commit()
+      const onDisk = new Uint8Array(await readFile(path))
+
+      expect(Buffer.compare(onDisk, expected)).toBe(0)
+      expect(() => assertGainMapJpeg(onDisk)).not.toThrow()
+      expect(result.byteLength).toBe(expected.byteLength)
+      expect(result.sha256).toBe(
+        createHash('sha256').update(expected).digest('hex'),
+      )
+    }
+  })
+
+  it('refuses to finish a gain-map file without its gain map, and the reverse', async () => {
+    const gainMapWriter = createStreamingJpegFileWriter({
+      path: join(dir, 'hdr.jpg'),
+      metadata,
+      width: 4,
+      height: 2,
+      gainMap: true,
+    })
+    await gainMapWriter.write(fakeJpeg(1_000))
+    await expect(gainMapWriter.finish()).rejects.toThrow(
+      'JPEG_FILE_WRITER_GAIN_MAP_MISMATCH',
+    )
+
+    const plainWriter = createStreamingJpegFileWriter({
+      path: join(dir, 'sdr.jpg'),
+      metadata,
+      width: 4,
+      height: 2,
+    })
+    await plainWriter.write(fakeJpeg(1_000))
+    await expect(
+      plainWriter.finish({ gainMapContainer: new Uint8Array(4) }),
+    ).rejects.toThrow('JPEG_FILE_WRITER_GAIN_MAP_MISMATCH')
+    expect(await readdir(dir)).toEqual([])
   })
 
   it('refuses an incomplete stream, keeps an existing file, and leaves no temp behind', async () => {

@@ -67,8 +67,8 @@ predates this file.
 ### Added
 
 - ISO 21496-1 gain-map JPEGs, stored as the metadata-free primary followed by
-  the gain map container (the gain map with its ISO 21496-1 metadata and a
-  BT.2020 linear ICC profile).
+  the gain map container (`createGainMapContainer`: the gain map with its
+  ISO 21496-1 metadata and a BT.2020 linear ICC profile).
   `planJpegMetadataInjection`, `preserveJpegMetadata` and
   `preserveJpegMetadataBytes` take the stored `JpegGainMapLayout` and insert
   the primary's sRGB ICC profile, ISO 21496-1 version and MPF index after the

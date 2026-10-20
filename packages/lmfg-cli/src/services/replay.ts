@@ -398,6 +398,9 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
   let height: number
   let graph: SupportedExportColorGraphDescriptor
   const quality = manifest.output.quality
+  // Only an export manifest records a gain map; the reader refuses it on
+  // previews and candidates.
+  const hdrGainMap = manifest.output.hdr_gain_map !== undefined
 
   if (exportFrame) {
     const result = await runFullResolutionExport({
@@ -410,6 +413,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
       outputPath: input.outputPath,
       preferredRows: manifest.policy.row_slice,
       ...(exportFrame.geometry ? { geometry: exportFrame.geometry } : {}),
+      hdr: hdrGainMap,
       verifyFrame: (frame) => requireDecodedFrame(exportFrame, frame),
       signal: input.signal,
       onProgress: input.onProgress,
@@ -499,7 +503,14 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
       render_params: geometry ? { ...renderParams, geometry } : renderParams,
       policy: manifest.policy,
       environment: input.environment,
-      output: { width, height, quality, filename: 'output.jpg', sha256 },
+      output: {
+        width,
+        height,
+        quality,
+        filename: 'output.jpg',
+        sha256,
+        hdrGainMap,
+      },
       parent_manifest_sha256: manifest.manifest_sha256,
     })
     if (publish) await publish()
@@ -524,6 +535,7 @@ export async function runReplay(input: ReplayRunInput): Promise<ReplayResult> {
     expected_sha256: manifest.output.sha256,
     actual_sha256: sha256,
     fingerprint_match: plan.fingerprintMatch,
+    hdr_gain_map: hdrGainMap,
     output: {
       uri: toFileUri(input.outputPath),
       path: input.outputPath,

@@ -2,7 +2,10 @@ import type {
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
-import { exposureMultiplierFromEv } from '@lumaforge/luma-color-runtime'
+import {
+  exposureMultiplierFromEv,
+  resolveHdrGainMapSupport,
+} from '@lumaforge/luma-color-runtime'
 import type { LumaRawExportCapability } from '@lumaforge/luma-raw-runtime'
 import type {
   ExportGeometry,
@@ -40,7 +43,10 @@ import {
   requireSupportedGraph,
   resolveExposure,
 } from './color-graph'
-import { createFileJpegRowSink } from './jpeg-file-sink'
+import {
+  createFileJpegRowSink,
+  createMemoryJpegRowSink,
+} from './jpeg-file-sink'
 import type { ResolvedLut } from './lut'
 import {
   buildRenderManifest,
@@ -85,6 +91,23 @@ function requireExportCapability(
       strategy: capability.strategy ?? null,
     },
     suggestedNextActions: ['lmfg inspect --session <id>'],
+  })
+}
+
+/**
+ * Refuses an HDR export before any window is read when the graph has no HDR
+ * rendition, the same check the executor runs first.
+ */
+function requireHdrRendition(graph: SupportedExportColorGraphDescriptor) {
+  const support = resolveHdrGainMapSupport(graph)
+  if (support.supported) return
+  throw new LmfgError('export.refused', {
+    message:
+      support.reason === 'lut-look'
+        ? 'HDR export needs a look without a LUT: a LUT outputs an SDR display signal, which has no HDR rendition.'
+        : 'This color graph has no HDR rendition.',
+    details: { stage: 'hdr', reason: support.reason },
+    suggestedNextActions: ['lmfg render export without --hdr'],
   })
 }
 
@@ -139,6 +162,8 @@ export type ExportRunInput = {
   preferredRows?: number
   /** Geometry applied at full resolution before the color graph; absent exports the decoded frame. */
   geometry?: ExportGeometry
+  /** Also write the ISO 21496-1 gain map to the graph's HDR rendition. */
+  hdr?: boolean
   /** Checks the probed frames before any window is read; throwing refuses the export. */
   verifyFrame?: (frame: ExportFrame) => void
   signal?: AbortSignal
@@ -156,6 +181,8 @@ export type ExportRunResult = {
   source: Dimensions
   graph: SupportedExportColorGraphDescriptor
   exposure: RawRenderExposure
+  /** The JPEG carries the HDR gain map. */
+  hdrGainMap: boolean
   /** The strip height and concurrency the export ran with. */
   policy: PolicyChoice
   strips: number
@@ -216,6 +243,8 @@ export async function runFullResolutionExport(
     const graph = requireSupportedGraph(
       buildColorGraph(input.params, input.lut?.lutData ?? null, exposure),
     )
+    const hdrGainMap = input.hdr === true
+    if (hdrGainMap) requireHdrRendition(graph)
 
     const policy: PolicyChoice = {
       kind: 'export-full',
@@ -227,6 +256,7 @@ export async function runFullResolutionExport(
     const sink = createFileJpegRowSink({
       path: input.outputPath,
       metadata: session.probe,
+      gainMap: hdrGainMap,
     })
     try {
       await runFullResolutionJpegExport({
@@ -237,6 +267,9 @@ export async function runFullResolutionExport(
         preferredRows: policy.row_slice,
         concurrency: policy.concurrency,
         ...(input.geometry ? { geometry: input.geometry } : {}),
+        ...(hdrGainMap
+          ? { hdrGainMap: { sink: createMemoryJpegRowSink() } }
+          : {}),
         jpegSink: sink,
         signal: input.signal,
         onProgress: (progress) => {
@@ -264,6 +297,7 @@ export async function runFullResolutionExport(
         source: frame.source,
         graph,
         exposure,
+        hdrGainMap,
         policy,
         strips,
         timings,
@@ -327,6 +361,7 @@ export async function publishExport(
       quality: input.quality,
       filename: `${input.name}.jpg`,
       sha256: result.sha256,
+      hdrGainMap: result.hdrGainMap,
     },
     parentManifestSha256: input.parentManifestSha256,
   })
@@ -353,6 +388,7 @@ export async function publishExport(
     parent_manifest_sha256: input.parentManifestSha256,
     color_graph_fingerprint: manifest.color_graph.fingerprint,
     raw_render_exposure: result.exposure,
+    hdr_gain_map: result.hdrGainMap,
     strips: result.strips,
     resource: result.resource,
     timings_ms: result.timings,

@@ -335,6 +335,12 @@ export const TOOLS = [
         .optional()
         .describe('Artifact base name under exports/ (default final).'),
       preferred_rows: z.number().int().positive().optional(),
+      hdr: z
+        .boolean()
+        .optional()
+        .describe(
+          'Also write an ISO 21496-1 gain map to the HDR rendition; refused for a look with a LUT.',
+        ),
       yes: z.boolean().optional().describe('Overwrite an existing export.'),
       ...GlobalShape,
     },
@@ -347,6 +353,7 @@ export const TOOLS = [
       ...flag('--quality', args.quality),
       ...flag('--output', args.output),
       ...flag('--preferred-rows', args.preferred_rows),
+      ...(args.hdr ? ['--hdr'] : []),
       ...globals(args),
     ],
   }),

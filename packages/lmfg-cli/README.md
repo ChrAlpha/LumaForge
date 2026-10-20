@@ -184,6 +184,20 @@ never touched before then, and the process never holds the full JPEG in
 memory. Results report `resource.max_rss_bytes` (peak RSS of the
 CLI process) so agents can budget large files.
 
+`render export --hdr` also writes an ISO 21496-1 gain map, so HDR displays
+show highlights above SDR white while every other viewer shows the SDR
+export. The primary image is the SDR export: the same scan data, plus an
+sRGB ICC profile, the ISO 21496-1 version, and the MPF index that points at
+the gain map stored after it. The HDR rendition is the edited scene in
+linear BT.2020 with 1.0 at 203 cd/m², clipped at 1000 cd/m²; the gain map is
+full resolution, three channels, JPEG quality 98. A look with a LUT has no
+HDR rendition, so `--hdr` with one is refused (exit 8) before anything is
+decoded. The result reports `hdr_gain_map`, and the export manifest records
+`output.hdr_gain_map`. The writer streams the primary as usual with a
+placeholder for the segments it can only size at the end, appends the gain
+map, writes the segments in place, then verifies the layout and hashes the
+file by reading it back.
+
 ## Candidate evaluation
 
 `metrics compare --iteration iter_0001 --baseline cand_0001` returns, for every
@@ -295,7 +309,7 @@ self-verification. Unsupported RAWs exit 3; incomplete LUT contracts exit 4.
 
 `render replay --manifest` re-renders from the manifest alone, after the
 strict read above: the recorded params, LUT contract, raw-render exposure,
-decode budget (`policy.max_pixels`), and JPEG quality. The source comes from `--source` or from the `--session`
+decode budget (`policy.max_pixels`), JPEG quality, and the HDR gain map an export recorded. The source comes from `--source` or from the `--session`
 source, and the LUT from `--lut` or the workspace cache by SHA-256. Replay
 refuses (exit 8, `replay.mismatch`) when the color-graph fingerprint no longer
 matches, and refuses the same way before decoding when the manifest's
