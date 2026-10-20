@@ -103,6 +103,11 @@ finished JPEG with a look they already enjoy.
   with download, share, and clipboard actions where the browser supports them.
   If an earlier export of the same file was interrupted, the next export you
   start uses a safer setting; nothing resumes or exports on its own.
+- Add an HDR gain map to the full-resolution JPEG when the look uses no LUT.
+  Every viewer still gets the same SDR JPEG; an HDR screen that reads
+  ISO 21496-1 gain maps shows highlights up to 1000 nits. The preview shows
+  the HDR picture on an HDR screen in a WebGPU browser, and on any screen
+  the parts above SDR white or the picture stopped down to fit SDR.
 
 ## LUT Contracts
 
@@ -122,6 +127,13 @@ RAW file
 
 At export, a committed Transform is resampled at full resolution before this
 color path runs.
+
+With the HDR gain map on, the export also renders the adjusted scene as a
+BT.2100-style HDR picture (BT.2020 primaries, reference white at 203 nits,
+peak at 1000 nits) and stores its ratio to the SDR JPEG as an ISO 21496-1
+gain map. The SDR JPEG keeps the bytes a plain export writes; only the gain
+map and its metadata are added around it. A LUT look has no HDR picture to
+store, so the option refuses one.
 
 LUT contracts are the small bit of structure that lets LumaForge apply creative
 looks to RAW files without making the user build a color pipeline by hand.

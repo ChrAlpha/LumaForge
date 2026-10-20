@@ -39,6 +39,11 @@ image-editor assumptions.
   the declared pipeline can be reproduced, fail closed instead of exporting a
   degraded or preview-only result.
 - HQ preview export is a fallback or compromise, not the primary promise.
+- A full-resolution JPEG may also carry an ISO 21496-1 HDR gain map
+  (BT.2020 primaries, 203-nit reference white, 1000-nit nominal peak). Its
+  primary is the plain SDR export byte for byte once its APP2 segments go.
+  Only a look without a LUT has the HDR rendition the map stores, and a LUT
+  whose output is HDR (PQ or HLG) stays refused.
 - Color and LUT work is contract work. Preserve input gamut, transfer/log curve,
   LUT intent, scene-referred working assumptions, and output handling.
 - The editing controls are a bounded set the export path reproduces: tone,
@@ -99,7 +104,11 @@ image-editor assumptions.
   and the LUT, holds no view state, and exports `rawWorkflowStore`, the store
   accessors the workflow's commands and services read and write through;
   `src/modules/raw-processor/state/preview-view.atoms.ts` holds only the view
-  of the sample shown before a source loads. Load, restore, export, and
+  of the sample shown before a source loads.
+  `src/modules/raw-processor/state/export-options.atoms.ts` holds the HDR
+  gain map option, an export option rather than color intent, and
+  `src/modules/raw-processor/state/hdr-preview.atoms.ts` the HDR preview view,
+  view state that only the preview executors draw. Load, restore, export, and
   delivery read the session, the color intent, and the LUT from the store
   when they run, not from the last render, and fence on that read before
   they write. The effective intent the photo renders and exports with is the
@@ -152,9 +161,10 @@ image-editor assumptions.
 - `src/lib/preview` holds the preview backend probe
   (`src/lib/preview/gpu-backend.ts`: WebGPU or CPU, and why), the preview
   capability decision (`src/lib/preview/raw-preview-capability.ts`), the
-  renderer-neutral view contract (`src/lib/preview/preview-view.ts`), and the
-  decoded frame descriptor (`src/lib/preview/preview-frame.ts`, see Canonical
-  Owners). The CPU preview worker is not here: it lives in
+  renderer-neutral view contract (`src/lib/preview/preview-view.ts`), whether
+  the screen reports high dynamic range (`src/lib/preview/hdr-display.ts`),
+  and the decoded frame descriptor (`src/lib/preview/preview-frame.ts`, see
+  Canonical Owners). The CPU preview worker is not here: it lives in
   `packages/render-engine/src/preview/worker-bridge`, and
   `src/modules/raw-processor/hooks/useCpuPreview.ts` drives it.
 - `src/modules/raw-processor/hooks/preview/` holds the WebGPU preview stage's
@@ -276,7 +286,8 @@ mirroring it. Packages never import from `src/`; the app imports shared types
 from the packages.
 
 - Color intent, tone/color/HSL math, LUT parsing and contract resolution, the
-  export color graph, and the row-band executor: `packages/luma-color-runtime`.
+  export color graph, the row-band executor, and the HDR rendition and its
+  gain map: `packages/luma-color-runtime`.
 - Full-resolution export, export geometry planning and resampling, CPU preview
   rendering and the preview plan, policy and resource budgets, and render
   manifests: `packages/render-engine`.
@@ -460,6 +471,19 @@ These are owner decisions. They override cleanup advice that says otherwise.
   one worker). Nothing resumes partial output, reselects a source, or exports
   on its own; the app writes no export journal or checkpoint. Do not add
   source reselection or automatic re-export.
+- HDR gain map export and its preview views. `resolveHdrGainMapSupport` in
+  `packages/luma-color-runtime/src/hdr-gain-map.ts` decides which graphs have
+  an HDR rendition (none with a LUT), and the engine writes and verifies the
+  container (`packages/render-engine/src/export/jpeg/gain-map-container.ts`);
+  the HQ preview JPEG never carries a gain map. The preview's views
+  (`src/modules/raw-processor/services/preview/hdr-preview-output.ts`, chosen
+  through `src/modules/raw-processor/components/shared/HdrPreviewControl.tsx`)
+  are view state: the HDR picture only on a WebGPU canvas that keeps extended
+  tone mapping on a screen that reports high dynamic range, the above-SDR and
+  stop-down views on either executor, and none under a Transform overlay.
+  The choice returns to SDR when the option goes off, an export starts, or
+  the mobile export panel closes. No preview view is proof of the file; an
+  HDR display showing the exported JPEG is.
 - The RAW render exposure is pinned per source: the first quick frame sets it
   (`src/modules/raw-processor/hooks/stages/preview/useDecodedPreviewResource.ts`),
   and bounded-HQ frames, preview restored after export, and the export carry
@@ -469,7 +493,9 @@ These are owner decisions. They override cleanup advice that says otherwise.
   the one quality `EXPORT_JPEG_QUALITY` (0.92) in
   `src/modules/raw-processor/services/export/export-system.ts`. There is no
   quality option, and the internal performance preference sizes the export
-  plan without changing the quality.
+  plan without changing the quality. The gain map an HDR export adds is not
+  that picture: the engine encodes it at `HDR_GAIN_MAP_JPEG_QUALITY` (0.98)
+  in `packages/render-engine/src/export/jpeg/gain-map-container.ts`.
 
 ## UI And Design Boundaries
 

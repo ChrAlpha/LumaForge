@@ -88,6 +88,8 @@ Export may be disabled when:
 - the export worker cannot prove that it can reproduce the previewed graph;
 - a Transform is still preparing on the preview, leaves too little usable
   image, or cannot be reproduced at full resolution.
+- the HDR gain map is on and the look uses a LUT, which has no HDR picture
+  to store.
 
 This is a guardrail. LumaForge should not silently save a lower-quality preview
 or change the color path just to make a download button appear.
@@ -95,6 +97,25 @@ or change the color path just to make a download button appear.
 An HQ preview JPEG, where it is offered, is labeled as an HQ preview, is made
 from the preview at no more than 12 megapixels, and never includes a Transform.
 It is not a replacement for the full-resolution export.
+
+## Can LumaForge Export HDR?
+
+Yes, as a gain map on the full-resolution JPEG. The JPEG itself stays the SDR
+picture every viewer shows: its image data is byte for byte what a plain
+export writes, and only metadata is added to it. Next to it, LumaForge stores an ISO 21496-1 gain map from that SDR picture to an HDR
+one, which a viewer on an HDR screen can apply.
+
+The HDR picture follows the BT.2100 conventions for HDR stills: BT.2020
+primaries, SDR white placed at the 203-nit reference white, and a nominal
+peak of 1000 nits. It is rendered from the adjusted scene before any LUT, so
+it needs a look without a LUT. A LUT whose output is HDR (PQ or HLG) is still
+refused, because the JPEG it would feed is SDR.
+
+You do not need an HDR screen to make one. On an HDR screen in a browser
+with WebGPU, the preview can show the HDR picture; on any screen, it can show
+which parts rise above SDR white, or the whole HDR picture stopped down to
+fit SDR. To see the file as viewers will, open it on an HDR screen in a
+viewer that reads gain maps.
 
 ## Can An Interrupted Export Be Resumed?
 

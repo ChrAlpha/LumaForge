@@ -308,6 +308,25 @@ Neither the app nor `lmfg` persists export progress: there is no checkpoint or
 export journal, and every attempt, retries included, encodes from the first
 row.
 
+### HDR Gain-Map Export
+
+A gain-map export runs on the plan a plain export would get: the option
+changes neither the rows, the concurrency, nor the sink, and the OPFS
+requirement above stays the same. Each strip feeds two encoders. The SDR rows
+reach the primary writer exactly as in a plain export, and a second writer
+encodes the full-resolution, three-channel gain map at quality 0.98. The gain
+map's compressed bytes stay in worker memory until the primary closes, and
+the sink then appends them after it. On OPFS the file holds the
+metadata-free primary followed by the gain map; the recorded SHA-256
+describes the delivered layout, in which delivery inserts EXIF and the
+primary's gain-map metadata (an sRGB ICC profile, the ISO 21496-1 version,
+and the MPF index). The worker checks that layout before it reports the
+result.
+
+The preview's HDR views cost the export nothing: they are view state on the
+preview executors, released with the preview like any other frame, and the
+HQ preview snapshot renders the SDR picture whichever view is chosen.
+
 Interruption history:
 
 ```text
@@ -825,6 +844,8 @@ That is a different question from contracts the project refuses on purpose:
   `lumaforge-online-profiles` Cache Storage cache).
 - Do not let a cached CPU preview frame outlive the worker source it was
   rendered from.
+- Do not let the HDR gain map change the SDR picture: a gain-map JPEG's
+  primary, without its APP2 segments, is the plain export byte for byte.
 
 ## Verification Map
 
@@ -856,6 +877,10 @@ Export lifecycle and resource tests:
 - `tests/browser/raw-mobile-workflow.spec.ts`
 - `tests/browser/raw-export-storage.spec.ts`
 - `tests/browser/raw-export-acceptance.spec.ts`
+- `packages/render-engine/src/export/full-res-export-hdr.test.ts`
+- `packages/render-engine/src/export/jpeg/gain-map-container.test.ts`
+- `src/lib/export/full-res-export.worker.test.ts`
+- `tests/browser/raw-export-hdr.spec.ts`
 
 Session lifetime, teardown, GPU ownership, and frame identity tests:
 

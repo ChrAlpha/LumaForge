@@ -140,6 +140,30 @@ An HQ preview JPEG, where the export panel offers one, is a smaller file made
 from the preview (at most 12 megapixels). It is labeled as an HQ preview, it
 never includes a Transform, and it is not the full-resolution export.
 
+Turn on HDR gain map, above the export buttons, to add a gain map to the
+full-resolution JPEG. Every viewer still opens the same SDR JPEG: its image
+data is byte for byte what a plain export writes, and LumaForge adds only the
+gain map and the metadata that points to it. A
+viewer that reads ISO 21496-1 gain maps on an HDR screen uses it to show
+highlights brighter than SDR white, up to 1000 nits. The HQ preview JPEG
+never carries one. The option needs a look without a LUT: a LUT is graded for
+an SDR display, so there is no HDR picture behind it to store, and export
+stays disabled until you clear the LUT or turn the option off.
+
+While the option is on, the export panel lets you choose what the preview
+shows:
+
+- SDR: the picture every viewer sees.
+- HDR, on an HDR screen in a browser with WebGPU: the HDR picture, as far as
+  the screen reaches.
+- Above SDR: what sits at or below SDR white in gray, and what rises above it
+  in amber through magenta toward the 1000-nit peak.
+- Stop down: the HDR picture 2.3 stops darker, so its peak sits at SDR white.
+
+These views change only the preview, never the file. Turning the option off,
+starting an export, or closing the export panel on a phone puts the preview
+back on SDR, and it stays SDR while Transform covers the photo.
+
 If an earlier export of the same file was interrupted, for example because the
 tab closed or the device ran out of memory, the export panel can tell you when
 you load that file again in the same browser, and the next export you start
