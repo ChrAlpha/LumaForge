@@ -6,6 +6,7 @@ import {
   dedupeOutputOptions,
   dedupeProfiles,
   groupOutputOptions,
+  isExportableOutputOption,
   toDeclaredOutputOption,
   toOutputCarrierProfile,
   toSearchOutputOption,
@@ -84,6 +85,17 @@ describe('lutOutputOptions', () => {
       range: nikon.inputRange,
       sourceProfile: nikon,
     })
+  })
+
+  it('offers only outputs full-resolution export renders', () => {
+    expect(isExportableOutputOption(toSearchOutputOption(rec709))).toBe(true)
+    expect(isExportableOutputOption(toSearchOutputOption(sony))).toBe(true)
+    for (const id of ['rec2100-pq', 'rec2100-hlg']) {
+      const hdr = getLUTColorProfile(id)!
+      expect(isExportableOutputOption(toSearchOutputOption(hdr)), id).toBe(
+        false,
+      )
+    }
   })
 
   it('composes the full contract through the carrier profile', () => {

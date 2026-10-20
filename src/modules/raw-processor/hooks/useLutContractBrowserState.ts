@@ -8,6 +8,7 @@ import {
   dedupeOutputOptions,
   dedupeProfiles,
   groupOutputOptions,
+  isExportableOutputOption,
   toDeclaredOutputOption,
   toSearchOutputOption,
 } from '../services/look/lut-output-options'
@@ -58,10 +59,13 @@ export function useLutContractBrowserState({
       dedupeOutputOptions(
         [
           currentOutputOption,
-          ...visibleSuggestions.map(
-            (profile) =>
-              toDeclaredOutputOption(profile) ?? toSearchOutputOption(profile),
-          ),
+          ...visibleSuggestions
+            .map(
+              (profile) =>
+                toDeclaredOutputOption(profile) ??
+                toSearchOutputOption(profile),
+            )
+            .filter(isExportableOutputOption),
         ].filter(Boolean) as LUTOutputOption[],
       ),
     [currentOutputOption, visibleSuggestions],
@@ -72,7 +76,8 @@ export function useLutContractBrowserState({
         dedupeOutputOptions(
           searchResults
             .filter((profile) => !suggestionIds.has(profile.id))
-            .map(toSearchOutputOption),
+            .map(toSearchOutputOption)
+            .filter(isExportableOutputOption),
         ),
       ),
     [searchResults, suggestionIds],

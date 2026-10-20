@@ -44,6 +44,7 @@ export function getProfileGroupLabel(profile: LUTColorProfile) {
   if (profile.label.startsWith('Fujifilm')) return 'Fujifilm'
   if (profile.label.startsWith('Panasonic')) return 'Panasonic'
   if (profile.label.startsWith('ACES')) return 'ACES'
+  if (profile.label.startsWith('Rec.2100')) return 'HDR'
   return 'Other'
 }
 

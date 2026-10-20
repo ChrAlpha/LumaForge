@@ -84,4 +84,9 @@ describe('groupProfiles', () => {
     )
     expect(getProfileGroupLabel({ ...sony, label: 'Custom log' })).toBe('Other')
   })
+
+  it('groups the Rec.2100 HDR carriers under HDR', () => {
+    expect(getProfileGroupLabel({ ...sony, label: 'Rec.2100 PQ' })).toBe('HDR')
+    expect(getProfileGroupLabel({ ...sony, label: 'Rec.2100 HLG' })).toBe('HDR')
+  })
 })

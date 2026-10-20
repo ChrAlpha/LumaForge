@@ -1,4 +1,5 @@
 import type { LUTColorProfile } from '@lumaforge/luma-color-runtime'
+import { resolveUnsupportedLUTOutputReason } from '@lumaforge/luma-color-runtime'
 
 import { toSelectableContract } from './lut-contract'
 import { getProfileOutputLabel, groupByProfile } from './lut-contract-labels'
@@ -64,6 +65,23 @@ export function toSearchOutputOption(
     range: profile.inputRange,
     sourceProfile: profile,
   }
+}
+
+/**
+ * Whether full-resolution export renders this output. The browser offers only
+ * these; a LUT's declared output stays shown as declared even when export
+ * refuses it, so the refusal can say why.
+ */
+export function isExportableOutputOption(option: LUTOutputOption): boolean {
+  return (
+    resolveUnsupportedLUTOutputReason({
+      ...option.sourceProfile,
+      role: 'technical-output',
+      outputGamut: option.gamut,
+      outputTransfer: option.transfer,
+      outputRange: option.range,
+    }) === undefined
+  )
 }
 
 export function toOutputCarrierProfile(
