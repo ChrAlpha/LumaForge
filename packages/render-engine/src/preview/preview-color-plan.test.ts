@@ -248,6 +248,18 @@ describe('resolvePreviewColorPlan: custom LUT contracts', () => {
       'lut-output-transfer-linear',
     ],
     [
+      'a PQ output',
+      lut(confirmed(profile({ outputGamut: 'rec2020', outputTransfer: 'pq' }))),
+      'lut-output-transfer-hdr',
+    ],
+    [
+      'an HLG output',
+      lut(
+        confirmed(profile({ outputGamut: 'rec2020', outputTransfer: 'hlg' })),
+      ),
+      'lut-output-transfer-hdr',
+    ],
+    [
       'a display look with a linear output',
       lut(
         confirmed(
@@ -313,7 +325,14 @@ describe('resolvePreviewColorPlan: reasons follow the export authority', () => {
     'technical-output',
     'combined-look-output',
   ] as const
-  const OUTPUT_TRANSFERS = [undefined, 'srgb', 'linear', 'gamma24'] as const
+  const OUTPUT_TRANSFERS = [
+    undefined,
+    'srgb',
+    'linear',
+    'gamma24',
+    'pq',
+    'hlg',
+  ] as const
   const OUTPUT_RANGES = [undefined, 'full', 'legal', 'unknown'] as const
   const OUTPUT_GAMUTS = [undefined, 'srgb-rec709', 'rec2020'] as const
 

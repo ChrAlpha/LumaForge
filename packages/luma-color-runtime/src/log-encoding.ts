@@ -3,6 +3,8 @@
  * Implements transfer functions matching industry-standard log curves.
  */
 
+import { HDR_REFERENCE_WHITE_NITS, PQ_PEAK_NITS } from './hdr-reference'
+
 /**
  * Log encoding function signature
  */
@@ -31,6 +33,8 @@ export type TransferFunctionId =
   | 'apple-log'
   | 'dji-d-log'
   | 'l-log'
+  | 'pq'
+  | 'hlg'
   | 'linear'
 
 export interface TransferFunctionReferencePoint {
@@ -86,7 +90,23 @@ const TRANSFER_SOURCE_URLS: Record<TransferFunctionId, string> = {
     'https://dl.djicdn.com/downloads/DJI_Ronin_4D/X9_D_Log_D_Gamut_Whitepaper.pdf',
   'l-log':
     'https://leica-camera.com/sites/default/files/pm-101409-l-log_reference_manual_v1.4.pdf',
+  pq: 'https://www.itu.int/rec/R-REC-BT.2100',
+  hlg: 'https://www.itu.int/rec/R-REC-BT.2100',
   linear: 'https://en.wikipedia.org/wiki/Linear_light',
+}
+
+/** The HDR signal encodings: their code values carry light above diffuse white. */
+export const HDR_TRANSFER_IDS = Object.freeze([
+  'pq',
+  'hlg',
+] as const satisfies readonly TransferFunctionId[])
+
+export type HdrTransferFunctionId = (typeof HDR_TRANSFER_IDS)[number]
+
+export function isHdrTransfer(
+  id: TransferFunctionId,
+): id is HdrTransferFunctionId {
+  return (HDR_TRANSFER_IDS as readonly TransferFunctionId[]).includes(id)
 }
 
 /**
@@ -569,6 +589,71 @@ export function gamma24Decode(encoded: number): number {
   return Math.pow(Math.max(encoded, 0), 2.4)
 }
 
+// SMPTE ST 2084 (PQ) constants.
+export const PQ_M1 = 2610 / 16384
+export const PQ_M2 = (2523 / 4096) * 128
+export const PQ_C1 = 3424 / 4096
+export const PQ_C2 = (2413 / 4096) * 32
+export const PQ_C3 = (2392 / 4096) * 32
+/** Linear light (1.0 = HDR Reference White) as a fraction of the PQ peak. */
+export const PQ_LINEAR_SCALE = HDR_REFERENCE_WHITE_NITS / PQ_PEAK_NITS
+
+/**
+ * PQ inverse EOTF. Linear 1.0 is HDR Reference White (203 cd/m², about 58%
+ * PQ); light below black encodes as black.
+ */
+export function pqEncode(linear: number): number {
+  const y = Math.max(linear * PQ_LINEAR_SCALE, 0)
+  const p = Math.pow(y, PQ_M1)
+  return Math.pow((PQ_C1 + PQ_C2 * p) / (1 + PQ_C3 * p), PQ_M2)
+}
+
+/**
+ * PQ EOTF back to linear light (1.0 = HDR Reference White). Code values
+ * outside 0..1 decode as the nearest end of the curve, which stays finite.
+ */
+export function pqDecode(encoded: number): number {
+  const p = Math.pow(Math.min(Math.max(encoded, 0), 1), 1 / PQ_M2)
+  const y = Math.pow(Math.max(p - PQ_C1, 0) / (PQ_C2 - PQ_C3 * p), 1 / PQ_M1)
+  return y / PQ_LINEAR_SCALE
+}
+
+// BT.2100 HLG OETF constants.
+export const HLG_A = 0.17883277
+export const HLG_B = 1 - 4 * HLG_A
+export const HLG_C = 0.5 - HLG_A * Math.log(4 * HLG_A)
+
+function hlgOetf(sceneLinear: number): number {
+  const e = Math.max(sceneLinear, 0)
+  if (e <= 1 / 12) return Math.sqrt(3 * e)
+  return HLG_A * Math.log(12 * e - HLG_B) + HLG_C
+}
+
+function hlgInverseOetf(encoded: number): number {
+  const v = Math.max(encoded, 0)
+  if (v <= 0.5) return (v * v) / 3
+  return (Math.exp((v - HLG_C) / HLG_A) + HLG_B) / 12
+}
+
+/**
+ * The HLG scene light of HDR Reference White (75% HLG, BT.2408), which
+ * LumaForge's linear 1.0 stands for.
+ */
+export const HLG_REFERENCE_WHITE_SCENE = hlgInverseOetf(0.75)
+
+/**
+ * HLG OETF of scene light, with linear 1.0 at HDR Reference White (75% HLG).
+ * This is the scene-referred camera encoding; the display OOTF is not
+ * applied, so an HLG signal reads like the other camera curves.
+ */
+export function hlgEncode(linear: number): number {
+  return hlgOetf(linear * HLG_REFERENCE_WHITE_SCENE)
+}
+
+export function hlgDecode(encoded: number): number {
+  return hlgInverseOetf(encoded) / HLG_REFERENCE_WHITE_SCENE
+}
+
 export function linearTransfer(value: number): number {
   return value
 }
@@ -846,6 +931,46 @@ export const TRANSFER_FUNCTIONS: Record<
       referencePoint('black', 0, 0.09),
       referencePoint('18% gray', 0.18, 445 / 1023),
       referencePoint('90% reflection', 0.9, 634 / 1023),
+    ],
+  },
+  pq: {
+    id: 'pq',
+    label: 'PQ (SMPTE ST 2084)',
+    encode: pqEncode,
+    decode: pqDecode,
+    aliases: [
+      'PQ',
+      'ST 2084',
+      'SMPTE ST 2084',
+      'Perceptual Quantizer',
+      'Rec.2100 PQ',
+      'BT.2100 PQ',
+    ],
+    source: TRANSFER_SOURCE_URLS.pq,
+    referencePoints: [
+      referencePoint('black', 0, 0),
+      // HDR Reference White, 203 cd/m², is 58% PQ.
+      referencePoint('HDR reference white', 1, 0.5807),
+      referencePoint('1000 cd/m² peak', 1000 / 203, 0.7518),
+    ],
+  },
+  hlg: {
+    id: 'hlg',
+    label: 'HLG (BT.2100)',
+    encode: hlgEncode,
+    decode: hlgDecode,
+    aliases: [
+      'HLG',
+      'Hybrid Log-Gamma',
+      'ARIB STD-B67',
+      'Rec.2100 HLG',
+      'BT.2100 HLG',
+    ],
+    source: TRANSFER_SOURCE_URLS.hlg,
+    referencePoints: [
+      referencePoint('black', 0, 0),
+      referencePoint('HDR reference white', 1, 0.75),
+      referencePoint('OETF knee', 1 / 12 / hlgInverseOetf(0.75), 0.5),
     ],
   },
   linear: {

@@ -65,6 +65,10 @@ export const COLOR_GAMUTS: Record<ColorGamutId, ColorGamut> = {
     'N-Log Rec.2020',
     'Leica L-Gamut',
     'leica-l-gamut',
+    // BT.2100 HDR signals use the BT.2020 primaries.
+    'Rec.2100',
+    'BT.2100',
+    'ITU-R BT.2100',
   ]),
   'dji-d-gamut': createColorGamut('dji-d-gamut', 'DJI D-Gamut', [
     'D-Gamut',
@@ -166,6 +170,17 @@ export const TIER1_LUT_COLOR_PROFILES: LUTColorProfile[] = [
     'Nikon N-Log',
     'N-Log Rec.2020',
     'BT.2020 N-Log',
+  ]),
+  profile('rec2100-pq', 'Rec.2100 PQ', 'rec2020', 'pq', [
+    'BT.2100 PQ',
+    'Rec2100 PQ',
+    'PQ Rec.2020',
+    'HDR10',
+  ]),
+  profile('rec2100-hlg', 'Rec.2100 HLG', 'rec2020', 'hlg', [
+    'BT.2100 HLG',
+    'Rec2100 HLG',
+    'HLG Rec.2020',
   ]),
   profile(
     'sony-sgamut3cine-slog3',

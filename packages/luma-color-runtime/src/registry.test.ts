@@ -16,6 +16,8 @@ describe('color registry', () => {
     ['red-rwg-log3g10', 'red-wide-gamut-rgb', 'log3g10'],
     ['nikon-zr-rwg-log3g10', 'red-wide-gamut-rgb', 'log3g10'],
     ['nikon-bt2020-nlog', 'rec2020', 'n-log'],
+    ['rec2100-pq', 'rec2020', 'pq'],
+    ['rec2100-hlg', 'rec2020', 'hlg'],
     ['sony-sgamut3cine-slog3', 's-gamut3-cine', 's-log3'],
     ['sony-sgamut3-slog3', 's-gamut3', 's-log3'],
     ['sony-sgamut-slog2', 's-gamut', 's-log2'],

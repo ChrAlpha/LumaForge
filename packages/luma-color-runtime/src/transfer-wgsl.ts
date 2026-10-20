@@ -1,3 +1,15 @@
+import {
+  HLG_A,
+  HLG_B,
+  HLG_C,
+  HLG_REFERENCE_WHITE_SCENE,
+  PQ_C1,
+  PQ_C2,
+  PQ_C3,
+  PQ_LINEAR_SCALE,
+  PQ_M1,
+  PQ_M2,
+} from './log-encoding'
 import { LUT_TRANSFER_UNIFORMS } from './shader-uniforms'
 
 export const LUMA_COLOR_TRANSFER_WGSL = /* wgsl */ `
@@ -23,6 +35,8 @@ const TRANSFER_L_LOG: i32 = ${LUT_TRANSFER_UNIFORMS['l-log']};
 const TRANSFER_LINEAR: i32 = ${LUT_TRANSFER_UNIFORMS.linear};
 const TRANSFER_APPLE_LOG: i32 = ${LUT_TRANSFER_UNIFORMS['apple-log']};
 const TRANSFER_DJI_D_LOG: i32 = ${LUT_TRANSFER_UNIFORMS['dji-d-log']};
+const TRANSFER_PQ: i32 = ${LUT_TRANSFER_UNIFORMS.pq};
+const TRANSFER_HLG: i32 = ${LUT_TRANSFER_UNIFORMS.hlg};
 
 fn clamp01v(color: vec3f) -> vec3f {
   return clamp(color, vec3f(0.0), vec3f(1.0));
@@ -351,6 +365,34 @@ fn decodeDjiDLog(encodedValue: f32) -> f32 {
   return (pow(10.0, 3.89616 * encodedValue - 2.27752) - 0.0108) / 0.9892;
 }
 
+fn encodePQ(linearValue: f32) -> f32 {
+  let y = max(linearValue * ${PQ_LINEAR_SCALE}, 0.0);
+  let p = pow(y, ${PQ_M1});
+  return pow((${PQ_C1} + ${PQ_C2} * p) / (1.0 + ${PQ_C3} * p), ${PQ_M2});
+}
+
+fn decodePQ(encodedValue: f32) -> f32 {
+  let p = pow(min(max(encodedValue, 0.0), 1.0), 1.0 / ${PQ_M2});
+  let y = pow(max(p - ${PQ_C1}, 0.0) / (${PQ_C2} - ${PQ_C3} * p), 1.0 / ${PQ_M1});
+  return y / ${PQ_LINEAR_SCALE};
+}
+
+fn encodeHLG(linearValue: f32) -> f32 {
+  let e = max(linearValue * ${HLG_REFERENCE_WHITE_SCENE}, 0.0);
+  if (e <= 1.0 / 12.0) {
+    return sqrt(3.0 * e);
+  }
+  return ${HLG_A} * log(12.0 * e - ${HLG_B}) + ${HLG_C};
+}
+
+fn decodeHLG(encodedValue: f32) -> f32 {
+  let v = max(encodedValue, 0.0);
+  if (v <= 0.5) {
+    return (v * v) / 3.0 / ${HLG_REFERENCE_WHITE_SCENE};
+  }
+  return (exp((v - ${HLG_C}) / ${HLG_A}) + ${HLG_B}) / 12.0 / ${HLG_REFERENCE_WHITE_SCENE};
+}
+
 fn encodeTransferChannel(linearValue: f32, transfer: i32) -> f32 {
   if (transfer == TRANSFER_LINEAR) { return linearValue; }
   if (transfer == TRANSFER_SRGB) { return encodeSrgbTransfer(linearValue); }
@@ -374,6 +416,8 @@ fn encodeTransferChannel(linearValue: f32, transfer: i32) -> f32 {
   if (transfer == TRANSFER_L_LOG) { return encodeLLog(linearValue); }
   if (transfer == TRANSFER_APPLE_LOG) { return encodeAppleLog(linearValue); }
   if (transfer == TRANSFER_DJI_D_LOG) { return encodeDjiDLog(linearValue); }
+  if (transfer == TRANSFER_PQ) { return encodePQ(linearValue); }
+  if (transfer == TRANSFER_HLG) { return encodeHLG(linearValue); }
   return linearValue;
 }
 
@@ -400,6 +444,8 @@ fn decodeTransferChannel(encodedValue: f32, transfer: i32) -> f32 {
   if (transfer == TRANSFER_L_LOG) { return decodeLLog(encodedValue); }
   if (transfer == TRANSFER_APPLE_LOG) { return decodeAppleLog(encodedValue); }
   if (transfer == TRANSFER_DJI_D_LOG) { return decodeDjiDLog(encodedValue); }
+  if (transfer == TRANSFER_PQ) { return decodePQ(encodedValue); }
+  if (transfer == TRANSFER_HLG) { return decodeHLG(encodedValue); }
   return encodedValue;
 }
 

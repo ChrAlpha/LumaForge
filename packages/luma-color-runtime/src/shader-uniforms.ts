@@ -37,4 +37,6 @@ export const LUT_TRANSFER_UNIFORMS: Record<TransferFunctionId, number> = {
   linear: 19,
   'apple-log': 20,
   'dji-d-log': 21,
+  pq: 22,
+  hlg: 23,
 }

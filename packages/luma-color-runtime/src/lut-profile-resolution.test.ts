@@ -232,6 +232,44 @@ describe('lUT explicit profile labels', () => {
       ).toMatchObject({ kind: 'unsupported-output' })
     }
   })
+
+  it('detects unsupported HDR (PQ or HLG) directional outputs', () => {
+    for (const sourceName of [
+      'SLog3_SGamut3Cine_to_PQ.cube',
+      'SLog3_SGamut3Cine_to_HLG.cube',
+      'SLog3_SGamut3Cine_toHLG.cube',
+      'LogC4_to_Rec2100_PQ_1000nits.cube',
+      'VLog_for_BT2100_HLG.cube',
+      'SLog3_to_HDR10.cube',
+      'SLog3_to_ST2084.cube',
+    ]) {
+      expect(
+        resolveLUTProfile({
+          title: 'Technical HDR LUT',
+          sourceName,
+          comments: [],
+        }),
+        sourceName,
+      ).toMatchObject({ kind: 'unsupported-output' })
+    }
+  })
+
+  it('recommends a Rec.2100 HLG input for an HLG to Rec.709 conversion', () => {
+    const resolution = resolveLUTProfile({
+      title: 'HLG to Rec709',
+      comments: [],
+    })
+
+    expect(resolution.kind).toBe('recommended')
+    if (resolution.kind !== 'recommended') throw new Error('Expected hints')
+    expect(resolution.recommendations[0]).toMatchObject({
+      id: 'rec2100-hlg',
+      inputGamut: 'rec2020',
+      inputTransfer: 'hlg',
+      outputGamut: 'srgb-rec709',
+      outputTransfer: 'gamma24',
+    })
+  })
 })
 
 describe('lUT structured input profile ids', () => {

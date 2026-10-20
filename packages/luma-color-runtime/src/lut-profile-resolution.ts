@@ -186,9 +186,21 @@ function hasUnsupportedOutputAnnotation(signature: string): boolean {
   const compact = compactProfileText(signature)
   return (
     /\b(?:to|for)\s+(?:cineon|log\s*c)\b/.test(normalized) ||
-    ['tocineon', 'forcineon', 'tologc', 'forlogc'].some((marker) =>
-      compact.includes(marker),
-    )
+    // An HDR (PQ or HLG) output, which export cannot render to an SDR JPEG.
+    /\b(?:to|for)\s+(?:pq|hlg|hdr\s*10|(?:rec|bt)\s*2100|st\s*2084)\b/.test(
+      normalized,
+    ) ||
+    [
+      'tocineon',
+      'forcineon',
+      'tologc',
+      'forlogc',
+      'tohlg',
+      'tohdr10',
+      'torec2100',
+      'tobt2100',
+      'tost2084',
+    ].some((marker) => compact.includes(marker))
   )
 }
 

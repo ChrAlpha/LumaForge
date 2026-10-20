@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  HDR_NOMINAL_PEAK_LINEAR,
+  HDR_REFERENCE_WHITE_NITS,
+  PQ_PEAK_NITS,
+} from './hdr-reference'
+import {
   acesccDecode,
   acesccEncode,
   acescctDecode,
@@ -17,6 +22,10 @@ import {
   djiDLogEncode,
   gamma24Decode,
   gamma24Encode,
+  HDR_TRANSFER_IDS,
+  hlgDecode,
+  hlgEncode,
+  isHdrTransfer,
   lLogDecode,
   lLogEncode,
   log3G10Encode,
@@ -24,6 +33,8 @@ import {
   logC4Encode,
   nLogDecode,
   nLogEncode,
+  pqDecode,
+  pqEncode,
   sLog2Encode,
   srgbDecode,
   srgbEncode,
@@ -65,6 +76,8 @@ describe('transfer function registry', () => {
     'apple-log',
     'dji-d-log',
     'l-log',
+    'pq',
+    'hlg',
   ] as const
 
   it('exposes metadata, source URLs, and reference points for Tier 1 transfer functions', () => {
@@ -293,5 +306,45 @@ describe('display and ACES transfer functions', () => {
   it('keeps BT.709 transfer signed in the linear toe for LUT-domain math', () => {
     expect(bt709Encode(-0.002)).toBeCloseTo(4.5 * -0.002, 8)
     expect(bt709Decode(4.5 * -0.002)).toBeCloseTo(-0.002, 8)
+  })
+
+  it('places HDR Reference White at 58% PQ and the 1000 cd/m² peak at 75% PQ', () => {
+    // ST 2084 code values for 0, 100, 203 and 1000 cd/m²; the curve's black
+    // is c1^m2, just above zero.
+    expect(pqEncode(0)).toBeCloseTo(0, 5)
+    expect(pqEncode(100 / HDR_REFERENCE_WHITE_NITS)).toBeCloseTo(0.50808, 5)
+    expect(pqEncode(1)).toBeCloseTo(0.58069, 5)
+    expect(pqEncode(HDR_NOMINAL_PEAK_LINEAR)).toBeCloseTo(0.75183, 5)
+    expect(pqDecode(1)).toBeCloseTo(PQ_PEAK_NITS / HDR_REFERENCE_WHITE_NITS, 9)
+    expect(pqDecode(pqEncode(HDR_NOMINAL_PEAK_LINEAR))).toBeCloseTo(
+      HDR_NOMINAL_PEAK_LINEAR,
+      9,
+    )
+  })
+
+  it('keeps PQ finite outside its code range', () => {
+    expect(pqEncode(-1)).toBe(pqEncode(0))
+    expect(pqDecode(-0.5)).toBe(0)
+    expect(pqDecode(2)).toBe(pqDecode(1))
+  })
+
+  it('places HDR Reference White at 75% HLG with a continuous OETF knee', () => {
+    expect(hlgEncode(0)).toBe(0)
+    expect(hlgEncode(1)).toBeCloseTo(0.75, 12)
+    expect(hlgDecode(0.75)).toBeCloseTo(1, 12)
+    const knee = hlgDecode(0.5)
+    expect(hlgEncode(knee - 1e-9)).toBeCloseTo(0.5, 6)
+    expect(hlgEncode(knee + 1e-9)).toBeCloseTo(0.5, 6)
+    // Scene light 1.0 of the HLG OETF (its nominal peak) encodes to 100%.
+    expect(hlgEncode(hlgDecode(1))).toBeCloseTo(1, 12)
+    expect(hlgDecode(1)).toBeGreaterThan(3.7)
+  })
+
+  it('names PQ and HLG as the HDR signal encodings', () => {
+    expect([...HDR_TRANSFER_IDS]).toEqual(['pq', 'hlg'])
+    expect(isHdrTransfer('pq')).toBe(true)
+    expect(isHdrTransfer('hlg')).toBe(true)
+    expect(isHdrTransfer('gamma24')).toBe(false)
+    expect(isHdrTransfer('s-log3')).toBe(false)
   })
 })

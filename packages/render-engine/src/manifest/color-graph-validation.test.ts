@@ -5,6 +5,7 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   generateIdentityLUT,
+  isHdrTransfer,
   NEUTRAL_USER_COLOR_INTENT,
   resolveExportColorGraph,
   TIER1_LUT_COLOR_PROFILES,
@@ -121,7 +122,10 @@ describe('checkColorGraphIdentity on what the current writers record', () => {
   })
 
   it('accepts every built-in LUT input profile as a display look', () => {
-    for (const profile of TIER1_LUT_COLOR_PROFILES) {
+    // A display look outputs its input transfer, and export refuses an HDR one.
+    for (const profile of TIER1_LUT_COLOR_PROFILES.filter(
+      (candidate) => !isHdrTransfer(candidate.inputTransfer),
+    )) {
       const graph = identityFor({
         lut: lutWith({ ...profile, role: 'display-look' }),
       })

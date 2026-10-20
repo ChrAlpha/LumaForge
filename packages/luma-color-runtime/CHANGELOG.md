@@ -8,6 +8,15 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 
 ### Breaking
 
+- `TransferFunctionId` gains `pq` (SMPTE ST 2084) and `hlg` (BT.2100 HLG).
+  Code that switches exhaustively over the union needs a case for each.
+- A confirmed LUT whose output transfer is `pq` or `hlg` is refused by
+  `resolveExportColorGraph` and `resolveUnsupportedLUTOutputReason`
+  (`unsupported-output`, cause `output-transfer-hdr`): mapping an HDR signal
+  to the SDR JPEG needs a tone mapping the contract does not declare. Text
+  inference resolves LUT names such as `to PQ`, `to HLG`, `to Rec.2100` or
+  `to HDR10` as `unsupported-output`.
+
 - Removed `ProcessingParams`, a duplicate of `ColorGraphIntent`. Use
   `ColorGraphIntent` for the complete color intent and `LookSelection` for
   its look fields.
@@ -91,8 +100,20 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   applies, the declared one or a display look's input transfer.
 - `UnsupportedLUTOutputReason.cause` (`UnsupportedLUTOutputCause`): the
   contract gap behind a refused LUT output (`output-range-unknown`,
-  `output-profile-missing`, `output-transfer-linear`), so readers report it
-  without restating the export rules.
+  `output-profile-missing`, `output-transfer-linear`,
+  `output-transfer-hdr`), so readers report it without restating the export
+  rules.
+- The BT.2100 HDR signal encodings as LUT transfers: `pq` and `hlg`, with
+  TS and WGSL encode/decode. Linear 1.0 is HDR Reference White (203 cd/m²,
+  58% PQ, 75% HLG); HLG is the scene-referred OETF without the display
+  OOTF. `HDR_TRANSFER_IDS`, `HdrTransferFunctionId` and `isHdrTransfer`
+  name them.
+- The HDR reference constants: `HDR_REFERENCE_WHITE_NITS` (203),
+  `HDR_NOMINAL_PEAK_NITS` (1000), `HDR_NOMINAL_PEAK_LINEAR` and
+  `PQ_PEAK_NITS`.
+- Built-in input profiles `rec2100-pq` and `rec2100-hlg` (BT.2020 primaries
+  with PQ or HLG), and `Rec.2100`, `BT.2100` and `ITU-R BT.2100` as aliases of
+  the `rec2020` gamut.
 
 ### Fixed
 

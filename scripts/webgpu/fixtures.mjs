@@ -192,8 +192,10 @@ export function scenarios(transferIds = []) {
         name: `transfer-output-${transfer}`,
         lut: output,
         params: { styleKind: 'custom', intensity: 1 },
-        // Export refuses a linear LUT output.
-        ...(transfer === 'linear' ? { exportRefused: true } : {}),
+        // Export refuses a linear or an HDR (PQ, HLG) LUT output.
+        ...(['linear', 'pq', 'hlg'].includes(transfer)
+          ? { exportRefused: true }
+          : {}),
       },
     )
   }
@@ -230,6 +232,9 @@ export function refusedLutScenarios() {
   const linearTechnical = makeLut('technical-output', 'acescct')
   linearTechnical.profileResolution.profile.outputGamut = 'rec2020'
   linearTechnical.profileResolution.profile.outputTransfer = 'linear'
+  const hdrTechnical = makeLut('technical-output', 'acescct')
+  hdrTechnical.profileResolution.profile.outputGamut = 'rec2020'
+  hdrTechnical.profileResolution.profile.outputTransfer = 'pq'
   const unknownRange = makeLut('display-look', 'srgb')
   unknownRange.profileResolution.profile.outputRange = 'unknown'
   const missingOutput = makeLut('combined-look-output', 's-log3', true)
@@ -242,6 +247,7 @@ export function refusedLutScenarios() {
   return [
     ['display-linear-output', linearDisplay, 0.63],
     ['technical-linear-output', linearTechnical, 0.37],
+    ['technical-hdr-output', hdrTechnical, 0.58],
     ['output-range-unknown', unknownRange, 0.81],
     ['output-profile-missing', missingOutput, 0.52],
     ['input-unconfirmed', unconfirmed, 0.44],

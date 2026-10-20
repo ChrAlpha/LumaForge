@@ -434,6 +434,7 @@
   "raw.previewLook.lutOutputRangeUnknown": "预览未套用 · LUT 输出范围未知",
   "raw.previewLook.lutOutputProfileMissing": "预览未套用 · 请选择 LUT 输出",
   "raw.previewLook.lutOutputTransferLinear": "预览未套用 · 不支持线性 LUT 输出",
+  "raw.previewLook.lutOutputTransferHdr": "预览未套用 · 不支持 HDR（PQ 或 HLG）LUT 输出",
   "raw.previewLook.lutContractRefused": "预览未套用 · 不支持此 LUT 契约",
   "raw.previewLook.builtinPresetMissing": "预览未套用 · 内置风格缺少预设",
   "raw.previewLook.builtinCpuPreview": "CPU 预览未套用 · 内置风格仅在 WebGPU 上绘制",

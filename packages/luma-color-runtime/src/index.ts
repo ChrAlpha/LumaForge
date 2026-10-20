@@ -16,15 +16,21 @@ export type {
   DcpInterpolationResult,
 } from './dcp-interpolate'
 export { solveDcpInterpolation } from './dcp-interpolate'
+export * from './hdr-reference'
 export * from './histogram'
 export type {
+  HdrTransferFunctionId,
   LogDecodingFn,
   LogEncodingFn,
   TransferFunctionId,
   TransferFunctionMetadata,
   TransferFunctionReferencePoint,
 } from './log-encoding'
-export { TRANSFER_FUNCTIONS } from './log-encoding'
+export {
+  HDR_TRANSFER_IDS,
+  isHdrTransfer,
+  TRANSFER_FUNCTIONS,
+} from './log-encoding'
 export * from './lut-contract'
 export type { ResolveLUTProfileInput } from './lut-profile-resolution'
 export { resolveLUTProfile } from './lut-profile-resolution'

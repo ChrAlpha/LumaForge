@@ -434,6 +434,7 @@
   "raw.previewLook.lutOutputRangeUnknown": "Not in preview · LUT output range unknown",
   "raw.previewLook.lutOutputProfileMissing": "Not in preview · choose the LUT output",
   "raw.previewLook.lutOutputTransferLinear": "Not in preview · linear LUT output not supported",
+  "raw.previewLook.lutOutputTransferHdr": "Not in preview · HDR (PQ or HLG) LUT output not supported",
   "raw.previewLook.lutContractRefused": "Not in preview · LUT contract not supported",
   "raw.previewLook.builtinPresetMissing": "Not in preview · built-in style has no preset",
   "raw.previewLook.builtinCpuPreview": "Not in the CPU preview · built-in styles draw on WebGPU only",

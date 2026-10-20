@@ -2,6 +2,7 @@ import type { LumaColorBalanceParams } from './color-balance'
 import { resolveColorBalanceParams } from './color-balance'
 import type { ColorGamutId } from './constants'
 import type { TransferFunctionId } from './log-encoding'
+import { isHdrTransfer } from './log-encoding'
 import type { Mat3 } from './matrix'
 import { getGamutMatrix, mat3Identity } from './matrix'
 import type { RawRenderExposure } from './raw-render-exposure'
@@ -175,6 +176,7 @@ export type UnsupportedLUTOutputCause =
   | 'output-range-unknown'
   | 'output-profile-missing'
   | 'output-transfer-linear'
+  | 'output-transfer-hdr'
 
 /**
  * Why a confirmed LUT profile cannot feed full-resolution JPEG export:
@@ -227,6 +229,17 @@ export function resolveUnsupportedLUTOutputReason(
       cause: 'output-transfer-linear',
       message:
         'This LUT output transfer is not supported by full-resolution JPEG export.',
+    }
+  }
+
+  // The output transform maps a LUT's output to the SDR JPEG; an HDR signal
+  // would need a tone mapping the contract does not declare.
+  if (isHdrTransfer(effectiveOutputTransfer)) {
+    return {
+      code: 'unsupported-output',
+      cause: 'output-transfer-hdr',
+      message:
+        'This LUT outputs an HDR signal (PQ or HLG), which full-resolution JPEG export does not support.',
     }
   }
 

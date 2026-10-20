@@ -722,6 +722,16 @@ describe('resolveUnsupportedLUTOutputReason', () => {
       'unsupported-output',
       'output-transfer-linear',
     ],
+    [
+      { outputGamut: 'rec2020', outputTransfer: 'pq' },
+      'unsupported-output',
+      'output-transfer-hdr',
+    ],
+    [
+      { outputGamut: 'rec2020', outputTransfer: 'hlg' },
+      'unsupported-output',
+      'output-transfer-hdr',
+    ],
   ] as const)('names the gap of %o', (change, code, cause) => {
     expect(
       resolveUnsupportedLUTOutputReason({ ...technical, ...change }),
