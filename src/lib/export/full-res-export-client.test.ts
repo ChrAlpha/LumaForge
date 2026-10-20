@@ -103,7 +103,7 @@ describe('runFullResolutionJpegExportInWorker', () => {
     expect(worker.terminate).toHaveBeenCalledTimes(1)
   })
 
-  it('rehydrates a file-backed reference inside its tab directory, keeping the recorded hash and delivery metadata', async () => {
+  it('rehydrates a file-backed reference inside its tab directory, keeping the recorded hash, delivery metadata and gain map layout', async () => {
     const { promise, worker } = run()
     const deliveryMetadata = { make: 'Sony', iso: 200 }
     worker.emit({
@@ -118,6 +118,7 @@ describe('runFullResolutionJpegExportInWorker', () => {
         mimeType: 'image/jpeg',
         sha256: 'c'.repeat(64),
         deliveryMetadata,
+        gainMap: { primaryByteLength: 30 },
       },
     })
 
@@ -128,6 +129,7 @@ describe('runFullResolutionJpegExportInWorker', () => {
       byteLength: 42,
       sha256: 'c'.repeat(64),
       deliveryMetadata,
+      gainMap: { primaryByteLength: 30 },
       openBlob: expect.any(Function),
       cleanup: expect.any(Function),
     })

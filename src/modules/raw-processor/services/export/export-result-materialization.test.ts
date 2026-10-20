@@ -196,6 +196,41 @@ describe('export result materialization', () => {
     },
   )
 
+  it('delivers a stored gain-map export with the index its layout sizes', async () => {
+    const result = createCompletedExportResult({
+      jobResult: {
+        filename: 'frame.jpg',
+        output: {
+          kind: 'file-backed',
+          exportId: 'export-hdr',
+          filename: 'frame.jpg',
+          byteLength: 8,
+          mimeType: 'image/jpeg',
+          deliveryMetadata: null,
+          gainMap: { primaryByteLength: 5 },
+          openBlob: async () => new Blob(['jpeg+map'], { type: 'image/jpeg' }),
+        },
+      },
+      kind: 'full-resolution',
+      metadata: null,
+      width: 6048,
+      height: 4024,
+      copyCapability: fullResolutionCopy,
+      now: () => 1,
+      identity: createMockExportResultIdentity(),
+    })
+
+    await materializeOutputBlob(result.output)
+
+    expect(jpegMetadataMock.preserveJpegMetadata).toHaveBeenCalledWith({
+      jpeg: expect.any(Blob),
+      metadata: null,
+      width: 6048,
+      height: 4024,
+      gainMap: { primaryByteLength: 5 },
+    })
+  })
+
   it('surfaces a failed file-backed open without injecting metadata or cleaning up', async () => {
     const cleanup = vi.fn(async () => undefined)
     const result = createCompletedExportResult({

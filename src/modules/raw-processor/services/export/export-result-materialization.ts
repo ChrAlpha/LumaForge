@@ -46,6 +46,7 @@ function withLazyJpegMetadata(input: {
         metadata,
         width: input.width,
         height: input.height,
+        gainMap: output.gainMap,
       })
     },
   }

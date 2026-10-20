@@ -1,6 +1,7 @@
 import type {
   FileBackedOutputResult,
   JpegExportMetadata,
+  JpegGainMapLayout,
 } from '@lumaforge/render-engine/export'
 import { sha256Hex } from '@lumaforge/render-engine/manifest'
 
@@ -200,6 +201,7 @@ export function createOpfsFileBackedOutputResult(
     storage?: OpfsStorage
     sha256?: string
     deliveryMetadata?: JpegExportMetadata | null
+    gainMap?: JpegGainMapLayout
   },
 ): FileBackedOutputResult {
   const outputFileName = input.outputFileName ?? DEFAULT_OPFS_OUTPUT_FILE
@@ -216,6 +218,7 @@ export function createOpfsFileBackedOutputResult(
     ...(input.deliveryMetadata !== undefined
       ? { deliveryMetadata: input.deliveryMetadata }
       : {}),
+    ...(input.gainMap ? { gainMap: input.gainMap } : {}),
     async openBlob() {
       const exportDirectory = await getOpfsExportDirectory(input, input.storage)
       await exportDirectory.getFileHandle(finalizedFileName)

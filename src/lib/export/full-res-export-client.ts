@@ -5,6 +5,7 @@ import type {
   ExportOutputResult,
   FullResolutionExportProgress,
   JpegExportMetadata,
+  JpegGainMapLayout,
 } from '@lumaforge/render-engine/export'
 
 import type { ExportAttemptPlan } from './export-plan'
@@ -35,6 +36,8 @@ export type FullResWorkerFileBackedOutputReference = {
   sha256?: string
   /** Metadata the worker hashed with; the app injects exactly this on delivery. */
   deliveryMetadata?: JpegExportMetadata | null
+  /** Set on a gain-map export: the stored primary, then the gain map. */
+  gainMap?: JpegGainMapLayout
 }
 
 export type FullResWorkerOutputResult =
@@ -51,6 +54,8 @@ export type FullResExportJob = {
   quality: number
   /** Full-resolution geometry; plain data so it survives structured clone. */
   geometry?: ExportGeometry
+  /** Also write the ISO 21496-1 gain map to the graph's HDR rendition. */
+  hdrGainMap?: boolean
 }
 
 export type FullResExportWorkerStartMessage = FullResExportJob & {

@@ -3,9 +3,11 @@ import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import type {
   ExportOutputResult,
   JpegExportMetadata,
+  JpegGainMapLayout,
   JpegRowSink,
 } from '@lumaforge/render-engine/export'
 import {
+  assertDeliveredGainMapJpeg,
   createBlobOutputResult,
   JPEG_HEADER_SCAN_BYTES,
   materializeOutputBlob,
@@ -14,6 +16,7 @@ import {
   preserveJpegMetadata,
   runFullResolutionJpegExport,
   sha256OfJpegWithMetadata,
+  verifyGainMapJpeg,
 } from '@lumaforge/render-engine/export'
 
 import { sha256OfBlob } from './blob-sha256'
@@ -117,6 +120,7 @@ function createOpfsJpegRowSink(input: {
   return {
     createSession({ width, height, quality }) {
       let byteLength = 0
+      let primaryByteLength = 0
       let state: 'open' | 'closed' | 'aborted' = 'open'
       const writable = input.takeOpenedWritable()
       if (!writable) throw new Error('JPEG_WRITER_CLOSED')
@@ -182,27 +186,44 @@ function createOpfsJpegRowSink(input: {
             throw error
           }
         },
-        async close() {
+        async close(trailer) {
           assertOpen()
           try {
             await encoder.finish()
+            primaryByteLength = byteLength
+            // A gain-map export stores its gain map right after the primary.
+            if (trailer) {
+              const container = trailer.gainMapContainer
+              await writable.write(
+                container.buffer.slice(
+                  container.byteOffset,
+                  container.byteOffset + container.byteLength,
+                ) as ArrayBuffer,
+              )
+              byteLength += container.byteLength
+            }
+            const gainMap: JpegGainMapLayout | undefined = trailer
+              ? { primaryByteLength }
+              : undefined
             // File-backed output stays metadata-free on disk; the app injects
-            // EXIF on delivery, so the recorded hash must describe that layout.
+            // EXIF (and a gain map's index) on delivery, so the recorded hash
+            // must describe that layout.
             const finalized = await writable.close({
-              hash: (bytes) =>
-                sha256OfJpegWithMetadata(
-                  bytes,
-                  planJpegMetadataInjection({
-                    header: bytes.subarray(
-                      0,
-                      Math.min(bytes.length, JPEG_HEADER_SCAN_BYTES),
-                    ),
-                    fullSize: bytes.length,
-                    metadata: input.metadata,
-                    width,
-                    height,
-                  }),
-                ),
+              hash: (bytes) => {
+                const plan = planJpegMetadataInjection({
+                  header: bytes.subarray(
+                    0,
+                    Math.min(bytes.length, JPEG_HEADER_SCAN_BYTES),
+                  ),
+                  fullSize: bytes.length,
+                  metadata: input.metadata,
+                  width,
+                  height,
+                  gainMap,
+                })
+                if (gainMap) assertDeliveredGainMapJpeg(bytes, plan!)
+                return sha256OfJpegWithMetadata(bytes, plan)
+              },
             })
             state = 'closed'
             runtime.dispose()
@@ -214,6 +235,7 @@ function createOpfsJpegRowSink(input: {
               mimeType: 'image/jpeg',
               outputFileName,
               sha256: finalized.sha256,
+              ...(gainMap ? { gainMap } : {}),
             })
           } catch (error) {
             try {
@@ -298,6 +320,7 @@ async function prepareSuccessOutput(input: {
       mimeType: input.output.mimeType,
       ...(input.output.sha256 ? { sha256: input.output.sha256 } : {}),
       deliveryMetadata: input.metadata as JpegExportMetadata | null | undefined,
+      ...(input.output.gainMap ? { gainMap: input.output.gainMap } : {}),
     }
   }
 
@@ -306,7 +329,15 @@ async function prepareSuccessOutput(input: {
     metadata: input.metadata as JpegExportMetadata | null | undefined,
     width: input.width,
     height: input.height,
+    gainMap: input.output.gainMap,
   })
+  if (input.output.gainMap) {
+    await verifyGainMapJpeg({
+      byteLength: blobWithMetadata.size,
+      read: async (start, end) =>
+        new Uint8Array(await blobWithMetadata.slice(start, end).arrayBuffer()),
+    })
+  }
 
   return createBlobOutputResult({
     filename: input.output.filename,
@@ -399,6 +430,7 @@ async function handleStart(message: FullResExportWorkerStartMessage) {
         concurrency: message.executionPlan.concurrency,
         quality: message.quality,
         jpegSink,
+        ...(message.hdrGainMap ? { hdrGainMap: {} } : {}),
         signal: controller.signal,
         readProcessedWindow: session.readProcessedWindow,
         // A resource failure goes back to the page, which plans a fresh

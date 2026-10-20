@@ -11,6 +11,7 @@ import { createLumaJpegRuntime } from '@lumaforge/luma-jpeg-runtime'
 import type { LumaRawProcessedWindowRequest } from '@lumaforge/luma-raw-runtime'
 import { createLumaRawRuntime } from '@lumaforge/luma-raw-runtime'
 import {
+  assertGainMapJpeg,
   createBlobOutputResult,
   materializeOutputBlob,
   preserveJpegMetadata,
@@ -663,6 +664,53 @@ describe('full-resolution export worker delivered JPEG metadata', () => {
       expect(result.sha256).toBe(sha256Hex(deliveredBytes))
     },
   )
+
+  it('delivers a blob gain-map export with the segments a decoder needs', async () => {
+    installBaselineJpegRuntime()
+
+    const result = await exportResult({ hdrGainMap: true })
+
+    if (result.kind !== 'blob') throw new Error('Expected a blob result.')
+    const bytes = await readBlobBytes(await materializeOutputBlob(result))
+    expect(() => assertGainMapJpeg(bytes)).not.toThrow()
+    expect(readSofDimensions(bytes)).toEqual(SENSOR)
+    expect(readExif(bytes).pixelDimensions).toEqual(SENSOR)
+    // The delivered blob already carries its index, so nothing re-applies it.
+    expect(result.gainMap).toBeUndefined()
+    expect(result.sha256).toBe(sha256Hex(bytes))
+  })
+
+  it('hashes a file-backed gain-map export as delivered', async () => {
+    const encoded = installBaselineJpegRuntime()
+    const written = installCapturingOpfsWritable()
+
+    const result = await exportResult({
+      hdrGainMap: true,
+      executionPlan: OPFS_PLAN,
+      outputLocation: { ...OPFS_LOCATION, exportId: 'export-hdr' },
+    })
+
+    if (result.kind !== 'file-backed') {
+      throw new Error('Expected a file-backed result.')
+    }
+    const onDisk = written()
+    const primary = makeBaselineJpeg(SENSOR.width, SENSOR.height)
+    expect(result.gainMap).toEqual({ primaryByteLength: primary.length })
+    // On disk: the encoder's primary unchanged, then the gain map container.
+    expect(onDisk.subarray(0, primary.length)).toEqual(primary)
+    expect(encoded).toHaveLength(2)
+    const deliveredBytes = await readBlobBytes(
+      await preserveJpegMetadata({
+        jpeg: new Blob([onDisk], { type: 'image/jpeg' }),
+        metadata: result.deliveryMetadata,
+        width: SENSOR.width,
+        height: SENSOR.height,
+        gainMap: result.gainMap,
+      }),
+    )
+    expect(() => assertGainMapJpeg(deliveredBytes)).not.toThrow()
+    expect(result.sha256).toBe(sha256Hex(deliveredBytes))
+  })
 })
 
 describe('full-resolution export worker output sink', () => {
