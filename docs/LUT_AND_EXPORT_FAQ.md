@@ -48,6 +48,11 @@ family. For example:
 | `N-Log`, `Nikon`            | Nikon N-Log                |
 | `V-Log`, `Panasonic`        | Panasonic V-Log            |
 | `REDLog3G10`, `RED`         | RED Log3G10                |
+| `HLG`, `PQ`, `Rec2100`      | Rec.2100 HLG or PQ         |
+
+A LUT that outputs an HDR signal (PQ or HLG, for example `SLog3_to_HLG`) cannot
+feed a JPEG export, so LumaForge refuses it and says why rather than guessing a
+tone mapping. An HLG or PQ *input* is fine when the LUT outputs Rec.709 or sRGB.
 
 When two choices both seem possible, compare skin tones, skies, neutral walls,
 and deep shadows. The better contract usually looks normal before you start

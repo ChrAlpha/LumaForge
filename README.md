@@ -97,8 +97,8 @@ finished JPEG with a look they already enjoy.
   framing and refuses a geometry it cannot plan.
 - Upload a custom `.cube` LUT and declare its input and output contract.
 - Work with profile families such as ARRI LogC, RED Log3G10, Sony S-Log,
-  Panasonic V-Log, Fujifilm F-Log, Canon Log, Nikon N-Log, ACES, and display
-  sRGB.
+  Panasonic V-Log, Fujifilm F-Log, Canon Log, Nikon N-Log, ACES, Rec.2100 HLG
+  and PQ inputs, and display sRGB.
 - Export a full-resolution JPEG (quality 0.92) through a bounded worker path,
   with download, share, and clipboard actions where the browser supports them.
   If an earlier export of the same file was interrupted, the next export you

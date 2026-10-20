@@ -63,6 +63,8 @@ Worker 路径构建。
 - 如果 LUT 是为相机 Log 配置文件制作的，选择对应的相机 Log 输入系列，
   如 ARRI LogC、Sony S-Log、Fujifilm F-Log、Canon Log、Nikon N-Log、
   Panasonic V-Log 或 RED Log3G10。
+- 如果 LUT 期望输入 HDR 视频信号，选择 Rec.2100 HLG 或 PQ 作为输入。
+  输出 HLG 或 PQ 的 LUT 会被拒绝，因为 JPEG 导出需要 SDR 输出。
 - 如果不确定，请预览结果，优先选择使肤色、天空、阴影和高光看起来
   合理的契约。避免产生死黑、荧光色或褪色对比度的契约，除非那正是你
   想要的效果。

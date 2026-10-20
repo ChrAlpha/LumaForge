@@ -69,6 +69,9 @@ Good defaults:
 - If the LUT was made for a camera log profile, choose that camera log input
   family, such as ARRI LogC, Sony S-Log, Fujifilm F-Log, Canon Log, Nikon N-Log,
   Panasonic V-Log, or RED Log3G10.
+- If the LUT expects an HDR video signal, choose Rec.2100 HLG or PQ as its
+  input. A LUT that outputs HLG or PQ is refused, because the JPEG export needs
+  an SDR output.
 - If you are unsure, preview the result and prefer the contract that keeps skin,
   skies, shadows, and highlights plausible. Avoid contracts that produce crushed
   blacks, neon colors, or washed-out contrast unless that is the intended look.

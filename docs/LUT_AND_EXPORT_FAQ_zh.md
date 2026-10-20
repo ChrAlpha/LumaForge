@@ -44,6 +44,11 @@ Rec.709、ARRI LogC、Sony S-Log 或其他相机 Log 曲线。
 | `N-Log`、`Nikon`             | Nikon N-Log               |
 | `V-Log`、`Panasonic`         | Panasonic V-Log           |
 | `REDLog3G10`、`RED`          | RED Log3G10               |
+| `HLG`、`PQ`、`Rec2100`       | Rec.2100 HLG 或 PQ        |
+
+输出 HDR 信号（PQ 或 HLG，例如 `SLog3_to_HLG`）的 LUT 无法用于 JPEG 导出，
+LumaForge 会拒绝并说明原因，而不是自行猜测色调映射。只要 LUT 输出
+Rec.709 或 sRGB，输入为 HLG 或 PQ 是可以的。
 
 当两个选择看起来都可以时，对比肤色、天空、中性墙壁和深阴影。更好的契约
 通常在添加额外校正之前看起来就已经正常。

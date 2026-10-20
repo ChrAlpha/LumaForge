@@ -85,7 +85,8 @@
   重现已提交的构图，无法规划的几何变换会拒绝导出。
 - 上传自定义 `.cube` LUT 并声明其输入和输出契约。
 - 处理各种配置文件系列，如 ARRI LogC、RED Log3G10、Sony S-Log、Panasonic
-  V-Log、Fujifilm F-Log、Canon Log、Nikon N-Log、ACES 和显示 sRGB。
+  V-Log、Fujifilm F-Log、Canon Log、Nikon N-Log、ACES、Rec.2100 HLG 与 PQ
+  输入，以及显示 sRGB。
 - 通过受控 Worker 路径导出全分辨率 JPEG（质量 0.92），浏览器支持时提供
   下载、分享和剪贴板操作。如果同一文件上一次导出被中断，你下一次发起的
   导出会使用更稳妥的设置；应用不会自行续传或自动导出。
