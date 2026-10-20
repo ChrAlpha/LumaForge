@@ -49,6 +49,7 @@ self.onmessage = (e: MessageEvent<CpuPreviewRequest>) => {
       width: src.width,
       height: src.height,
       graph: msg.graph,
+      hdrView: msg.hdrView,
     })
     reply(
       {

@@ -1,4 +1,7 @@
-import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
+import type {
+  HdrPreviewView,
+  SupportedExportColorGraphDescriptor,
+} from '@lumaforge/luma-color-runtime'
 
 export type CpuPreviewVariant = 'processed' | 'neutral'
 
@@ -24,6 +27,8 @@ export type CpuPreviewRequest =
       requestId: number
       graph: SupportedExportColorGraphDescriptor
       variant: CpuPreviewVariant
+      /** An HDR preview view of the processed frame; omitted, the SDR picture. */
+      hdrView?: HdrPreviewView
     }
   | { type: 'disposeSource'; sourceId: string }
 

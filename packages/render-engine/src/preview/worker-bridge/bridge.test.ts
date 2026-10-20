@@ -43,6 +43,20 @@ describe('cpuPreviewClient', () => {
     expect('data' in renders[0]).toBe(false)
   })
 
+  it('asks the worker for an HDR preview view only when the render names one', () => {
+    const { worker, posted } = fakeWorker()
+    const client = new CpuPreviewClient(() => worker)
+    client.loadSource({
+      sourceId: 's1',
+      width: 1,
+      height: 1,
+      data: new Uint16Array(3),
+    })
+    client.requestRender({ variant: 'processed', graph, hdrView: 'stop-down' })
+    const [render] = posted.filter((m) => m.type === 'render')
+    expect(render).toMatchObject({ hdrView: 'stop-down' })
+  })
+
   it('keeps at most one in-flight render + one pending-latest', () => {
     const { worker, posted, respond } = fakeWorker()
     const client = new CpuPreviewClient(() => worker)

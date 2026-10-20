@@ -66,6 +66,10 @@ predates this file.
 
 ### Added
 
+- `renderCpuPreviewFrame` takes an optional `hdrView` (`above-sdr` or
+  `stop-down`) and draws that view of the gain-map export's HDR rendition
+  instead of the SDR picture; the CPU preview worker's `render` request and
+  `CpuPreviewClient.requestRender` carry it.
 - ISO 21496-1 gain-map JPEGs, stored as the metadata-free primary followed by
   the gain map container (`createGainMapContainer`: the gain map with its
   ISO 21496-1 metadata and a BT.2020 linear ICC profile).

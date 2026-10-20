@@ -1,4 +1,7 @@
-import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
+import type {
+  HdrPreviewView,
+  SupportedExportColorGraphDescriptor,
+} from '@lumaforge/luma-color-runtime'
 
 import type {
   CpuPreviewFailureReason,
@@ -25,6 +28,8 @@ export type CpuPreviewFrame = {
 type PendingRender = {
   variant: CpuPreviewVariant
   graph: SupportedExportColorGraphDescriptor
+  /** An HDR preview view of the processed frame; omitted, the SDR picture. */
+  hdrView?: HdrPreviewView
 }
 
 const defaultWorkerFactory = (): CpuPreviewWorkerLike =>
@@ -144,6 +149,7 @@ export class CpuPreviewClient {
         requestId,
         graph: req.graph,
         variant: req.variant,
+        ...(req.hdrView ? { hdrView: req.hdrView } : {}),
       })
     } catch {
       this.inFlightId = null

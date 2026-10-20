@@ -1,5 +1,6 @@
 import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-runtime'
 import {
+  createHdrPreviewRowBandProcessor,
   createRowBandProcessor,
   NEUTRAL_SELECTIVE_COLOR,
   resolveExportColorGraph,
@@ -43,6 +44,39 @@ describe('renderCpuPreviewFrame', () => {
       expect(rgba[p * 4 + 0]).toBe(rgb[p * 3 + 0])
       expect(rgba[p * 4 + 1]).toBe(rgb[p * 3 + 1])
       expect(rgba[p * 4 + 2]).toBe(rgb[p * 3 + 2])
+    }
+  })
+
+  it('draws an HDR preview view from the HDR preview processor', () => {
+    const width = 2
+    const height = 3
+    const source = Uint16Array.from(
+      { length: width * height * 3 },
+      (_, index) => (index * 9_973) % 65_536,
+    )
+    const graph = neutralGraph()
+
+    for (const hdrView of ['above-sdr', 'stop-down'] as const) {
+      const rgba = renderCpuPreviewFrame({
+        data: source,
+        width,
+        height,
+        graph,
+        hdrView,
+      })
+      const rgb = createHdrPreviewRowBandProcessor({
+        width,
+        rowBandRows: height,
+        graph,
+        view: hdrView,
+      }).processUint16Rows(source, height)
+      for (let p = 0; p < width * height; p += 1) {
+        expect([rgba[p * 4], rgba[p * 4 + 1], rgba[p * 4 + 2]]).toEqual([
+          rgb[p * 3],
+          rgb[p * 3 + 1],
+          rgb[p * 3 + 2],
+        ])
+      }
     }
   })
 })
