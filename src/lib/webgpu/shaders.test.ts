@@ -133,8 +133,9 @@ describe('webGPU shader variants', () => {
       const code = createProcessShader(filterable)
       expect(code).not.toContain('compareSplit')
       expect(code).not.toContain('VIEW_MODE_COMPARE')
+      // The technical original wins over any HDR view.
       expect(code).toContain(
-        'if (params.viewMode == VIEW_MODE_ORIGINAL) {\n    styledColor = technicalBaseDisplayColor;\n  }\n',
+        'if (params.viewMode == VIEW_MODE_ORIGINAL) {\n    styledColor = technicalBaseDisplayColor;\n  } else if (params.hdrView == HDR_VIEW_ABOVE_SDR) {',
       )
       expect(code).toContain('params.styleKind == STYLE_BUILTIN')
       for (let preset = 1; preset <= 7; preset++)

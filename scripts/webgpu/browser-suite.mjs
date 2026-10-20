@@ -16,6 +16,7 @@ import { runPerformance } from './performance.mjs'
 export async function runAcceptance({ iterations, unfilterable, goldens }) {
   const {
     COLOR_GRAPH_INTENT_KEYS,
+    HDR_NOMINAL_PEAK_LINEAR,
     TRANSFER_FUNCTIONS,
     resolveExportColorGraph,
   } = await import('@lumaforge/luma-color-runtime')
@@ -117,6 +118,27 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     })
     return graph.supported ? null : graph.message
   }
+  // An HDR view of the edited image, as the CPU preview draws it.
+  const renderHdrReference = (fixture, params, hdrView) => {
+    const graph = resolveExportColorGraph({
+      ...graphParams(params),
+      lut: null,
+      rawRenderExposure: {
+        ev: fixture.renderExposureEv,
+        multiplier: fixture.renderExposureMultiplier,
+        source: 'user',
+      },
+    })
+    if (!graph.supported)
+      throw new Error(`REFERENCE_GRAPH_UNSUPPORTED: ${graph.reason}`)
+    return renderCpuPreviewFrame({
+      data: fixture.data,
+      width: fixture.width,
+      height: fixture.height,
+      graph,
+      hdrView,
+    })
+  }
   // The preview presents either the technical base or the edited image.
   const referenceFrame = (fixture, params, lut) =>
     renderReference(
@@ -158,6 +180,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
   const neutral = {
     ...gpu.getParams(),
     output: 'processed',
+    hdrOutput: undefined,
     styleKind: 'none',
     intensity: 1,
     selectiveColor: undefined,
@@ -242,6 +265,70 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
           )
         )
           throw error
+      }
+    }
+    // HDR views draw the gain-map export's HDR rendition from the scene the
+    // TS executor reads. The bright scenes lift highlights above SDR white,
+    // and the clipped one past the nominal peak.
+    const decodeSrgb = (value) =>
+      value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+    const encodeSrgb = (value) =>
+      value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055
+    for (const [label, hdrParams] of [
+      ['bright', { userExposureEv: 2 }],
+      ['clipped', { ...ADJUSTED_USER_COLOR, userExposureEv: 3 }],
+    ]) {
+      for (const hdrView of ['above-sdr', 'stop-down']) {
+        const name = `u16/hdr-${hdrView}/${label}`
+        try {
+          const params = reset(fixture, { ...hdrParams, hdrOutput: hdrView })
+          await render()
+          const processed = await readProcessedBytes()
+          check(
+            `${name}/presented`,
+            await readPresentedCanvas(surface.canvas),
+            processed,
+            PRESENTED,
+          )
+          check(
+            `${name}/reference`,
+            processed,
+            renderHdrReference(fixture, params, hdrView),
+            REFERENCE,
+          )
+        } catch (error) {
+          add(name, false, { error: String(error), stack: error.stack })
+        }
+      }
+      // The extended rendition, divided by the nominal peak, is the
+      // stop-down view: one relation, checked against the TS executor.
+      const name = `u16/hdr-extended/${label}`
+      try {
+        const params = reset(fixture, { ...hdrParams, hdrOutput: 'extended' })
+        await render()
+        const pixels = await gpu.readProcessedPixelsAsync()
+        if (!pixels) throw new Error('PROCESSED_PIXELS_MISSING')
+        const stopped = new Uint8ClampedArray(pixels.length)
+        let aboveWhite = 0
+        for (let index = 0; index < pixels.length; index++) {
+          if (index % 4 === 3) {
+            stopped[index] = 255
+            continue
+          }
+          if (pixels[index] > 1) aboveWhite++
+          const linear =
+            decodeSrgb(Math.max(pixels[index], 0)) / HDR_NOMINAL_PEAK_LINEAR
+          stopped[index] = Math.round(encodeSrgb(Math.min(linear, 1)) * 255)
+        }
+        add(`${name}/above-sdr-white`, aboveWhite > 0, { aboveWhite })
+        check(
+          `${name}/stop-down-reference`,
+          stopped,
+          renderHdrReference(fixture, params, 'stop-down'),
+          REFERENCE,
+        )
+      } catch (error) {
+        add(name, false, { error: String(error), stack: error.stack })
       }
     }
     const snapshotParams = {

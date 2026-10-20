@@ -34,6 +34,7 @@ export const UNIFORM_FIELDS: Record<string, UniformFieldMap> = {
   lutInputRange: { offset: 216, type: 'i32' },
   lutOutputRange: { offset: 220, type: 'i32' },
   selectiveColorActive: { offset: 224, type: 'i32' },
+  hdrView: { offset: 228, type: 'i32' },
 }
 
 export function writeUniformF32(

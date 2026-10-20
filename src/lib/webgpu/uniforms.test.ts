@@ -114,8 +114,31 @@ describe('webGPU uniform ABI', () => {
       lutInputRange: { offset: 216, type: 'i32' },
       lutOutputRange: { offset: 220, type: 'i32' },
       selectiveColorActive: { offset: 224, type: 'i32' },
+      hdrView: { offset: 228, type: 'i32' },
     })
     expect(UNIFORM_BUFFER_SIZE).toBe(240)
+  })
+
+  it('sends an HDR view only for a drawn look with an HDR rendition', () => {
+    const hdrView = (
+      params: Partial<GpuPreviewParams>,
+      lut: LUTData | null,
+    ) => {
+      const view = new DataView(new ArrayBuffer(UNIFORM_BUFFER_SIZE))
+      packUniforms(view, { ...DEFAULT_PARAMS, ...params }, lut, 1, false)
+      return view.getInt32(UNIFORM_FIELDS.hdrView.offset, true)
+    }
+    expect(hdrView({}, null)).toBe(0)
+    expect(hdrView({ hdrOutput: 'above-sdr' }, null)).toBe(1)
+    expect(hdrView({ hdrOutput: 'stop-down' }, null)).toBe(2)
+    expect(hdrView({ hdrOutput: 'extended' }, null)).toBe(3)
+    // A built-in style has no HDR rendition: the SDR picture stays.
+    expect(
+      hdrView(
+        { hdrOutput: 'stop-down', styleKind: 'builtin', builtinPreset: 'warm' },
+        null,
+      ),
+    ).toBe(0)
   })
 })
 

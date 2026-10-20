@@ -1,5 +1,6 @@
 import {
   LUMA_COLOR_BALANCE_WGSL,
+  LUMA_COLOR_HDR_PREVIEW_WGSL,
   LUMA_COLOR_LUT_WGSL,
   LUMA_COLOR_OKLAB_WGSL,
   LUMA_COLOR_RANGE_WGSL,
@@ -45,7 +46,7 @@ struct ProcessUniforms {
   lutInputRange: i32,
   lutOutputRange: i32,
   selectiveColorActive: i32,
-  _pad0: i32,
+  hdrView: i32,
   _pad1: i32,
   _pad2: i32,
 }
@@ -84,6 +85,10 @@ const VIEW_MODE_ORIGINAL: i32 = 1;
 const STYLE_NONE: i32 = 0;
 const STYLE_BUILTIN: i32 = 1;
 const STYLE_CUSTOM: i32 = 2;
+const HDR_VIEW_NONE: i32 = 0;
+const HDR_VIEW_ABOVE_SDR: i32 = 1;
+const HDR_VIEW_STOP_DOWN: i32 = 2;
+const HDR_VIEW_EXTENDED: i32 = 3;
 
 ${LUMA_COLOR_TRANSFER_WGSL}
 ${LUMA_COLOR_RANGE_WGSL}
@@ -93,6 +98,7 @@ ${LUMA_COLOR_TONE_WGSL}
 ${LUMA_COLOR_OKLAB_WGSL}
 ${LUMA_COLOR_SELECTIVE_COLOR_WGSL}
 ${LUMA_COLOR_USER_SATURATION_WGSL}
+${LUMA_COLOR_HDR_PREVIEW_WGSL}
 
 fn luminance709(color: vec3f) -> f32 {
   return dot(color, vec3f(0.2126, 0.7152, 0.0722));
@@ -200,8 +206,23 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f) -> vec4f {
     }
   }
 
+  // An HDR view replaces the SDR picture of a look without a LUT, drawn
+  // from the same scene value the gain-map export reads. The host sends
+  // HDR_VIEW_NONE for any look that has no HDR rendition.
   if (params.viewMode == VIEW_MODE_ORIGINAL) {
     styledColor = technicalBaseDisplayColor;
+  } else if (params.hdrView == HDR_VIEW_ABOVE_SDR) {
+    styledColor = linearToSrgb(
+      hdrAboveSdrDisplayLinear(editedBaseSceneLinearProPhoto, editedBaseDisplayLinear)
+    );
+  } else if (params.hdrView == HDR_VIEW_STOP_DOWN) {
+    styledColor = linearToSrgb(hdrStopDownDisplayLinear(editedBaseSceneLinearProPhoto));
+  } else if (params.hdrView == HDR_VIEW_EXTENDED) {
+    // Above SDR white for a display that shows it: no upper clamp.
+    return vec4f(
+      linearToSrgbExtended(hdrRenditionDisplayLinear(editedBaseSceneLinearProPhoto)),
+      1.0
+    );
   }
 
   return vec4f(clamp01v(styledColor), 1.0);

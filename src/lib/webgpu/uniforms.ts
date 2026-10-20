@@ -12,7 +12,10 @@ import {
   resolveToneParams,
 } from '@lumaforge/luma-color-runtime'
 
-import type { PreviewSurfaceOutput } from '~/lib/preview/preview-view'
+import type {
+  PreviewHdrOutput,
+  PreviewSurfaceOutput,
+} from '~/lib/preview/preview-view'
 
 import { resolveGpuPreviewLook } from './lut-profile'
 import {
@@ -31,6 +34,8 @@ import {
  */
 export type GpuPreviewParams = ColorGraphIntent & {
   readonly output: PreviewSurfaceOutput
+  /** The HDR rendition in place of the processed SDR picture; unset, SDR. */
+  readonly hdrOutput?: PreviewHdrOutput
 }
 
 export const DEFAULT_PARAMS: GpuPreviewParams = {
@@ -57,6 +62,12 @@ export const DEFAULT_PARAMS: GpuPreviewParams = {
 const OUTPUT_UNIFORMS: Record<PreviewSurfaceOutput, 0 | 1> = {
   processed: 0,
   'technical-original': 1,
+}
+
+const HDR_OUTPUT_UNIFORMS: Record<PreviewHdrOutput, 1 | 2 | 3> = {
+  'above-sdr': 1,
+  'stop-down': 2,
+  extended: 3,
 }
 
 export const STYLE_KIND_UNIFORMS: Record<LookStyleKind, 0 | 1 | 2> = {
@@ -162,4 +173,12 @@ export function packUniforms(
   writeUniformI32(v, 'lutInputRange', lutProfileUniforms.lutInputRange)
   writeUniformI32(v, 'lutOutputRange', lutProfileUniforms.lutOutputRange)
   writeUniformI32(v, 'selectiveColorActive', selectiveColorActive ? 1 : 0)
+  // Only a drawn look without a LUT or built-in style has an HDR rendition.
+  const hasHdrRendition =
+    drawnLut === null && drawn.look.styleKind !== 'builtin'
+  writeUniformI32(
+    v,
+    'hdrView',
+    p.hdrOutput && hasHdrRendition ? HDR_OUTPUT_UNIFORMS[p.hdrOutput] : 0,
+  )
 }

@@ -1,3 +1,5 @@
+import type { HdrPreviewView } from '@lumaforge/luma-color-runtime'
+
 /**
  * How the app shows the photo, apart from the color the user asked for and
  * from the executor that draws it. The mode and compare split live on the
@@ -25,6 +27,14 @@ export const DEFAULT_PREVIEW_VIEW: PreviewView = Object.freeze({
  * selection, never a color intent.
  */
 export type PreviewSurfaceOutput = 'processed' | 'technical-original'
+
+/**
+ * What the processed surface draws of the gain-map export's HDR rendition in
+ * place of the SDR picture: one of the views any display can show, or
+ * `extended`, the rendition itself for a surface that shows values above SDR
+ * white. Unset, it draws the SDR picture.
+ */
+export type PreviewHdrOutput = HdrPreviewView | 'extended'
 
 /**
  * The processed surface's output for a view mode. Compare draws the processed
