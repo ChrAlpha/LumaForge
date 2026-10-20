@@ -1,6 +1,8 @@
 import type { LUTData } from '@lumaforge/luma-color-runtime'
 import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 
+import { isHdrDisplay } from '~/lib/preview/hdr-display'
+
 import { GPUReadbackJobs } from './async-resources'
 import type {
   PipelineStats,
@@ -48,6 +50,7 @@ export class WebGPUProcessingPipeline {
   private uniformUploads = 0
   private processDraws = 0
   private readonly readbacks = new GPUReadbackJobs()
+  private extendedRange = false
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
 
@@ -63,7 +66,13 @@ export class WebGPUProcessingPipeline {
       lease.onLost((info) =>
         this.fail(new Error(`WEBGPU_DEVICE_LOST: ${info.message}`)),
       )
-      const format = navigator.gpu.getPreferredCanvasFormat()
+      // On a display that shows more than SDR, a float canvas with extended
+      // tone mapping can show the HDR rendition; SDR frames look the same on
+      // it. Elsewhere the preferred format keeps the cheaper swap chain.
+      const wantsExtendedRange = isHdrDisplay()
+      const format: GPUTextureFormat = wantsExtendedRange
+        ? 'rgba16float'
+        : navigator.gpu.getPreferredCanvasFormat()
       const generic = await getWebGPUPrograms(lease.device, format)
       if (this.disposed || this.lost)
         throw new Error('WEBGPU_INITIALIZATION_CANCELLED')
@@ -101,9 +110,15 @@ export class WebGPUProcessingPipeline {
       if (!this.context) throw new Error('WEBGPU_CANVAS_UNAVAILABLE')
       this.context.configure({
         device: lease.device,
-        format: navigator.gpu.getPreferredCanvasFormat(),
+        format,
         alphaMode: 'opaque',
+        ...(wantsExtendedRange ? { toneMapping: { mode: 'extended' } } : {}),
       })
+      // A browser without canvas tone mapping leaves the member out of the
+      // configuration it reports; the canvas then shows SDR only.
+      this.extendedRange =
+        wantsExtendedRange &&
+        this.context.getConfiguration?.()?.toneMapping?.mode === 'extended'
       lease.device.addEventListener('uncapturederror', this.onDeviceError)
       this.frames = new WebGPUFrameScheduler(
         () => this.drawFrame(),
@@ -349,6 +364,7 @@ export class WebGPUProcessingPipeline {
       float32Filterable: device.features.has('float32-filterable'),
       rendererInfo: info.description || info.device || 'WebGPU',
       vendorInfo: info.vendor,
+      extendedRange: this.extendedRange,
     }
   }
   getResourceStats() {

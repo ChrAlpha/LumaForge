@@ -9,6 +9,11 @@ export interface PreviewGpuCapabilities {
   float32Filterable: boolean
   rendererInfo: string
   vendorInfo: string
+  /**
+   * The canvas shows values above SDR white: a float canvas with extended
+   * tone mapping, configured on a display that reported high dynamic range.
+   */
+  extendedRange: boolean
 }
 
 export interface PipelineStats {

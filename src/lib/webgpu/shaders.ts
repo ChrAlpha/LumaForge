@@ -263,10 +263,12 @@ export const PREVIEW_OUTPUT_SHADER = /* wgsl */ `
 @group(0) @binding(0) var processedTexture: texture_2d<f32>;
 @group(0) @binding(1) var processedSampler: sampler;
 
+// No upper clamp: an 8-bit target clamps on write, and a float canvas with
+// extended tone mapping shows the HDR rendition's values above SDR white.
 @fragment
 fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
   let color = textureSampleLevel(processedTexture, processedSampler, texCoord, 0.0).rgb;
-  return vec4f(clamp(color, vec3f(0.0), vec3f(1.0)), 1.0);
+  return vec4f(max(color, vec3f(0.0)), 1.0);
 }
 `
 

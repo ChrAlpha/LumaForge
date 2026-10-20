@@ -331,6 +331,62 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         add(name, false, { error: String(error), stack: error.stack })
       }
     }
+    // On a display that reports high dynamic range the pipeline configures
+    // a float canvas with extended tone mapping and reports extended range
+    // only while the browser keeps that configuration. An SDR frame presents
+    // on it as on the default canvas, which reports no extended range.
+    try {
+      const matchMedia = window.matchMedia
+      window.matchMedia = (query) =>
+        query === '(dynamic-range: high)'
+          ? {
+              matches: true,
+              media: query,
+              addEventListener() {},
+              removeEventListener() {},
+            }
+          : matchMedia.call(window, query)
+      let extended
+      try {
+        extended = await createPipeline(97, 65)
+      } finally {
+        window.matchMedia = matchMedia
+      }
+      try {
+        const configuration = extended.canvas
+          .getContext('webgpu')
+          .getConfiguration?.()
+        const extendedRange = extended.pipeline.getCapabilities().extendedRange
+        add(
+          'extended-range/configuration',
+          configuration?.format === 'rgba16float' &&
+            extendedRange ===
+              (configuration?.toneMapping?.mode === 'extended') &&
+            gpu.getCapabilities().extendedRange === false,
+          {
+            format: configuration?.format ?? null,
+            toneMapping: configuration?.toneMapping ?? null,
+            extendedRange,
+          },
+        )
+        extended.pipeline.uploadImage(fixture)
+        extended.pipeline.setParams({ ...neutral, userExposureEv: 0.35 })
+        extended.pipeline.render()
+        await extended.pipeline.waitForGpu()
+        const pixels = await extended.pipeline.readProcessedPixelsAsync()
+        if (!pixels) throw new Error('PROCESSED_PIXELS_MISSING')
+        check(
+          'extended-range/sdr-presented',
+          await readPresentedCanvas(extended.canvas),
+          toDisplayBytes(pixels),
+          PRESENTED,
+        )
+      } finally {
+        extended.dispose()
+      }
+    } catch (error) {
+      add('extended-range', false, { error: String(error), stack: error.stack })
+    }
     const snapshotParams = {
       userExposureEv: 0.35,
       userTemperature: 30,
