@@ -5,13 +5,14 @@ import type {
   LUTData,
   RawRenderExposure,
   SupportedExportColorGraphDescriptor,
+  UnsupportedLUTOutputCause,
 } from '@lumaforge/luma-color-runtime'
 import {
   NEUTRAL_USER_COLOR_INTENT,
   pickLookSelection,
   pickUserColorIntent,
-  resolveEffectiveLUTOutputTransfer,
   resolveExportColorGraph,
+  resolveUnsupportedLUTOutputReason,
 } from '@lumaforge/luma-color-runtime'
 
 import type { CpuPreviewVariant } from './worker-bridge/protocol'
@@ -118,24 +119,23 @@ const NO_LOOK: LookSelection = Object.freeze({
   intensity: 0,
 })
 
+const LUT_OUTPUT_REFUSAL_REASONS: Record<
+  UnsupportedLUTOutputCause,
+  PreviewColorPlanReason
+> = {
+  'output-range-unknown': 'lut-output-range-unknown',
+  'output-profile-missing': 'lut-output-profile-missing',
+  'output-transfer-linear': 'lut-output-transfer-linear',
+}
+
 /** Why export refuses a custom LUT's contract, or null when it accepts it. */
 function lutContractRefusal(lut: LUTData): PreviewColorPlanReason | null {
   const resolution = lut.profileResolution
   if (resolution.kind === 'unsupported-output') return 'lut-output-unsupported'
   if (resolution.kind !== 'confirmed') return 'lut-input-unconfirmed'
 
-  const { profile } = resolution
-  if (profile.outputRange === 'unknown') return 'lut-output-range-unknown'
-  if (
-    profile.role !== 'display-look' &&
-    (!profile.outputGamut || !profile.outputTransfer || !profile.outputRange)
-  ) {
-    return 'lut-output-profile-missing'
-  }
-  const outputTransfer = resolveEffectiveLUTOutputTransfer(profile)
-  if (!outputTransfer) return 'lut-output-profile-missing'
-  if (outputTransfer === 'linear') return 'lut-output-transfer-linear'
-  return null
+  const refusal = resolveUnsupportedLUTOutputReason(resolution.profile)
+  return refusal ? LUT_OUTPUT_REFUSAL_REASONS[refusal.cause] : null
 }
 
 function resolveTsGraph(

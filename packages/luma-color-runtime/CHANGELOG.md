@@ -89,6 +89,10 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   accepts exactly these, and manifest readers validate against them.
 - `resolveEffectiveLUTOutputTransfer(profile)`: the output transfer a LUT
   applies, the declared one or a display look's input transfer.
+- `UnsupportedLUTOutputReason.cause` (`UnsupportedLUTOutputCause`): the
+  contract gap behind a refused LUT output (`output-range-unknown`,
+  `output-profile-missing`, `output-transfer-linear`), so readers report it
+  without restating the export rules.
 
 ### Fixed
 

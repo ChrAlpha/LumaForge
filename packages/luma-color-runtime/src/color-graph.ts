@@ -170,13 +170,22 @@ export function resolveEffectiveLUTOutputTransfer(
   return undefined
 }
 
+/** The contract gap behind an `UnsupportedLUTOutputReason`. */
+export type UnsupportedLUTOutputCause =
+  | 'output-range-unknown'
+  | 'output-profile-missing'
+  | 'output-transfer-linear'
+
 /**
  * Why a confirmed LUT profile cannot feed full-resolution JPEG export:
  * `incomplete-output` while its output still has to be stated, and
- * `unsupported-output` when the output it states cannot be encoded.
+ * `unsupported-output` when the output it states cannot be encoded. `cause`
+ * names the gap, so previews and protocol adapters report it without
+ * restating these rules.
  */
 export interface UnsupportedLUTOutputReason {
   code: 'incomplete-output' | 'unsupported-output'
+  cause: UnsupportedLUTOutputCause
   message: string
 }
 
@@ -186,6 +195,7 @@ export function resolveUnsupportedLUTOutputReason(
   if (profile.outputRange === 'unknown') {
     return {
       code: 'incomplete-output',
+      cause: 'output-range-unknown',
       message:
         'This LUT output range must be explicit before full-resolution JPEG export.',
     }
@@ -197,6 +207,7 @@ export function resolveUnsupportedLUTOutputReason(
   ) {
     return {
       code: 'incomplete-output',
+      cause: 'output-profile-missing',
       message: 'Choose a LUT output profile before full-resolution export.',
     }
   }
@@ -205,6 +216,7 @@ export function resolveUnsupportedLUTOutputReason(
   if (!effectiveOutputTransfer) {
     return {
       code: 'incomplete-output',
+      cause: 'output-profile-missing',
       message: 'Choose a LUT output profile before full-resolution export.',
     }
   }
@@ -212,6 +224,7 @@ export function resolveUnsupportedLUTOutputReason(
   if (effectiveOutputTransfer === 'linear') {
     return {
       code: 'unsupported-output',
+      cause: 'output-transfer-linear',
       message:
         'This LUT output transfer is not supported by full-resolution JPEG export.',
     }

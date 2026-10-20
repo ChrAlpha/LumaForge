@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ExportColorGraphInput, ExportColorGraphStep } from './color-graph'
-import { resolveExportColorGraph } from './color-graph'
+import {
+  resolveExportColorGraph,
+  resolveUnsupportedLUTOutputReason,
+} from './color-graph'
 import { generateIdentityLUT, toLUTData } from './cube-parser'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
@@ -691,5 +694,37 @@ describe('resolveExportColorGraph', () => {
       }
       expect(graphStep.bands).toEqual(bakeStep.bands)
     })
+  })
+})
+
+describe('resolveUnsupportedLUTOutputReason', () => {
+  const technical: LUTColorProfile = {
+    ...registryProfile('panasonic-vgamut-vlog'),
+    role: 'technical-output',
+    outputGamut: 'srgb-rec709',
+    outputTransfer: 'gamma24',
+    outputRange: 'full',
+  }
+
+  it('accepts a complete display-encoded output', () => {
+    expect(resolveUnsupportedLUTOutputReason(technical)).toBeUndefined()
+  })
+
+  it.each([
+    [{ outputRange: 'unknown' }, 'incomplete-output', 'output-range-unknown'],
+    [
+      { outputTransfer: undefined },
+      'incomplete-output',
+      'output-profile-missing',
+    ],
+    [
+      { outputTransfer: 'linear' },
+      'unsupported-output',
+      'output-transfer-linear',
+    ],
+  ] as const)('names the gap of %o', (change, code, cause) => {
+    expect(
+      resolveUnsupportedLUTOutputReason({ ...technical, ...change }),
+    ).toMatchObject({ code, cause })
   })
 })
