@@ -2,7 +2,12 @@ import type {
   ExportColorGraphDescriptor,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
-import { createRowBandProcessor } from '@lumaforge/luma-color-runtime'
+import {
+  createHdrGainMapRowBandProcessor,
+  createRowBandProcessor,
+  HDR_GAIN_MAP_NEUTRAL_CODE,
+  resolveHdrGainMapSupport,
+} from '@lumaforge/luma-color-runtime'
 import type {
   LumaRawExportCapability,
   LumaRawProcessedWindow,
@@ -20,6 +25,12 @@ import {
   planGeometryTiles,
   resampleGeometryTile,
 } from './geometry/export-geometry'
+import {
+  createGainMapContainer,
+  HDR_GAIN_MAP_JPEG_QUALITY,
+} from './jpeg/gain-map-container'
+import type { ExportOutputResult } from './jpeg/output-result'
+import { materializeOutputBlob } from './jpeg/output-result'
 import type { JpegRowSink, JpegRowWriter } from './jpeg/row-writer'
 import { createJpegRowWriter } from './jpeg/row-writer'
 import { createWasmJpegRowSink } from './jpeg/wasm-row-sink'
@@ -72,6 +83,14 @@ export type RunFullResolutionJpegExportInput = {
    */
   geometry?: ExportGeometry
   retryPolicy?: 'in-process' | 'surface-resource-failure'
+  /**
+   * Export an ISO 21496-1 gain-map JPEG: the SDR export, byte for byte, as
+   * the primary image, plus the gain map to the graph's HDR rendition. A
+   * graph without one (a LUT look) is refused before any read. The gain map
+   * is encoded through `sink` (the WASM encoder by default) and handed to
+   * the primary sink when it closes.
+   */
+  hdrGainMap?: { sink?: JpegRowSink }
 }
 
 export class FullResExportResourceFailure extends Error {
@@ -86,7 +105,12 @@ export class FullResExportResourceFailure extends Error {
 
 type PreparedStrip = {
   index: number
-  rows: Array<{ bytes: Uint8Array; rowCount: number }>
+  rows: Array<{
+    bytes: Uint8Array
+    /** The gain map rows of a gain-map export, matching `bytes`. */
+    gainMap: Uint8Array | null
+    rowCount: number
+  }>
   metrics: {
     rows: number
     rawReadMs: number
@@ -135,6 +159,73 @@ function createWriter(
     quality: input.quality ?? 0.92,
     sink: input.jpegSink ?? createWasmJpegRowSink(),
   })
+}
+
+const GAIN_MAP_MATTE = [
+  HDR_GAIN_MAP_NEUTRAL_CODE,
+  HDR_GAIN_MAP_NEUTRAL_CODE,
+  HDR_GAIN_MAP_NEUTRAL_CODE,
+] as const
+
+/**
+ * The row-band color stage of one strip preparer: the SDR bytes, plus the
+ * gain map rows when the export carries one. Both reuse their buffers.
+ */
+type StripColorStage = {
+  rowBandRows: number
+  process: (
+    source: Uint16Array,
+    rowCount: number,
+  ) => { sdr: Uint8Array; gainMap: Uint8Array | null }
+}
+
+function createStripColorStage(input: {
+  width: number
+  rowBandRows: number
+  graph: SupportedExportColorGraphDescriptor
+  gainMap: boolean
+}): StripColorStage {
+  const { width, rowBandRows, graph } = input
+  if (input.gainMap) {
+    const processor = createHdrGainMapRowBandProcessor({
+      width,
+      rowBandRows,
+      graph,
+    })
+    return {
+      rowBandRows: processor.rowBandRows,
+      process: (source, rowCount) =>
+        processor.processUint16Rows(source, rowCount),
+    }
+  }
+  const processor = createRowBandProcessor({ width, rowBandRows, graph })
+  return {
+    rowBandRows: processor.rowBandRows,
+    process: (source, rowCount) => ({
+      sdr: processor.processUint16Rows(source, rowCount),
+      gainMap: null,
+    }),
+  }
+}
+
+function createGainMapWriter(
+  input: RunFullResolutionJpegExportInput,
+  output: { width: number; height: number },
+) {
+  if (!input.hdrGainMap) return null
+  return createJpegRowWriter({
+    width: output.width,
+    height: output.height,
+    quality: HDR_GAIN_MAP_JPEG_QUALITY,
+    sink: input.hdrGainMap.sink ?? createWasmJpegRowSink(),
+  })
+}
+
+async function outputBytes(output: ExportOutputResult) {
+  if (output.kind === 'bytes') return output.bytes
+  return new Uint8Array(
+    await (await materializeOutputBlob(output)).arrayBuffer(),
+  )
 }
 
 function throwIfAborted(signal?: AbortSignal) {
@@ -234,10 +325,11 @@ function createGeometryStripPreparer(
   signal: AbortSignal,
 ) {
   const outputWidth = planned.outputWidth
-  const rowBandProcessor = createRowBandProcessor({
+  const rowBandProcessor = createStripColorStage({
     width: outputWidth,
     rowBandRows: Math.min(64, stripRows),
     graph,
+    gainMap: Boolean(input.hdrGainMap),
   })
   const stripData = new Uint16Array(outputWidth * stripRows * 3)
   const coverage = new Uint8Array(outputWidth * stripRows)
@@ -316,11 +408,11 @@ function createGeometryStripPreparer(
       )
       const bandStart = row * outputWidth * 3
       const rowColorStart = nowMs()
-      const outputRows = rowBandProcessor.processUint16Rows(
+      const outputRows = rowBandProcessor.process(
         stripData.subarray(bandStart, bandStart + outputWidth * rowCount * 3),
         rowCount,
       )
-      const bytes = new Uint8Array(outputRows)
+      const bytes = new Uint8Array(outputRows.sdr)
       // Matte in output space: a linear matte fed through the color graph
       // would come back as whatever the tone curve and LUT made of it.
       applyGeometryMatte({
@@ -329,7 +421,20 @@ function createGeometryStripPreparer(
         pixelCount: outputWidth * rowCount,
         coverageOffset: row * outputWidth,
       })
-      rows.push({ bytes, rowCount })
+      const gainMap = outputRows.gainMap
+        ? new Uint8Array(outputRows.gainMap)
+        : null
+      if (gainMap) {
+        // The matte has no HDR rendition of its own: no gain.
+        applyGeometryMatte({
+          rgb8: gainMap,
+          coverage,
+          pixelCount: outputWidth * rowCount,
+          coverageOffset: row * outputWidth,
+          matte: GAIN_MAP_MATTE,
+        })
+      }
+      rows.push({ bytes, gainMap, rowCount })
       colorMs += nowMs() - rowColorStart
     }
 
@@ -352,10 +457,11 @@ function createStripPreparer(
   graph: SupportedExportColorGraphDescriptor,
   signal: AbortSignal,
 ) {
-  const rowBandProcessor = createRowBandProcessor({
+  const rowBandProcessor = createStripColorStage({
     width: input.capability.width,
     rowBandRows: Math.min(64, stripRows),
     graph,
+    gainMap: Boolean(input.hdrGainMap),
   })
   const rgb16Band = new Uint16Array(
     input.capability.width * rowBandProcessor.rowBandRows * 3,
@@ -405,9 +511,10 @@ function createStripPreparer(
       for (let bandRow = 0; bandRow < rowCount; bandRow += 1) {
         source.set(tile.row(row + bandRow), bandRow * tile.width * 3)
       }
-      const outputRows = rowBandProcessor.processUint16Rows(source, rowCount)
+      const outputRows = rowBandProcessor.process(source, rowCount)
       rows.push({
-        bytes: new Uint8Array(outputRows),
+        bytes: new Uint8Array(outputRows.sdr),
+        gainMap: outputRows.gainMap ? new Uint8Array(outputRows.gainMap) : null,
         rowCount,
       })
       colorMs += nowMs() - rowColorStart
@@ -439,6 +546,9 @@ export async function runFullResolutionJpegExport(
     throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
   }
   const graph = input.graph
+  if (input.hdrGainMap && !resolveHdrGainMapSupport(graph).supported) {
+    throw new Error('FULL_RES_EXPORT_HDR_UNSUPPORTED_LOOK')
+  }
   // Planning validates the geometry before a single window is read, so an
   // unexportable transform fails closed instead of part way through a file.
   const planned = input.geometry
@@ -482,7 +592,9 @@ export async function runFullResolutionJpegExport(
       halo: 2,
     })
     let writer: JpegRowWriter | null = null
+    let gainMapWriter: JpegRowWriter | null = null
     let closed = false
+    let gainMapClosed = false
     const attemptStripMetrics: ExportPerfMetric[] = []
     const attemptAbortScope = createAttemptAbortScope(input.signal)
 
@@ -506,6 +618,7 @@ export async function runFullResolutionJpegExport(
         makePreparer(),
       ]
       writer = createWriter(input, outputSize)
+      gainMapWriter = createGainMapWriter(input, outputSize)
       let completedStrips = 0
 
       await runOrderedConcurrent(
@@ -527,6 +640,11 @@ export async function runFullResolutionJpegExport(
           for (const rowChunk of prepared.rows) {
             const jpegStart = nowMs()
             await writer!.writeRows(rowChunk.bytes, rowChunk.rowCount)
+            if (gainMapWriter) {
+              if (!rowChunk.gainMap)
+                throw new Error('HDR_GAIN_MAP_ROWS_MISSING')
+              await gainMapWriter.writeRows(rowChunk.gainMap, rowChunk.rowCount)
+            }
             jpegWriteMs += nowMs() - jpegStart
           }
 
@@ -564,8 +682,24 @@ export async function runFullResolutionJpegExport(
         },
       )
 
-      const output = await writer.close()
-      closed = true
+      let output: ExportOutputResult
+      if (gainMapWriter) {
+        const gainMapOutput = await gainMapWriter.close()
+        gainMapClosed = true
+        output = await writer.close({
+          gainMapContainer: createGainMapContainer(
+            await outputBytes(gainMapOutput),
+          ),
+        })
+        closed = true
+        // A sink that did not store the gain map would deliver an SDR file.
+        if (!output.gainMap) {
+          throw new Error('FULL_RES_EXPORT_GAIN_MAP_SINK_UNSUPPORTED')
+        }
+      } else {
+        output = await writer.close()
+        closed = true
+      }
       if (metricCollector) {
         for (const metric of attemptStripMetrics) {
           input.onMetric?.(metric)
@@ -589,6 +723,13 @@ export async function runFullResolutionJpegExport(
       if (writer && !closed) {
         try {
           await writer.abort()
+        } catch {
+          // Preserve the original orchestration failure.
+        }
+      }
+      if (gainMapWriter && !gainMapClosed) {
+        try {
+          await gainMapWriter.abort()
         } catch {
           // Preserve the original orchestration failure.
         }

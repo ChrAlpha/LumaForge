@@ -3,9 +3,19 @@
 // browser export worker, and the CLI all produce this shape; storage-bound
 // file-backed implementations (OPFS) live with their environment.
 
+import type { JpegGainMapLayout } from './gain-map-container'
 import type { JpegExportMetadata } from './jpeg-metadata'
 
-export type BlobOutputResult = {
+/**
+ * Set on a gain-map export: the stored bytes are the metadata-free primary
+ * followed by the gain map, and delivery inserts the primary segments that
+ * index it (`planJpegMetadataInjection` with this layout).
+ */
+type GainMapOutput = {
+  gainMap?: JpegGainMapLayout
+}
+
+export type BlobOutputResult = GainMapOutput & {
   kind: 'blob'
   filename: string
   blob: Blob
@@ -15,7 +25,7 @@ export type BlobOutputResult = {
   sha256?: string
 }
 
-export type FileBackedOutputResult = {
+export type FileBackedOutputResult = GainMapOutput & {
   kind: 'file-backed'
   exportId: string
   filename: string
@@ -36,7 +46,7 @@ export type FileBackedOutputResult = {
   deliveryMetadata?: JpegExportMetadata | null
 }
 
-export type BytesOutputResult = {
+export type BytesOutputResult = GainMapOutput & {
   kind: 'bytes'
   filename: string
   bytes: Uint8Array
@@ -55,6 +65,7 @@ export function createBlobOutputResult(input: {
   filename: string
   blob: Blob
   sha256?: string
+  gainMap?: JpegGainMapLayout
 }): BlobOutputResult {
   return {
     kind: 'blob',
@@ -63,6 +74,7 @@ export function createBlobOutputResult(input: {
     byteLength: input.blob.size,
     mimeType: input.blob.type || 'image/jpeg',
     ...(input.sha256 ? { sha256: input.sha256 } : {}),
+    ...(input.gainMap ? { gainMap: input.gainMap } : {}),
   }
 }
 
@@ -70,6 +82,7 @@ export function createBytesOutputResult(input: {
   filename: string
   bytes: Uint8Array
   mimeType?: string
+  gainMap?: JpegGainMapLayout
 }): BytesOutputResult {
   return {
     kind: 'bytes',
@@ -77,6 +90,7 @@ export function createBytesOutputResult(input: {
     bytes: input.bytes,
     byteLength: input.bytes.byteLength,
     mimeType: input.mimeType ?? 'image/jpeg',
+    ...(input.gainMap ? { gainMap: input.gainMap } : {}),
   }
 }
 

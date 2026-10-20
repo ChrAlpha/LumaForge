@@ -62,6 +62,7 @@ export {
   createJpegRowWriter,
   type JpegRowSink,
   type JpegRowSinkSession,
+  type JpegRowSinkTrailer,
   type JpegRowWriter,
 } from './jpeg/row-writer'
 export {

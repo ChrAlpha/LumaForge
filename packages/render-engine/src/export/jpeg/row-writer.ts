@@ -1,8 +1,18 @@
 import type { ExportOutputResult } from './output-result'
 
+/**
+ * What a gain-map export appends after the primary image. The sink stores it
+ * right after the primary's EOI and reports the primary's stored length as
+ * the result's `gainMap` layout; a sink that cannot does not report one, and
+ * the export refuses its result.
+ */
+export type JpegRowSinkTrailer = {
+  gainMapContainer: Uint8Array
+}
+
 export type JpegRowSinkSession = {
   writeRows: (rgbRows: Uint8Array, rowCount: number) => Promise<void>
-  close: () => Promise<ExportOutputResult>
+  close: (trailer?: JpegRowSinkTrailer) => Promise<ExportOutputResult>
   abort: () => Promise<void> | void
 }
 
@@ -16,7 +26,7 @@ export type JpegRowSink = {
 
 export type JpegRowWriter = {
   writeRows: (rgbRows: Uint8Array, rowCount: number) => Promise<void>
-  close: () => Promise<ExportOutputResult>
+  close: (trailer?: JpegRowSinkTrailer) => Promise<ExportOutputResult>
   abort: () => Promise<void>
 }
 
@@ -87,7 +97,7 @@ export function createJpegRowWriter(input: {
         throw error
       }
     },
-    async close() {
+    async close(trailer) {
       assertOpen()
 
       if (writtenRows !== input.height) {
@@ -100,9 +110,9 @@ export function createJpegRowWriter(input: {
       }
 
       try {
-        const blob = await session.close()
+        const result = await session.close(trailer)
         state = 'closed'
-        return blob
+        return result
       } catch (error) {
         try {
           await abortSession()

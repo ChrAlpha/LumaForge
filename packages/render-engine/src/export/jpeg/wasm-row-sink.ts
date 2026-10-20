@@ -102,16 +102,25 @@ export function createWasmJpegRowSink(
             throw createJpegRuntimeUnavailableError(error)
           }
         },
-        async close() {
+        async close(trailer) {
           ensureOpen()
 
           try {
-            const blob = await encoder.finish()
+            const primary = await encoder.finish()
             state = 'closed'
             disposeRuntime()
+            if (!trailer) {
+              return createBlobOutputResult({
+                filename: 'export.jpg',
+                blob: primary,
+              })
+            }
             return createBlobOutputResult({
               filename: 'export.jpg',
-              blob,
+              blob: new Blob([primary, trailer.gainMapContainer as BlobPart], {
+                type: primary.type || 'image/jpeg',
+              }),
+              gainMap: { primaryByteLength: primary.size },
             })
           } catch (error) {
             try {

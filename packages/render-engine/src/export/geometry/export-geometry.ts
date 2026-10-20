@@ -439,13 +439,16 @@ export function applyGeometryMatte(input: {
   coverage: Uint8Array
   pixelCount: number
   coverageOffset: number
+  /** The matte's samples; a gain map mattes with its no-gain code. */
+  matte?: readonly [number, number, number]
 }): void {
   const { rgb8, coverage, pixelCount, coverageOffset } = input
+  const [red, green, blue] = input.matte ?? EXPORT_GEOMETRY_MATTE
   for (let pixel = 0; pixel < pixelCount; pixel += 1) {
     if (coverage[coverageOffset + pixel] === 1) continue
     const offset = pixel * CHANNELS_PER_PIXEL
-    rgb8[offset] = EXPORT_GEOMETRY_MATTE[0]
-    rgb8[offset + 1] = EXPORT_GEOMETRY_MATTE[1]
-    rgb8[offset + 2] = EXPORT_GEOMETRY_MATTE[2]
+    rgb8[offset] = red
+    rgb8[offset + 1] = green
+    rgb8[offset + 2] = blue
   }
 }

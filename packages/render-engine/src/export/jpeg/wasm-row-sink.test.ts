@@ -53,6 +53,37 @@ describe('createWasmJpegRowSink', () => {
     expect(calls).toEqual(['rows', 'finish', 'dispose'])
   })
 
+  it('stores a gain map container after the primary and reports the layout', async () => {
+    const primary = new Uint8Array([0xFF, 0xD8, 0x01, 0xFF, 0xD9])
+    const container = new Uint8Array([0xFF, 0xD8, 0x02, 0xFF, 0xD9])
+    const sink = createWasmJpegRowSink(() => ({
+      createEncoder() {
+        return {
+          async writeRows() {},
+          async finish() {
+            return new Blob([primary], { type: 'image/jpeg' })
+          },
+          abort() {},
+        }
+      },
+      dispose() {},
+    }))
+    const session = sink.createSession({ width: 1, height: 1, quality: 0.9 })
+
+    await session.writeRows(new Uint8Array([0, 0, 0]), 1)
+    const output = await session.close({ gainMapContainer: container })
+
+    expect(output).toMatchObject({
+      kind: 'blob',
+      byteLength: 10,
+      gainMap: { primaryByteLength: 5 },
+    })
+    if (output.kind !== 'blob') throw new Error('expected blob-backed output')
+    expect(new Uint8Array(await output.blob.arrayBuffer())).toEqual(
+      new Uint8Array([...primary, ...container]),
+    )
+  })
+
   it('creates a fresh runtime per session and aborts on encoder failure', async () => {
     const calls: string[] = []
     let runtimeCount = 0

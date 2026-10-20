@@ -77,6 +77,19 @@ predates this file.
   `JPEG_GAIN_MAP_LAYOUT_INVALID`. `assertGainMapJpeg` and the ranged
   `verifyGainMapJpeg` refuse delivered bytes whose index or segments a
   decoder would not find (`JPEG_GAIN_MAP_VERIFICATION_FAILED`).
+- `runFullResolutionJpegExport` takes `hdrGainMap: { sink? }` to export an
+  ISO 21496-1 gain-map JPEG: the SDR export's rows, unchanged, to the primary
+  sink, and the gain map rows (`createHdrGainMapRowBandProcessor`, matted with
+  the no-gain code under geometry) to a second writer at quality 0.98, the
+  WASM encoder unless `sink` is given. A graph without an HDR rendition is
+  refused before any read (`FULL_RES_EXPORT_HDR_UNSUPPORTED_LOOK`). The
+  primary sink receives the gain map container as `close(trailer)`
+  (`JpegRowSinkTrailer`), stores it after the primary, and reports
+  `gainMap: { primaryByteLength }` on its result; a result without one is
+  refused (`FULL_RES_EXPORT_GAIN_MAP_SINK_UNSUPPORTED`).
+  `createWasmJpegRowSink`, `createBlobOutputResult` and
+  `createBytesOutputResult` carry the layout, and `applyGeometryMatte` takes
+  the `matte` samples to paint.
 
 ### Changed
 
