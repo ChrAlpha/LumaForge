@@ -382,15 +382,59 @@ function verifyGainMapHead(head: Uint8Array) {
  * as an HDR export.
  */
 export function assertGainMapJpeg(bytes: Uint8Array): void {
+  verifyRanges(bytes.length, (start, end) => bytes.subarray(start, end))
+}
+
+function verifyRanges(
+  byteLength: number,
+  read: (start: number, end: number) => Uint8Array,
+) {
   const primaryByteLength = verifyPrimaryHead(
-    bytes.subarray(0, VERIFIED_HEAD_BYTES),
-    bytes.length,
+    read(0, Math.min(byteLength, VERIFIED_HEAD_BYTES)),
+    byteLength,
   )
-  verifyEndOfImage(bytes.subarray(primaryByteLength - 2, primaryByteLength))
-  verifyEndOfImage(bytes.subarray(bytes.length - 2))
+  verifyEndOfImage(read(primaryByteLength - 2, primaryByteLength))
+  verifyEndOfImage(read(byteLength - 2, byteLength))
   verifyGainMapHead(
-    bytes.subarray(primaryByteLength, primaryByteLength + VERIFIED_HEAD_BYTES),
+    read(
+      primaryByteLength,
+      Math.min(byteLength, primaryByteLength + VERIFIED_HEAD_BYTES),
+    ),
   )
+}
+
+/**
+ * `assertGainMapJpeg` over the bytes `stored` delivers once `plan` inserts
+ * its block, read in place: a producer checks what it will hand over
+ * without building a second copy of the file.
+ */
+export function assertDeliveredGainMapJpeg(
+  stored: Uint8Array,
+  plan: { insertionOffset: number; segment: Uint8Array },
+): void {
+  const { insertionOffset, segment } = plan
+  const parts = [
+    { start: 0, bytes: stored.subarray(0, insertionOffset) },
+    { start: insertionOffset, bytes: segment },
+    {
+      start: insertionOffset + segment.length,
+      bytes: stored.subarray(insertionOffset),
+    },
+  ]
+  verifyRanges(stored.length + segment.length, (start, end) => {
+    const out = new Uint8Array(Math.max(0, end - start))
+    for (const part of parts) {
+      const from = Math.max(start, part.start)
+      const to = Math.min(end, part.start + part.bytes.length)
+      if (from < to) {
+        out.set(
+          part.bytes.subarray(from - part.start, to - part.start),
+          from - start,
+        )
+      }
+    }
+    return out
+  })
 }
 
 /** Delivered bytes read by range, so a large file is never loaded whole. */

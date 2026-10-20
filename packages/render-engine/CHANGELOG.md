@@ -74,8 +74,9 @@ predates this file.
   the primary's sRGB ICC profile, ISO 21496-1 version and MPF index after the
   EXIF segment, in the one block they already insert; with a layout the plan
   is never null, and a header it cannot place them in throws
-  `JPEG_GAIN_MAP_LAYOUT_INVALID`. `assertGainMapJpeg` and the ranged
-  `verifyGainMapJpeg` refuse delivered bytes whose index or segments a
+  `JPEG_GAIN_MAP_LAYOUT_INVALID`. `assertGainMapJpeg`, the ranged
+  `verifyGainMapJpeg`, and `assertDeliveredGainMapJpeg` (stored bytes and
+  the plan, read in place) refuse delivered bytes whose index or segments a
   decoder would not find (`JPEG_GAIN_MAP_VERIFICATION_FAILED`).
 - `runFullResolutionJpegExport` takes `hdrGainMap: { sink? }` to export an
   ISO 21496-1 gain-map JPEG: the SDR export's rows, unchanged, to the primary

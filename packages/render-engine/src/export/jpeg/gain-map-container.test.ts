@@ -7,6 +7,7 @@ import {
 import { describe, expect, it } from 'vitest'
 
 import {
+  assertDeliveredGainMapJpeg,
   assertGainMapJpeg,
   createGainMapContainer,
   verifyGainMapJpeg,
@@ -225,6 +226,28 @@ describe('gain-map JPEG delivery', () => {
           new Uint8Array(await blob.slice(start, end).arrayBuffer()),
       }),
     ).resolves.toBeUndefined()
+  })
+
+  it('verifies the delivered layout in place from the stored bytes and plan', () => {
+    const plan = planJpegMetadataInjection({
+      header: stored,
+      fullSize: stored.length,
+      metadata,
+      width: 4,
+      height: 2,
+      gainMap: layout,
+    })!
+    expect(() => assertDeliveredGainMapJpeg(stored, plan)).not.toThrow()
+    const exifOnly = planJpegMetadataInjection({
+      header: stored,
+      fullSize: stored.length,
+      metadata,
+      width: 4,
+      height: 2,
+    })!
+    expect(() => assertDeliveredGainMapJpeg(stored, exifOnly)).toThrow(
+      'JPEG_GAIN_MAP_VERIFICATION_FAILED',
+    )
   })
 
   it('refuses bytes a decoder would show only as SDR', () => {

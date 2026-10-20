@@ -33,6 +33,7 @@ export {
   type RunFullResolutionJpegExportInput,
 } from './full-res-export'
 export {
+  assertDeliveredGainMapJpeg,
   assertGainMapJpeg,
   createGainMapContainer,
   type GainMapJpegSource,
