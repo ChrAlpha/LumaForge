@@ -149,17 +149,67 @@ describe('parseCubeLUT size and data count', () => {
     expect(Array.from(lut.data.subarray(-3))).toEqual([1, 1, 1])
   })
 
-  it('skips 1D size and input-range keywords without counting them as rows', () => {
+  it('refuses a cube with a 1D shaper instead of reading its rows as 3D entries', () => {
+    const shaperRows = ['0.0 0.0 0.0', '0.5 0.5 0.5', '1.0 1.0 1.0']
     const content = [
-      'LUT_1D_SIZE 1024',
-      'LUT_1D_INPUT_RANGE 0.0 1.0',
-      'LUT_3D_INPUT_RANGE 0.0 1.0',
-      cubeText(),
+      'LUT_1D_SIZE 3',
+      'LUT_3D_SIZE 2',
+      ...shaperRows,
+      ...identityRows(2),
     ].join('\n')
-    const lut = parseCubeLUT(content)
+
+    expect(() => parseCubeLUT(content)).toThrow(
+      'Unsupported .cube file: 1D shaper LUTs (LUT_1D_SIZE) are not supported',
+    )
+  })
+
+  it('ignores a 1D input range when no 1D shaper is declared', () => {
+    const lut = parseCubeLUT(
+      ['LUT_1D_INPUT_RANGE 0.0 1.0', cubeText()].join('\n'),
+    )
 
     expect(lut.size).toBe(2)
     expect(lut.data.length).toBe(24)
+  })
+})
+
+describe('parseCubeLUT LUT_3D_INPUT_RANGE', () => {
+  it('reads the 3D input range as the domain of every channel', () => {
+    const lut = parseCubeLUT(
+      ['LUT_3D_INPUT_RANGE -0.25 1.5e0', cubeText()].join('\n'),
+    )
+
+    expect(lut.domainMin).toEqual([-0.25, -0.25, -0.25])
+    expect(lut.domainMax).toEqual([1.5, 1.5, 1.5])
+  })
+
+  it('accepts an input range that agrees with the DOMAIN lines', () => {
+    const lut = parseCubeLUT(
+      [
+        'LUT_3D_INPUT_RANGE 0 2',
+        cubeText({ domainMin: '0 0 0', domainMax: '2 2 2' }),
+      ].join('\n'),
+    )
+
+    expect(lut.domainMax).toEqual([2, 2, 2])
+  })
+
+  it('refuses an input range that contradicts the DOMAIN lines', () => {
+    const content = [
+      'LUT_3D_INPUT_RANGE 0 2',
+      cubeText({ domainMin: '0 0 0', domainMax: '1 1 1' }),
+    ].join('\n')
+
+    expect(() => parseCubeLUT(content)).toThrow(
+      'Invalid .cube file: LUT_3D_INPUT_RANGE contradicts DOMAIN_MIN/DOMAIN_MAX',
+    )
+  })
+
+  it('keeps the default domain when the input range line is malformed', () => {
+    const lut = parseCubeLUT(['LUT_3D_INPUT_RANGE 0', cubeText()].join('\n'))
+
+    expect(lut.domainMin).toEqual([0, 0, 0])
+    expect(lut.domainMax).toEqual([1, 1, 1])
   })
 })
 

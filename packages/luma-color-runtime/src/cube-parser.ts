@@ -32,6 +32,10 @@ const DOMAIN_MAX_RE = new RegExp(
   `DOMAIN_MAX\\s+(${CUBE_FLOAT_PATTERN})\\s+(${CUBE_FLOAT_PATTERN})\\s+(${CUBE_FLOAT_PATTERN})`,
   'i',
 )
+const INPUT_RANGE_3D_RE = new RegExp(
+  `LUT_3D_INPUT_RANGE\\s+(${CUBE_FLOAT_PATTERN})\\s+(${CUBE_FLOAT_PATTERN})`,
+  'i',
+)
 
 function stripCubeExtension(name: string): string {
   return name.replace(/\.cube$/i, '')
@@ -82,6 +86,8 @@ export function parseCubeLUT(
   let size = 0
   let domainMin: [number, number, number] = [0, 0, 0]
   let domainMax: [number, number, number] = [1, 1, 1]
+  let domainDeclared = false
+  let inputRange: [number, number] | undefined
   const comments: string[] = []
   const dataLines: string[] = []
   let inData = false
@@ -112,6 +118,7 @@ export function parseCubeLUT(
     if (line.startsWith('DOMAIN_MIN')) {
       const match = line.match(DOMAIN_MIN_RE)
       if (match) {
+        domainDeclared = true
         domainMin = [
           Number.parseFloat(match[1]),
           Number.parseFloat(match[2]),
@@ -124,6 +131,7 @@ export function parseCubeLUT(
     if (line.startsWith('DOMAIN_MAX')) {
       const match = line.match(DOMAIN_MAX_RE)
       if (match) {
+        domainDeclared = true
         domainMax = [
           Number.parseFloat(match[1]),
           Number.parseFloat(match[2]),
@@ -133,11 +141,23 @@ export function parseCubeLUT(
       continue
     }
 
-    if (
-      line.startsWith('LUT_1D_SIZE') ||
-      line.startsWith('LUT_1D_INPUT_RANGE') ||
-      line.startsWith('LUT_3D_INPUT_RANGE')
-    ) {
+    // A shaper's rows precede the 3D rows; reading them as 3D entries would
+    // shift the whole lattice, so a shaper LUT is refused rather than misread.
+    if (line.startsWith('LUT_1D_SIZE')) {
+      throw new Error(
+        'Unsupported .cube file: 1D shaper LUTs (LUT_1D_SIZE) are not supported',
+      )
+    }
+
+    if (line.startsWith('LUT_3D_INPUT_RANGE')) {
+      const match = line.match(INPUT_RANGE_3D_RE)
+      if (match) {
+        inputRange = [Number.parseFloat(match[1]), Number.parseFloat(match[2])]
+      }
+      continue
+    }
+
+    if (line.startsWith('LUT_1D_INPUT_RANGE')) {
       continue
     }
 
@@ -148,6 +168,22 @@ export function parseCubeLUT(
 
   if (size === 0) {
     throw new Error('Invalid .cube file: LUT_3D_SIZE not found')
+  }
+
+  // LUT_3D_INPUT_RANGE is the same domain on every channel.
+  if (inputRange) {
+    const [rangeMin, rangeMax] = inputRange
+    if (
+      domainDeclared &&
+      (domainMin.some((value) => value !== rangeMin) ||
+        domainMax.some((value) => value !== rangeMax))
+    ) {
+      throw new Error(
+        'Invalid .cube file: LUT_3D_INPUT_RANGE contradicts DOMAIN_MIN/DOMAIN_MAX',
+      )
+    }
+    domainMin = [rangeMin, rangeMin, rangeMin]
+    domainMax = [rangeMax, rangeMax, rangeMax]
   }
 
   const expectedEntries = size * size * size

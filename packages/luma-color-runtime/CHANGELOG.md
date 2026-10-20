@@ -90,6 +90,15 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 - `resolveEffectiveLUTOutputTransfer(profile)`: the output transfer a LUT
   applies, the declared one or a display look's input transfer.
 
+### Fixed
+
+- `parseCubeLUT` refuses a `.cube` file that declares a 1D shaper
+  (`LUT_1D_SIZE`). It used to skip the keyword and read the shaper rows as
+  the first 3D entries, which shifted the whole lattice without an error.
+- `parseCubeLUT` reads `LUT_3D_INPUT_RANGE` as the domain of every channel
+  instead of ignoring it, and refuses a file whose input range contradicts
+  its `DOMAIN_MIN`/`DOMAIN_MAX` lines.
+
 ## 0.2.1 - 2026-10-12
 
 A minor release over the published 0.1.1: it removes and changes public
