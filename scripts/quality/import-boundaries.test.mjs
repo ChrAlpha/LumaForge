@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ESLint } from 'eslint'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import { IMPORT_BOUNDARIES } from '../../plugins/eslint-import-boundaries.mjs'
 
@@ -119,6 +119,12 @@ const FIXTURES = [
 ]
 
 describe('import boundaries', () => {
+  // Loading the repository lint config and its plugins is the slow step, once;
+  // each lint after it takes milliseconds.
+  beforeAll(async () => {
+    await eslint.calculateConfigForFile(join(ROOT, `${RP}/probe.ts`))
+  }, 30_000)
+
   it('has a fixture for every boundary', () => {
     expect(new Set(FIXTURES.map(([boundary]) => boundary))).toEqual(
       new Set(IMPORT_BOUNDARIES.map(({ name }) => name)),
