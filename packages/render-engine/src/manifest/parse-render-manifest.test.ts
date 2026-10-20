@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { computeManifestSha256 } from './canonicalize'
 import { fingerprintColorGraph } from './color-graph-descriptor'
 import { createRenderManifest } from './create-render-manifest'
+import { OUTPUT_HDR_GAIN_MAP } from './hdr-gain-map-identity'
 import { parseRenderManifest } from './parse-render-manifest'
 import type { RenderManifest, RenderParams } from './render-manifest'
 import { projectManifestRenderParams } from './render-params'
@@ -141,6 +142,20 @@ describe('parseRenderManifest', () => {
     ])
     expect('max_pixels' in plain.policy).toBe(false)
     expect(parseRenderManifest(plain)).toEqual({ ok: true, manifest: plain })
+  })
+
+  it('accepts an export that carries the HDR gain map', () => {
+    const hdr = resealed((manifest) => {
+      manifest.output.hdr_gain_map = { ...OUTPUT_HDR_GAIN_MAP }
+    })
+    expect(hdr.output.hdr_gain_map).toEqual({
+      format: 'iso-21496-1',
+      gamut: 'rec2020',
+      reference_white_nits: 203,
+      nominal_peak_nits: 1000,
+      quality: 98,
+    })
+    expect(parseRenderManifest(hdr)).toEqual({ ok: true, manifest: hdr })
   })
 
   it('accepts selective color recorded as all eight bands', () => {
@@ -552,6 +567,33 @@ describe('parseRenderManifest', () => {
       ['output.quality'],
     ],
     ['a missing output hash', (m) => delete m.output.sha256, ['output.sha256']],
+    [
+      'a gain map on a preview',
+      (m) => {
+        m.kind = 'preview'
+        m.output.hdr_gain_map = { ...OUTPUT_HDR_GAIN_MAP }
+      },
+      ['output.hdr_gain_map'],
+    ],
+    [
+      'a gain map to another peak',
+      (m) =>
+        (m.output.hdr_gain_map = {
+          ...OUTPUT_HDR_GAIN_MAP,
+          nominal_peak_nits: 4000,
+        }),
+      ['output.hdr_gain_map.nominal_peak_nits'],
+    ],
+    [
+      'a gain map with a field no writer records',
+      (m) => (m.output.hdr_gain_map = { ...OUTPUT_HDR_GAIN_MAP, channels: 1 }),
+      ['output.hdr_gain_map.channels'],
+    ],
+    [
+      'a null gain map',
+      (m) => (m.output.hdr_gain_map = null),
+      ['output.hdr_gain_map'],
+    ],
   ]
 
   it.each(malformed)(

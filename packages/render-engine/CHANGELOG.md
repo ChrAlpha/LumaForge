@@ -90,6 +90,13 @@ predates this file.
   `createWasmJpegRowSink`, `createBlobOutputResult` and
   `createBytesOutputResult` carry the layout, and `applyGeometryMatte` takes
   the `matte` samples to paint.
+- `OutputIdentity.hdr_gain_map` (`OutputHdrGainMapIdentity`): an export
+  manifest records the HDR rendition its gain map adds (ISO 21496-1,
+  BT.2020, reference white and nominal peak in cd/m², gain map quality).
+  `createRenderManifest` writes `OUTPUT_HDR_GAIN_MAP` when
+  `output.hdrGainMap` is set, and `parseRenderManifest` accepts the section
+  only on an export manifest and only with exactly those values. The
+  manifest version stays 1; `output.color_space` stays the primary's `srgb`.
 
 ### Changed
 

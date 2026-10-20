@@ -38,6 +38,7 @@ import {
   isFields,
   SHA256_HEX,
 } from './color-graph-validation'
+import { OUTPUT_HDR_GAIN_MAP } from './hdr-gain-map-identity'
 import type { RenderManifest } from './render-manifest'
 
 export interface RenderManifestIssue {
@@ -340,6 +341,40 @@ function checkOutput(list: IssueList, manifest: Fields): void {
   list.integer(output, 'quality', 'output.quality', 1, 100)
   list.string(output, 'filename', 'output.filename')
   list.sha256(output, 'sha256', 'output.sha256')
+  const gainMap = list.optionalSection(
+    output,
+    'hdr_gain_map',
+    'output.hdr_gain_map',
+  )
+  if (gainMap) checkHdrGainMap(list, gainMap, manifest.kind)
+}
+
+/**
+ * Only an export carries a gain map, and only the one the current writers
+ * record: a replay re-renders it from these values, so another set would be
+ * reproduced as a different file.
+ */
+function checkHdrGainMap(list: IssueList, gainMap: Fields, kind: unknown) {
+  if (kind !== 'export') {
+    list.add('output.hdr_gain_map', 'is recorded only on export manifests.')
+  }
+  const expected: Fields = { ...OUTPUT_HDR_GAIN_MAP }
+  for (const [key, value] of Object.entries(expected)) {
+    if (gainMap[key] !== value) {
+      list.add(
+        `output.hdr_gain_map.${key}`,
+        `must be ${JSON.stringify(value)}, got ${describeValue(gainMap[key])}.`,
+      )
+    }
+  }
+  for (const key of Object.keys(gainMap)) {
+    if (!Object.hasOwn(expected, key)) {
+      list.add(
+        `output.hdr_gain_map.${key}`,
+        'is not a field the current writers record.',
+      )
+    }
+  }
 }
 
 function checkHeader(list: IssueList, manifest: Fields): void {

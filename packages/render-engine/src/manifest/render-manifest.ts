@@ -100,10 +100,27 @@ export interface ColorGraphIdentity {
 export interface OutputIdentity {
   readonly format: 'jpeg'
   readonly dimensions: { readonly width: number; readonly height: number }
+  /** The primary (SDR) image's color space, gain map or not. */
   readonly color_space: 'srgb'
   readonly quality: number
   readonly filename: string
   readonly sha256: string
+  /** Present only on an export that carries an HDR gain map. */
+  readonly hdr_gain_map?: OutputHdrGainMapIdentity
+}
+
+/**
+ * The HDR rendition an ISO 21496-1 gain map adds to the SDR JPEG: its
+ * primaries, the luminance linear 1.0 and the nominal peak stand for, and the
+ * gain map's JPEG quality (integer percent). Readers accept only the values
+ * the current writers record.
+ */
+export interface OutputHdrGainMapIdentity {
+  readonly format: 'iso-21496-1'
+  readonly gamut: 'rec2020'
+  readonly reference_white_nits: number
+  readonly nominal_peak_nits: number
+  readonly quality: number
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import type { SupportedExportColorGraphDescriptor } from '@lumaforge/luma-color-
 
 import { sealRenderManifest } from './canonicalize'
 import { colorGraphIdentity } from './color-graph-descriptor'
+import { OUTPUT_HDR_GAIN_MAP } from './hdr-gain-map-identity'
 import type {
   CalibrationIdentity,
   LutIdentity,
@@ -33,6 +34,8 @@ export type CreateRenderManifestInput = {
     readonly quality: number
     readonly filename: string
     readonly sha256: string
+    /** The JPEG carries the HDR gain map an export with `hdrGainMap` writes. */
+    readonly hdrGainMap?: boolean
   }
   readonly parent_manifest_sha256: string | null
   /** ISO 8601 UTC; defaults to now. */
@@ -61,6 +64,7 @@ export function createRenderManifest(
       quality: input.output.quality,
       filename: input.output.filename,
       sha256: input.output.sha256,
+      ...(input.output.hdrGainMap ? { hdr_gain_map: OUTPUT_HDR_GAIN_MAP } : {}),
     },
   })
 }

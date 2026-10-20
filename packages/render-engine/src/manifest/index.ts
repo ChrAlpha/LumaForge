@@ -26,6 +26,7 @@ export {
   type RecordedGeometryCheck,
   type RecordedGeometryRefusal,
 } from './export-geometry'
+export { OUTPUT_HDR_GAIN_MAP } from './hdr-gain-map-identity'
 export { type LutIdentityFailure, lutIdentityFromProfile } from './lut-identity'
 export {
   parseRenderManifest,
@@ -42,6 +43,7 @@ export type {
   LutIdentity,
   LutLocalFileIdentity,
   NativeArtifactEnvironment,
+  OutputHdrGainMapIdentity,
   OutputIdentity,
   PolicyChoice,
   RenderEnvironment,

@@ -13,6 +13,7 @@ import {
 } from './color-graph-descriptor'
 import type { CreateRenderManifestInput } from './create-render-manifest'
 import { createRenderManifest } from './create-render-manifest'
+import { OUTPUT_HDR_GAIN_MAP } from './hdr-gain-map-identity'
 import { lutIdentityFromProfile } from './lut-identity'
 import { parseRenderManifest } from './parse-render-manifest'
 import { projectManifestRenderParams } from './render-params'
@@ -118,6 +119,27 @@ describe('createRenderManifest', () => {
 
   it('writes a manifest the canonical reader accepts as written', () => {
     const written = JSON.parse(JSON.stringify(sealedExport())) as unknown
+    expect(parseRenderManifest(written)).toEqual({
+      ok: true,
+      manifest: written,
+    })
+  })
+
+  it('records the HDR gain map only when the export wrote one', () => {
+    expect('hdr_gain_map' in sealedExport().output).toBe(false)
+    const hdr = sealedExport({
+      output: {
+        width: 4,
+        height: 2,
+        quality: 92,
+        filename: 'final.jpg',
+        sha256: 'b'.repeat(64),
+        hdrGainMap: true,
+      },
+    })
+    expect(hdr.output.hdr_gain_map).toEqual(OUTPUT_HDR_GAIN_MAP)
+    expect(hdr.output.color_space).toBe('srgb')
+    const written = JSON.parse(JSON.stringify(hdr)) as unknown
     expect(parseRenderManifest(written)).toEqual({
       ok: true,
       manifest: written,
