@@ -497,5 +497,6 @@
   "raw.transform.preparing": "正在准备当前照片…",
   "raw.transform.previewReleased": "恢复预览后即可继续调整变换。",
   "raw.transform.hqExportReason": "按全分辨率导出可保留变换；若要导出 HQ 预览 JPEG，请先重置变换。",
-  "raw.transform.histogramUnavailable": "变换预览暂不提供直方图。"
+  "raw.transform.histogramUnavailable": "变换预览暂不提供直方图。",
+  "raw.transform.hdrPreviewUnavailable": "显示变换叠层时暂不提供 HDR 预览视图。"
 }

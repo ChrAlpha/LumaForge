@@ -572,6 +572,24 @@ describe('useCpuPreview renders', () => {
     expect(view.result.current.frame?.rgba[0]).toBe(40)
   })
 
+  it('asks for an HDR preview view on the processed photo only, rendering again as the view moves', () => {
+    const view = mount({ hdrView: 'above-sdr' })
+    expect(view.renders().at(-1)?.hdrView).toBe('above-sdr')
+    view.answer(10)
+    view.rerender({ hdrView: 'stop-down' })
+    expect(view.renders().at(-1)?.hdrView).toBe('stop-down')
+    view.answer(20)
+    view.rerender({ hdrView: undefined })
+    expect(view.renders()).toHaveLength(3)
+    expect(view.renders().at(-1)).not.toHaveProperty('hdrView')
+    view.answer(30)
+
+    // The original is never an HDR view.
+    view.rerender({ hdrView: 'above-sdr', variant: 'neutral' })
+    expect(view.renders().at(-1)?.variant).toBe('neutral')
+    expect(view.renders().at(-1)).not.toHaveProperty('hdrView')
+  })
+
   it('does not ask for a second original when the look moves while the first renders', () => {
     const view = mount()
     view.answer(200)

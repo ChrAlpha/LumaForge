@@ -9,7 +9,9 @@ import type {
   RawProcessingPipeline,
 } from '~/lib/webgpu/raw-processing-pipeline'
 
+import { useHdrPreview } from '../hooks/preview/useHdrPreview'
 import type { UseRawWorkflowReturn } from '../hooks/useRawWorkflow'
+import { cpuHdrPreviewView } from '../services/preview/hdr-preview-output'
 import { ComparePreviewStage } from './ComparePreviewStage'
 import type { RawRuntimeReadinessState } from './raw-runtime-readiness'
 import { RawCpuPreviewStage } from './RawCpuPreviewStage'
@@ -27,6 +29,7 @@ export function RawPreviewStageSurface({
   onCpuProcessedFrame,
   onCompareReset,
   transformActive,
+  transformOverlayShown = false,
   viewportInteractionDisabled,
   cpuVariant,
 }: {
@@ -46,6 +49,8 @@ export function RawPreviewStageSurface({
   /** Same reset the desktop Compare tool runs; the split handle reuses it. */
   onCompareReset?: () => void
   transformActive?: boolean
+  /** A Transform overlay covers the photo, so no HDR view draws under it. */
+  transformOverlayShown?: boolean
   viewportInteractionDisabled?: boolean
   /**
    * The CPU preview's original / processed choice when another control owns
@@ -55,6 +60,7 @@ export function RawPreviewStageSurface({
 }) {
   // The stages draw the color intent; the view reaches them on its own.
   const color = pickColorGraphIntent(workflow.params)
+  const { output: hdrOutput } = useHdrPreview({ transformOverlayShown })
 
   // Export releases the decoded preview; the shared stage then shows the
   // export-ready handoff with Restore preview, which the CPU stage lacks.
@@ -70,6 +76,7 @@ export function RawPreviewStageSurface({
         onProcessedFrame={onCpuProcessedFrame}
         previewFrameRef={onPreviewFrameChange}
         transformActive={transformActive}
+        hdrView={cpuHdrPreviewView(hdrOutput)}
         variant={cpuVariant}
       />
     )
@@ -83,6 +90,7 @@ export function RawPreviewStageSurface({
       decodedFrame={workflow.decodedFrame}
       color={color}
       viewMode={workflow.viewMode}
+      hdrOutput={hdrOutput}
       lutData={workflow.lutData}
       embeddedPreviewUrl={workflow.embeddedPreviewUrl}
       displaySource={workflow.displaySource}

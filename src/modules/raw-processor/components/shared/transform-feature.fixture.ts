@@ -242,6 +242,7 @@ export function transformToolStateFixture(
     executor: 'webgpu',
     previewSuspended,
     transformActive: feature.active,
+    transformOverlayShown: feature.showOverlay,
     transformExportBlock: feature.exportBlock,
     hasAppliedLut: false,
     canExport: false,

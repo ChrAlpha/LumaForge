@@ -4,7 +4,10 @@ import { Check, Upload } from 'lucide-react'
 import { clsxm } from '~/lib/cn'
 import { useI18n } from '~/lib/i18n'
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
-import type { PreviewViewMode } from '~/lib/preview/preview-view'
+import type {
+  PreviewHdrOutput,
+  PreviewViewMode,
+} from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
   PipelineStats,
@@ -34,6 +37,8 @@ export interface ComparePreviewStageProps {
   color: ColorGraphIntent
   /** How the photo is shown; compare layers the original at the split. */
   viewMode: PreviewViewMode
+  /** The HDR view the processed photo shows in place of SDR, if any. */
+  hdrOutput?: PreviewHdrOutput
   lutData: LUTData | null
   embeddedPreviewUrl?: string | null
   displaySource?: DisplaySource
@@ -218,6 +223,7 @@ export function ComparePreviewStage({
   decodedFrame,
   color,
   viewMode,
+  hdrOutput,
   lutData,
   embeddedPreviewUrl,
   displaySource = 'none',
@@ -296,6 +302,7 @@ export function ComparePreviewStage({
                 decodedFrame={decodedFrame}
                 color={color}
                 viewMode={viewMode}
+                hdrOutput={hdrOutput}
                 lutData={lutData}
                 embeddedPreviewUrl={embeddedPreviewUrl}
                 displaySource={displaySource}

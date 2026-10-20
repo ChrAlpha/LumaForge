@@ -14,7 +14,10 @@ import {
 } from 'react'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
-import type { PreviewViewMode } from '~/lib/preview/preview-view'
+import type {
+  PreviewHdrOutput,
+  PreviewViewMode,
+} from '~/lib/preview/preview-view'
 import { previewSurfaceOutputForViewMode } from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type {
@@ -65,6 +68,8 @@ export interface ProcessedPreviewOptions<
   /** The color the processed surface draws; it carries no view state. */
   color: ColorGraphIntent
   viewMode: PreviewViewMode
+  /** The HDR rendition the processed surface draws in place of SDR, if any. */
+  hdrOutput?: PreviewHdrOutput
   /**
    * The LUT record the processed surface draws through; a new record is a
    * new object, which uploads and draws again.
@@ -163,6 +168,7 @@ export function useProcessedPreview<
   displaySource,
   color,
   viewMode,
+  hdrOutput,
   lutData,
   embeddedPreviewUrl,
   dualGpuAllowed,
@@ -267,8 +273,8 @@ export function useProcessedPreview<
   const stableColor = useStableColorIntent(color)
   const processedSurfaceOutput = previewSurfaceOutputForViewMode(viewMode)
   const processedCanvasParams = useMemo(
-    () => ({ ...stableColor, output: processedSurfaceOutput }),
-    [processedSurfaceOutput, stableColor],
+    () => ({ ...stableColor, output: processedSurfaceOutput, hdrOutput }),
+    [hdrOutput, processedSurfaceOutput, stableColor],
   )
 
   const commitProcessedFrameStatus = useCallback(

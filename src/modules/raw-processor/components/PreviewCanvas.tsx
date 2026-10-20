@@ -8,7 +8,10 @@ import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
 import { useCallback, useEffect, useRef } from 'react'
 
 import type { DecodedPreviewFrame } from '~/lib/preview/preview-frame'
-import type { PreviewViewMode } from '~/lib/preview/preview-view'
+import type {
+  PreviewHdrOutput,
+  PreviewViewMode,
+} from '~/lib/preview/preview-view'
 import type { DecodedImage } from '~/lib/raw/decoder'
 import type { PipelineStats } from '~/lib/webgpu/raw-processing-pipeline'
 import { RawProcessingPipeline } from '~/lib/webgpu/raw-processing-pipeline'
@@ -49,6 +52,8 @@ export interface PreviewCanvasProps {
   color: ColorGraphIntent
   /** How the stage shows the photo; compare layers the original over it. */
   viewMode: PreviewViewMode
+  /** The HDR view the processed surface draws in place of SDR, if any. */
+  hdrOutput?: PreviewHdrOutput
   /**
    * The LUT record the processed surface draws through; a new record is a
    * new object, which uploads and draws again.
@@ -89,6 +94,7 @@ export function PreviewCanvas({
   decodedFrame,
   color,
   viewMode,
+  hdrOutput,
   lutData,
   embeddedPreviewUrl,
   displaySource = 'none',
@@ -123,6 +129,7 @@ export function PreviewCanvas({
     displaySource,
     color,
     viewMode,
+    hdrOutput,
     lutData,
     embeddedPreviewUrl,
     dualGpuAllowed,

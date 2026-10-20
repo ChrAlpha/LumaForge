@@ -417,6 +417,16 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         resized.width === 43 && resized.height === 29,
         { width: resized.width, height: resized.height },
       )
+      // Nor does an HDR preview view: the HQ export and the Transform
+      // source are the SDR picture.
+      gpu.setParams({ output: 'processed', hdrOutput: 'above-sdr' })
+      check(
+        'u16/snapshot-ignores-hdr-view',
+        readCanvas(await gpu.renderToHiddenCanvas({ width: 97, height: 65 })),
+        referenceFrame(fixture, { ...params, output: 'processed' }),
+        REFERENCE,
+      )
+      gpu.setParams({ output: 'technical-original', hdrOutput: undefined })
       await render()
       check(
         'u16/presented-restored-after-snapshot',

@@ -33,6 +33,7 @@ export const RAW_REASON_COPY = {
   'transform-invalid': 'transform.error.transform',
   'transform-unavailable': 'raw.transform.unavailable',
   'transform-hq-export': 'raw.transform.hqExportReason',
+  'transform-hdr-preview': 'raw.transform.hdrPreviewUnavailable',
   'no-lut': 'raw.strength.reason',
 } as const satisfies Record<string, MessageKey>
 

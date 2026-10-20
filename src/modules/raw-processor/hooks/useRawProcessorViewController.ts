@@ -6,6 +6,7 @@ import type {
 } from '~/lib/webgpu/raw-processing-pipeline'
 
 import { RAW_FILE_ACCEPT } from '../components/Dropzone'
+import { setPreviewExtendedRange } from '../state/hdr-preview.atoms'
 import { useRawRuntimeReadiness } from './stages/ingest/useRawRuntimeReadiness'
 import { useCapabilityGate } from './useCapabilityGate'
 import { useHiddenFilePicker } from './useHiddenFilePicker'
@@ -96,9 +97,14 @@ export function useRawProcessorViewController({
     [updateStats],
   )
 
+  // The published canvas also tells the HDR preview whether it shows values
+  // above SDR white; with none published, nothing does.
   const handlePipelineChange = useCallback(
     (pipeline: RawProcessingPipeline | null) => {
       pipelineRef.current = pipeline
+      setPreviewExtendedRange(
+        pipeline?.getCapabilities().extendedRange === true,
+      )
     },
     [pipelineRef],
   )

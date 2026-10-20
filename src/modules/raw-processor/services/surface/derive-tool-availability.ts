@@ -34,6 +34,8 @@ export type ToolAction =
   | 'hqExport'
   /** Whether the full-resolution export also writes the HDR gain map. */
   | 'hdrExport'
+  /** Which HDR preview view the processed photo shows while the map is on. */
+  | 'hdrPreview'
   /** Share, download, manifest and copy of the delivered JPEG. */
   | 'delivery'
   /** Bringing the preview back after export released it. */
@@ -87,6 +89,11 @@ export interface ToolAvailabilityInput {
   previewSuspended: boolean
   /** A committed Transform the preview shows. */
   transformActive: boolean
+  /**
+   * The Transform overlay covers the photo: a committed Transform, or its
+   * guides over the processed view.
+   */
+  transformOverlayShown: boolean
   /** Why full resolution cannot reproduce the Transform asked for yet. */
   transformExportBlock: TransformExportBlock | null
   hasAppliedLut: boolean
@@ -266,6 +273,22 @@ export function deriveToolAvailability(
     : exporting
       ? refused(busy)
       : AVAILABLE
+  // The HDR preview views redraw the processed photo, so they wait for one
+  // on screen that no Transform overlay covers, and hold still while an
+  // export runs.
+  const hdrPreview = !exportEntry.available
+    ? exportEntry
+    : fromReason(
+        !hasImage
+          ? 'no-source'
+          : exporting
+            ? busy
+            : previewSuspended
+              ? 'preview-released'
+              : input.transformOverlayShown
+                ? 'transform-hdr-preview'
+                : null,
+      )
   const delivery = !exportEntry.available
     ? exportEntry
     : input.hasExportResult
@@ -323,6 +346,7 @@ export function deriveToolAvailability(
     fullExport,
     hqExport,
     hdrExport,
+    hdrPreview,
     delivery,
     restorePreview,
     transformGeometry,

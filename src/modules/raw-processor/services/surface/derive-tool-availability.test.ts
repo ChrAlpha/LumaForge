@@ -48,6 +48,7 @@ const ACTIONS: SurfaceAction[] = [
   'fullExport',
   'hqExport',
   'hdrExport',
+  'hdrPreview',
   'delivery',
   'restorePreview',
 ]
@@ -66,6 +67,7 @@ function input(
     executor: 'webgpu',
     previewSuspended: false,
     transformActive: false,
+    transformOverlayShown: false,
     transformExportBlock: null,
     hasAppliedLut: true,
     canExport: true,
@@ -93,6 +95,8 @@ function currentSurfaceRules(
     i.canPreviewExport && !i.transformActive && !i.transformExportBlock && !busy
   const delivery = i.hasExportResult
   const restorePreview = i.hasImage && released && !busy
+  const hdrPreview =
+    i.hasImage && !exporting && !released && !i.transformOverlayShown
 
   if (i.surface === 'desktop') {
     const editorDisabled = !i.hasImage || exporting || released
@@ -114,6 +118,7 @@ function currentSurfaceRules(
       fullExport,
       hqExport,
       hdrExport: !exporting,
+      hdrPreview,
       delivery,
       restorePreview,
     }
@@ -138,6 +143,7 @@ function currentSurfaceRules(
     fullExport: exportEntry && fullExport,
     hqExport: exportEntry && hqExport,
     hdrExport: exportEntry && !exporting,
+    hdrPreview: exportEntry && hdrPreview,
     delivery: exportEntry && delivery,
     restorePreview,
   }
@@ -182,6 +188,7 @@ function* everyTransformInput(): Generator<ToolAvailabilityInput> {
                   executor,
                   previewSuspended,
                   transformActive,
+                  transformOverlayShown: transformActive,
                   transformExportBlock: transformActive ? null : 'pending',
                   transformPreview,
                 })
@@ -207,6 +214,9 @@ function* everyInput(): Generator<ToolAvailabilityInput> {
                             executor,
                             previewSuspended,
                             transformActive,
+                            // A committed Transform always shows its
+                            // overlay; guides alone are checked below.
+                            transformOverlayShown: transformActive,
                             transformExportBlock,
                             hasAppliedLut,
                             canExport,
@@ -618,6 +628,24 @@ describe('deriveToolAvailability', () => {
         available: false,
         reason: 'transform-hq-export',
       })
+    }
+  })
+
+  it('keeps the HDR preview views off while the Transform overlay covers the photo, guides alone included', () => {
+    for (const surface of ['desktop', 'mobile'] as const) {
+      const guides = deriveToolAvailability(
+        input({ surface, transformOverlayShown: true }),
+      )
+      expect(guides.hdrPreview).toEqual({
+        available: false,
+        reason: 'transform-hdr-preview',
+      })
+      // The guides cover the photo without committing a geometry.
+      expect(guides.originalView.available).toBe(true)
+      expect(guides.hdrExport.available).toBe(true)
+      expect(
+        deriveToolAvailability(input({ surface })).hdrPreview.available,
+      ).toBe(true)
     }
   })
 

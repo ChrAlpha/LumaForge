@@ -1,5 +1,6 @@
 import type {
   ColorGraphIntent,
+  HdrPreviewView,
   LUTData,
   RawRenderExposure,
 } from '@lumaforge/luma-color-runtime'
@@ -89,6 +90,8 @@ export type UseCpuPreviewOptions = {
   params: CpuPreviewParams
   /** Which variant to render. */
   variant: CpuPreviewVariant
+  /** The HDR preview view the processed variant draws in place of SDR. */
+  hdrView?: HdrPreviewView
 }
 
 export type UseCpuPreviewReturn = {
@@ -103,6 +106,7 @@ export function useCpuPreview({
   decodedFrame,
   params,
   variant,
+  hdrView,
 }: UseCpuPreviewOptions): UseCpuPreviewReturn {
   const clientRef = useRef<CpuPreviewClient | null>(null)
   const [frame, setFrame] = useState<CpuPreviewFrame | null>(null)
@@ -282,6 +286,8 @@ export function useCpuPreview({
       return
     }
     const { graph } = plan
+    // The original is never an HDR view.
+    const drawnHdrView = variant === 'processed' ? hdrView : undefined
 
     // Key the dedup signature on what the plan draws, so a look the preview
     // drops (a refused or unloaded LUT, its strength, a builtin preset) and
@@ -294,6 +300,7 @@ export function useCpuPreview({
       params.rawRenderExposure.ev,
       params.rawRenderExposure.multiplier,
       colorGraphIntentSignature(plan.effectiveIntent),
+      drawnHdrView ?? 'sdr',
     ].join('|')
     const effectiveLut = plan.lut
     const prevKey = lastRenderKeyRef.current
@@ -302,7 +309,11 @@ export function useCpuPreview({
     }
     lastRenderKeyRef.current = { sig: renderSig, lut: effectiveLut }
 
-    const request = { variant, graph }
+    const request = {
+      variant,
+      graph,
+      ...(drawnHdrView ? { hdrView: drawnHdrView } : {}),
+    }
     liveRendersRef.current.set(
       request,
       variant === 'neutral'
@@ -312,7 +323,7 @@ export function useCpuPreview({
     latestRequestRef.current = request
     setInFlight(true)
     getClient().requestRender(request)
-  }, [enabled, params, variant])
+  }, [enabled, hdrView, params, variant])
 
   // Memoise the return shape to avoid unnecessary re-renders downstream.
   const result = useMemo(

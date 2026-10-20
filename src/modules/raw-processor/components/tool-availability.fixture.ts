@@ -16,7 +16,8 @@ interface SurfaceFacts {
   previewSuspended?: boolean
   /** False for the CPU preview, which has no split surface. */
   compareSupported?: boolean
-  transform?: Pick<RawTransformFeature, 'active' | 'exportBlock'>
+  transform?: Pick<RawTransformFeature, 'active' | 'exportBlock'> &
+    Partial<Pick<RawTransformFeature, 'showOverlay'>>
   hasAppliedLut?: boolean
   canExport?: boolean
   canPreviewExport?: boolean
@@ -38,6 +39,7 @@ function availabilityFor(
     executor: facts.compareSupported === false ? 'cpu' : 'webgpu',
     previewSuspended: facts.previewSuspended === true,
     transformActive: facts.transform?.active === true,
+    transformOverlayShown: facts.transform?.showOverlay === true,
     transformExportBlock: facts.transform?.exportBlock ?? null,
     hasAppliedLut: facts.hasAppliedLut === true,
     canExport: facts.canExport === true,
@@ -54,7 +56,8 @@ export function toolAvailabilityFixture(props: {
   isExporting?: boolean
   previewSuspended?: boolean
   compareSupported?: boolean
-  transform?: Pick<RawTransformFeature, 'active' | 'exportBlock'>
+  transform?: Pick<RawTransformFeature, 'active' | 'exportBlock'> &
+    Partial<Pick<RawTransformFeature, 'showOverlay'>>
   currentLutName?: string | null
   canExport?: boolean
   canPreviewExport?: boolean
@@ -78,7 +81,8 @@ export function mobileAvailabilityFixture(props: {
   isExporting?: boolean
   previewSuspended?: boolean
   compareSupported?: boolean
-  transform?: Pick<RawTransformFeature, 'active' | 'exportBlock'>
+  transform?: Pick<RawTransformFeature, 'active' | 'exportBlock'> &
+    Partial<Pick<RawTransformFeature, 'showOverlay'>>
   lutBrowser?: { currentLutName?: string | null }
   canExport?: boolean
   exportResultKind?: unknown

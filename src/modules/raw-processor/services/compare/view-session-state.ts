@@ -63,6 +63,7 @@ export function canRunSessionViewCommand(
     executor: backend.status === 'ready' ? backend.facts.backend : 'cpu',
     previewSuspended: isSessionPreviewReleased(session, hasDecodedImage),
     transformActive: Boolean(session.exportGeometry),
+    transformOverlayShown: Boolean(session.exportGeometry),
     transformExportBlock: null,
     hasAppliedLut: false,
     canExport: false,

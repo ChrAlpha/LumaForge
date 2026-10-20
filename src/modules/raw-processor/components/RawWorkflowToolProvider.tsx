@@ -321,6 +321,7 @@ export function RawWorkflowToolProvider({
     if (previewSuspended && loadingEntryId) cancelEntryLoad()
   }, [cancelEntryLoad, loadingEntryId, previewSuspended])
   const transformActive = transform?.active === true
+  const transformOverlayShown = transform?.showOverlay === true
   // Until the session holds the geometry the preview rendered, neither
   // export may run: full resolution would write another framing, and the HQ
   // preview never applies Transform. The action policy decides both exports
@@ -381,6 +382,7 @@ export function RawWorkflowToolProvider({
       executor: isCpuMode ? ('cpu' as const) : ('webgpu' as const),
       previewSuspended,
       transformActive,
+      transformOverlayShown,
       transformExportBlock,
       hasAppliedLut: Boolean(currentLutName),
       canExport: workflowCanExport,
@@ -403,6 +405,7 @@ export function RawWorkflowToolProvider({
     status,
     transformActive,
     transformExportBlock,
+    transformOverlayShown,
     transformPreview,
     workflowCanExport,
     workflowCanPreviewExport,

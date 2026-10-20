@@ -176,6 +176,7 @@ function RawProcessorViewInner({
           onCpuProcessedFrame={transform.setCpuFrame}
           onCompareReset={view.handleCompareReset}
           transformActive={transform.active}
+          transformOverlayShown={transform.showOverlay}
           viewportInteractionDisabled={transform.showOverlay}
           // Mobile has no room for the CPU stage's own toggle row under the
           // photo; its compare lens drives original / processed instead.

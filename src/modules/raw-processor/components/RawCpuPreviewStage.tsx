@@ -1,4 +1,8 @@
-import type { ColorGraphIntent, LUTData } from '@lumaforge/luma-color-runtime'
+import type {
+  ColorGraphIntent,
+  HdrPreviewView,
+  LUTData,
+} from '@lumaforge/luma-color-runtime'
 import { pickColorGraphIntent } from '@lumaforge/luma-color-runtime'
 import type {
   CpuPreviewFrame,
@@ -31,6 +35,8 @@ export interface RawCpuPreviewStageProps {
   onProcessedFrame?: (frame: CpuPreviewFrame | null, rendering: boolean) => void
   previewFrameRef?: (element: HTMLDivElement | null) => void
   transformActive?: boolean
+  /** The HDR preview view the processed photo shows in place of SDR. */
+  hdrView?: HdrPreviewView
   /**
    * Set when the caller owns the original / processed choice (the mobile
    * compare lens). The stage then shows this variant and renders no toggle
@@ -48,6 +54,7 @@ export function RawCpuPreviewStage({
   onProcessedFrame,
   previewFrameRef,
   transformActive = false,
+  hdrView,
   variant: controlledVariant,
 }: RawCpuPreviewStageProps) {
   const { t } = useI18n()
@@ -68,6 +75,7 @@ export function RawCpuPreviewStage({
       },
     },
     variant: transformActive ? 'processed' : variant,
+    hdrView,
   })
 
   useEffect(() => {
