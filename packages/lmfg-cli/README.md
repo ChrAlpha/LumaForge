@@ -188,11 +188,15 @@ CLI process) so agents can budget large files.
 show highlights above SDR white while every other viewer shows the SDR
 export. The primary image is the SDR export: the same scan data, plus an
 sRGB ICC profile, the ISO 21496-1 version, and the MPF index that points at
-the gain map stored after it. The HDR rendition is the edited scene in
-linear BT.2020 with 1.0 at 203 cd/m², clipped at 1000 cd/m²; the gain map is
-full resolution, three channels, JPEG quality 98. A look with a LUT has no
-HDR rendition, so `--hdr` with one is refused (exit 8) before anything is
-decoded. The result reports `hdr_gain_map`, and the export manifest records
+the gain map stored after it. The HDR rendition is the scene the look
+renders in linear BT.2020 with 1.0 at 203 cd/m², clipped at 1000 cd/m²; the
+gain map is full resolution, three channels, JPEG quality 98. Without a LUT
+that scene is the edited one. A `scene-creative` LUT whose output is a
+camera or ACES log encoding maps scene light to scene light, so its output,
+decoded and mixed with the edited scene by `intensity`, is the scene. Every
+other LUT outputs an SDR display signal with no HDR rendition, so `--hdr`
+with one is refused (exit 8, `details.reason` `lut-display-output`) before
+anything is decoded. The result reports `hdr_gain_map`, and the export manifest records
 `output.hdr_gain_map`. The writer streams the primary as usual with a
 placeholder for the segments it can only size at the end, appends the gain
 map, writes the segments in place, then verifies the layout and hashes the

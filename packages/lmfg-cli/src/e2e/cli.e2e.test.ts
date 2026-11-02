@@ -905,8 +905,69 @@ describeWithFixture('lmfg agent loop', () => {
       '--hdr',
     )
     expect(withLut.code).toBe(8)
-    expect(withLut.envelope.error).toMatchObject({ code: 'export.refused' })
-  }, 240_000)
+    expect(withLut.envelope.error).toMatchObject({
+      code: 'export.refused',
+      details: { stage: 'hdr', reason: 'lut-display-output' },
+    })
+
+    // A scene-creative LUT that outputs camera log keeps the scene, so it
+    // has the HDR rendition the gain map stores.
+    await writeFile(join(cwd, 'scene.cube'), identityCube([]))
+    const sceneParams = JSON.stringify({
+      exposure_ev: 1,
+      intensity: 0.8,
+      lut: {
+        path: 'scene.cube',
+        contract: {
+          role: 'scene-creative',
+          input_profile: 'sony-sgamut3cine-slog3',
+          output_gamut: 's-gamut3-cine',
+          output_transfer: 's-log3',
+          output_range: 'full',
+        },
+      },
+    })
+    const exportScene = (name: string, ...extra: string[]) =>
+      cli.run(
+        'render',
+        'export',
+        '--session',
+        sessionId,
+        '--params-json',
+        sceneParams,
+        '--output',
+        name,
+        ...extra,
+      )
+    const sceneSdr = await exportScene('scene-sdr')
+    expect(sceneSdr.code, sceneSdr.stdout).toBe(0)
+    const sceneHdr = await exportScene('scene-hdr', '--hdr')
+    expect(sceneHdr.code, sceneHdr.stdout).toBe(0)
+    expect(sceneHdr.envelope.result!.hdr_gain_map).toBe(true)
+    const sceneHdrBytes = await output(sceneHdr.envelope.result!)
+    expect(() => assertGainMapJpeg(new Uint8Array(sceneHdrBytes))).not.toThrow()
+    expect(
+      Buffer.compare(
+        primaryWithoutApp2(sceneHdrBytes),
+        await output(sceneSdr.envelope.result!),
+      ),
+    ).toBe(0)
+    const sceneReplay = await cli.run(
+      'render',
+      'replay',
+      '--session',
+      sessionId,
+      '--manifest',
+      fileURLToPath(sceneHdr.envelope.result!.manifest_uri as string),
+      '--name',
+      'scene-hdr',
+    )
+    expect(sceneReplay.code, sceneReplay.stdout).toBe(0)
+    expect(sceneReplay.envelope.result).toMatchObject({
+      reproduced: true,
+      hdr_gain_map: true,
+    })
+  }, 360_000)
 
   it('fails closed with spec exit codes', async () => {
     const browser = await cli.run(

@@ -339,7 +339,7 @@ export const TOOLS = [
         .boolean()
         .optional()
         .describe(
-          'Also write an ISO 21496-1 gain map to the HDR rendition; refused for a look with a LUT.',
+          'Also write an ISO 21496-1 gain map to the HDR rendition; refused for a LUT that outputs a display signal (only a scene-creative LUT with a log output keeps one).',
         ),
       yes: z.boolean().optional().describe('Overwrite an existing export.'),
       ...GlobalShape,
