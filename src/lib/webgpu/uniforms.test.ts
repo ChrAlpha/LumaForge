@@ -139,6 +139,21 @@ describe('webGPU uniform ABI', () => {
         null,
       ),
     ).toBe(0)
+    // A LUT keeps one only when it maps scene light to scene light.
+    const custom = { hdrOutput: 'stop-down', styleKind: 'custom' } as const
+    expect(hdrView(custom, confirmed())).toBe(0)
+    expect(
+      hdrView(
+        custom,
+        confirmed({
+          role: 'scene-creative',
+          inputGamut: 's-gamut3-cine',
+          inputTransfer: 's-log3',
+          outputGamut: 's-gamut3-cine',
+          outputTransfer: 's-log3',
+        }),
+      ),
+    ).toBe(2)
   })
 })
 

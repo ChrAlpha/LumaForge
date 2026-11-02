@@ -67,7 +67,10 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     max: LIMITS.referenceMaxByteError,
     mean: LIMITS.referenceMeanByteError,
   }
-  const GOLDEN = { max: LIMITS.goldenMaxByteError, mean: LIMITS.goldenMeanByteError }
+  const GOLDEN = {
+    max: LIMITS.goldenMaxByteError,
+    mean: LIMITS.goldenMeanByteError,
+  }
   const checkGolden = (name, processed, width, height) => {
     const frame = goldens?.frames?.[name]
     if (!frame) return false
@@ -75,7 +78,9 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     const diff = pixelDiff(actual, base64ToBytes(frame), 3)
     add(
       `${name}/webgl-golden`,
-      diff.nonfinite === 0 && diff.max <= GOLDEN.max && diff.mean <= GOLDEN.mean,
+      diff.nonfinite === 0 &&
+        diff.max <= GOLDEN.max &&
+        diff.mean <= GOLDEN.mean,
       { diff },
     )
     return true
@@ -119,10 +124,10 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     return graph.supported ? null : graph.message
   }
   // An HDR view of the edited image, as the CPU preview draws it.
-  const renderHdrReference = (fixture, params, hdrView) => {
+  const renderHdrReference = (fixture, params, hdrView, lut) => {
     const graph = resolveExportColorGraph({
       ...graphParams(params),
-      lut: null,
+      lut: lut ?? null,
       rawRenderExposure: {
         ev: fixture.renderExposureEv,
         multiplier: fixture.renderExposureMultiplier,
@@ -269,19 +274,34 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     }
     // HDR views draw the gain-map export's HDR rendition from the scene the
     // TS executor reads. The bright scenes lift highlights above SDR white,
-    // and the clipped one past the nominal peak.
+    // and the clipped one past the nominal peak. A scene-creative LUT that
+    // outputs camera log renders the scene its look keeps, mixed by strength.
     const decodeSrgb = (value) =>
       value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
     const encodeSrgb = (value) =>
       value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055
-    for (const [label, hdrParams] of [
-      ['bright', { userExposureEv: 2 }],
-      ['clipped', { ...ADJUSTED_USER_COLOR, userExposureEv: 3 }],
+    const sceneLut = makeLut('scene-creative', 'n-log')
+    sceneLut.profileResolution.profile.outputGamut = 'rec2020'
+    sceneLut.profileResolution.profile.outputTransfer = 'n-log'
+    for (const [label, hdrParams, hdrLut] of [
+      ['bright', { userExposureEv: 2 }, null],
+      ['clipped', { ...ADJUSTED_USER_COLOR, userExposureEv: 3 }, null],
+      [
+        'scene-lut',
+        {
+          ...ADJUSTED_USER_COLOR,
+          userExposureEv: 2,
+          styleKind: 'custom',
+          intensity: 0.71,
+        },
+        sceneLut,
+      ],
     ]) {
       for (const hdrView of ['above-sdr', 'stop-down']) {
         const name = `u16/hdr-${hdrView}/${label}`
         try {
           const params = reset(fixture, { ...hdrParams, hdrOutput: hdrView })
+          if (hdrLut) gpu.uploadLUT(hdrLut)
           await render()
           const processed = await readProcessedBytes()
           check(
@@ -293,7 +313,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
           check(
             `${name}/reference`,
             processed,
-            renderHdrReference(fixture, params, hdrView),
+            renderHdrReference(fixture, params, hdrView, hdrLut),
             REFERENCE,
           )
         } catch (error) {
@@ -305,6 +325,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
       const name = `u16/hdr-extended/${label}`
       try {
         const params = reset(fixture, { ...hdrParams, hdrOutput: 'extended' })
+        if (hdrLut) gpu.uploadLUT(hdrLut)
         await render()
         const pixels = await gpu.readProcessedPixelsAsync()
         if (!pixels) throw new Error('PROCESSED_PIXELS_MISSING')
@@ -324,7 +345,7 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         check(
           `${name}/stop-down-reference`,
           stopped,
-          renderHdrReference(fixture, params, 'stop-down'),
+          renderHdrReference(fixture, params, 'stop-down', hdrLut),
           REFERENCE,
         )
       } catch (error) {

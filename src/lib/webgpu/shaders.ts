@@ -191,14 +191,25 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f) -> vec4f {
   let editedBaseDisplayExtended = linearToSrgbExtended(editedBaseDisplayLinear);
   var styledColor = editedBaseDisplayColor;
   let intensity = clamp(params.intensity, 0.0, 1.0);
+  // What an HDR view draws from: the scene the look renders, and the SDR
+  // picture in display light, as the gain-map export reads them.
+  var hdrSceneLinearProPhoto = editedBaseSceneLinearProPhoto;
+  var sdrDisplayLinear = editedBaseDisplayLinear;
 
   if (params.styleKind == STYLE_BUILTIN) {
     styledColor = mix(editedBaseDisplayColor, applyBuiltinStyle(editedBaseDisplayColor), intensity);
   } else if (params.styleKind == STYLE_CUSTOM && params.useLut != 0) {
     if (isSceneCreativeLut()) {
-      let styledDisplayLinear = applySceneLutToDisplayLinear(editedBaseSceneLinearProPhoto);
+      let lutOutputDisplayLinear = sceneLutOutputDisplayLinear(editedBaseSceneLinearProPhoto);
+      let styledDisplayLinear = max(lutOutputDisplayLinear, vec3f(0.0));
       let mixedDisplayLinear = mix(editedBaseDisplayLinear, styledDisplayLinear, intensity);
       styledColor = linearToSrgb(mixedDisplayLinear);
+      sdrDisplayLinear = mixedDisplayLinear;
+      hdrSceneLinearProPhoto = hdrLutLookSceneLinearProPhoto(
+        editedBaseSceneLinearProPhoto,
+        lutOutputDisplayLinear,
+        intensity
+      );
     } else if (isOutputLut()) {
       styledColor = mix(editedBaseDisplayExtended, applyCombinedOutputLut(editedBaseSceneLinearProPhoto), intensity);
     } else {
@@ -206,21 +217,21 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f) -> vec4f {
     }
   }
 
-  // An HDR view replaces the SDR picture of a look without a LUT, drawn
-  // from the same scene value the gain-map export reads. The host sends
-  // HDR_VIEW_NONE for any look that has no HDR rendition.
+  // An HDR view replaces the SDR picture of a look with an HDR rendition,
+  // drawn from the same scene value the gain-map export reads. The host
+  // sends HDR_VIEW_NONE for any look that has none.
   if (params.viewMode == VIEW_MODE_ORIGINAL) {
     styledColor = technicalBaseDisplayColor;
   } else if (params.hdrView == HDR_VIEW_ABOVE_SDR) {
     styledColor = linearToSrgb(
-      hdrAboveSdrDisplayLinear(editedBaseSceneLinearProPhoto, editedBaseDisplayLinear)
+      hdrAboveSdrDisplayLinear(hdrSceneLinearProPhoto, sdrDisplayLinear)
     );
   } else if (params.hdrView == HDR_VIEW_STOP_DOWN) {
-    styledColor = linearToSrgb(hdrStopDownDisplayLinear(editedBaseSceneLinearProPhoto));
+    styledColor = linearToSrgb(hdrStopDownDisplayLinear(hdrSceneLinearProPhoto));
   } else if (params.hdrView == HDR_VIEW_EXTENDED) {
     // Above SDR white for a display that shows it: no upper clamp.
     return vec4f(
-      linearToSrgbExtended(hdrRenditionDisplayLinear(editedBaseSceneLinearProPhoto)),
+      linearToSrgbExtended(hdrRenditionDisplayLinear(hdrSceneLinearProPhoto)),
       1.0
     );
   }

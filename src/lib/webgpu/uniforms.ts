@@ -173,12 +173,9 @@ export function packUniforms(
   writeUniformI32(v, 'lutInputRange', lutProfileUniforms.lutInputRange)
   writeUniformI32(v, 'lutOutputRange', lutProfileUniforms.lutOutputRange)
   writeUniformI32(v, 'selectiveColorActive', selectiveColorActive ? 1 : 0)
-  // Only a drawn look without a LUT or built-in style has an HDR rendition.
-  const hasHdrRendition =
-    drawnLut === null && drawn.look.styleKind !== 'builtin'
   writeUniformI32(
     v,
     'hdrView',
-    p.hdrOutput && hasHdrRendition ? HDR_OUTPUT_UNIFORMS[p.hdrOutput] : 0,
+    p.hdrOutput && drawn.hdrRendition ? HDR_OUTPUT_UNIFORMS[p.hdrOutput] : 0,
   )
 }

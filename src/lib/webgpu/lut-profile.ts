@@ -10,7 +10,11 @@ import type {
   LUTData,
   SupportedExportColorGraphDescriptor,
 } from '@lumaforge/luma-color-runtime'
-import { mat3Identity, mat3ToColumnMajor } from '@lumaforge/luma-color-runtime'
+import {
+  mat3Identity,
+  mat3ToColumnMajor,
+  resolveHdrGainMapSupport,
+} from '@lumaforge/luma-color-runtime'
 import {
   LUT_RANGE_UNIFORMS,
   LUT_ROLE_UNIFORMS,
@@ -34,6 +38,11 @@ export interface GpuPreviewLook {
   /** The LUT the shader samples; null unless a custom look is drawn. */
   lut: LUTData | null
   uniforms: LUTPipelineProfileUniforms
+  /**
+   * Whether the drawn look has the HDR rendition a gain-map export stores,
+   * by the export's own rule; a built-in preset has none.
+   */
+  hdrRendition: boolean
 }
 
 const IDENTITY = mat3ToColumnMajor(mat3Identity())
@@ -72,8 +81,15 @@ export function resolveGpuPreviewLook(
   lut: LUTData | null,
 ): GpuPreviewLook {
   const plan = resolvePreviewColorPlan({ intent, lut, executor: 'webgpu' })
+  const hdrRendition =
+    plan.graph !== null && resolveHdrGainMapSupport(plan.graph).supported
   if (!plan.lut)
-    return { look: plan.effective, lut: null, uniforms: NO_LUT_UNIFORMS }
+    return {
+      look: plan.effective,
+      lut: null,
+      uniforms: NO_LUT_UNIFORMS,
+      hdrRendition,
+    }
   const input = graphStep(plan.graph, 'gamut-to-lut-input')
   const encode = graphStep(plan.graph, 'encode-lut-transfer')
   const output = graphStep(plan.graph, 'lut-output-to-srgb')
@@ -89,5 +105,6 @@ export function resolveGpuPreviewLook(
       lutInputRange: LUT_RANGE_UNIFORMS[encode.range],
       lutOutputRange: LUT_RANGE_UNIFORMS[output.range],
     },
+    hdrRendition,
   }
 }
