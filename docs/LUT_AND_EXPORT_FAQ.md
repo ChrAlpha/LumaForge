@@ -52,7 +52,7 @@ family. For example:
 
 A LUT that outputs an HDR signal (PQ or HLG, for example `SLog3_to_HLG`) cannot
 feed a JPEG export, so LumaForge refuses it and says why rather than guessing a
-tone mapping. An HLG or PQ *input* is fine when the LUT outputs Rec.709 or sRGB.
+tone mapping. An HLG or PQ _input_ is fine when the LUT outputs Rec.709 or sRGB.
 
 When two choices both seem possible, compare skin tones, skies, neutral walls,
 and deep shadows. The better contract usually looks normal before you start
@@ -88,8 +88,8 @@ Export may be disabled when:
 - the export worker cannot prove that it can reproduce the previewed graph;
 - a Transform is still preparing on the preview, leaves too little usable
   image, or cannot be reproduced at full resolution.
-- the HDR gain map is on and the look uses a LUT, which has no HDR picture
-  to store.
+- the HDR gain map is on and the look uses a LUT graded for an SDR display,
+  which has no HDR picture to store.
 
 This is a guardrail. LumaForge should not silently save a lower-quality preview
 or change the color path just to make a download button appear.
@@ -107,9 +107,13 @@ one, which a viewer on an HDR screen can apply.
 
 The HDR picture follows the BT.2100 conventions for HDR stills: BT.2020
 primaries, SDR white placed at the 203-nit reference white, and a nominal
-peak of 1000 nits. It is rendered from the adjusted scene before any LUT, so
-it needs a look without a LUT. A LUT whose output is HDR (PQ or HLG) is still
-refused, because the JPEG it would feed is SDR.
+peak of 1000 nits. It is rendered from the scene the look produces: the
+adjusted scene without a LUT, or with a creative LUT whose input and output
+are camera log (log to log), that LUT's output decoded back to scene light
+and mixed in at the look strength. A LUT that outputs Rec.709 or sRGB is
+graded for an SDR display and has no HDR picture behind it, so the option
+refuses it. A LUT whose output is HDR (PQ or HLG) is still refused, because
+the JPEG it would feed is SDR.
 
 You do not need an HDR screen to make one. On an HDR screen in a browser
 with WebGPU, the preview can show the HDR picture; on any screen, it can show

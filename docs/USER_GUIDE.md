@@ -146,7 +146,10 @@ data is byte for byte what a plain export writes, and LumaForge adds only the
 gain map and the metadata that points to it. A
 viewer that reads ISO 21496-1 gain maps on an HDR screen uses it to show
 highlights brighter than SDR white, up to 1000 nits. The HQ preview JPEG
-never carries one. The option needs a look without a LUT: a LUT is graded for
+never carries one. The option needs a look without a LUT, or a creative LUT whose input and
+output are the same camera log (its contract has a camera log on both
+sides): such a LUT keeps the scene, so its highlights above SDR white become
+the HDR picture, mixed in at the look strength. Any other LUT is graded for
 an SDR display, so there is no HDR picture behind it to store, and export
 stays disabled until you clear the LUT or turn the option off.
 

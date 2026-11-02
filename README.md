@@ -103,7 +103,8 @@ finished JPEG with a look they already enjoy.
   with download, share, and clipboard actions where the browser supports them.
   If an earlier export of the same file was interrupted, the next export you
   start uses a safer setting; nothing resumes or exports on its own.
-- Add an HDR gain map to the full-resolution JPEG when the look uses no LUT.
+- Add an HDR gain map to the full-resolution JPEG when the look uses no LUT
+  or a log-to-log creative LUT.
   Every viewer still gets the same SDR JPEG; an HDR screen that reads
   ISO 21496-1 gain maps shows highlights up to 1000 nits. The preview shows
   the HDR picture on an HDR screen in a WebGPU browser, and on any screen
@@ -128,12 +129,15 @@ RAW file
 At export, a committed Transform is resampled at full resolution before this
 color path runs.
 
-With the HDR gain map on, the export also renders the adjusted scene as a
-BT.2100-style HDR picture (BT.2020 primaries, reference white at 203 nits,
-peak at 1000 nits) and stores its ratio to the SDR JPEG as an ISO 21496-1
-gain map. The SDR JPEG keeps the bytes a plain export writes; only the gain
-map and its metadata are added around it. A LUT look has no HDR picture to
-store, so the option refuses one.
+With the HDR gain map on, the export also renders the scene the look
+produces as a BT.2100-style HDR picture (BT.2020 primaries, reference white
+at 203 nits, peak at 1000 nits) and stores its ratio to the SDR JPEG as an
+ISO 21496-1 gain map. The SDR JPEG keeps the bytes a plain export writes;
+only the gain map and its metadata are added around it. Without a LUT that
+scene is the adjusted one. A creative LUT whose input and output are camera
+log maps scene light to scene light, so its output, decoded and mixed in at
+the chosen strength, is the scene. Any other LUT outputs a picture graded for
+an SDR display, with no HDR picture behind it, so the option refuses it.
 
 LUT contracts are the small bit of structure that lets LumaForge apply creative
 looks to RAW files without making the user build a color pipeline by hand.
