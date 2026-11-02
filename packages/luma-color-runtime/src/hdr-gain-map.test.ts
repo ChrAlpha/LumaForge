@@ -5,6 +5,7 @@ import type {
   SupportedExportColorGraphDescriptor,
 } from './color-graph'
 import { resolveExportColorGraph } from './color-graph'
+import { generateIdentityLUT, toLUTData } from './cube-parser'
 import {
   encodeHdrGainMapRows,
   HDR_GAIN_MAP_ALTERNATE_HEADROOM,
@@ -13,15 +14,19 @@ import {
   HDR_GAIN_MAP_NEUTRAL_CODE,
   HDR_GAIN_MAP_OFFSET,
   hdrGainMapLog2FromCode,
+  lutHasHdrRendition,
   resolveHdrGainMapSupport,
 } from './hdr-gain-map'
 import { HDR_NOMINAL_PEAK_LINEAR } from './hdr-reference'
+import { logC3Decode, logC3Encode } from './log-encoding'
 import { getGamutMatrix } from './matrix'
+import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
 import {
   createHdrGainMapRowBandProcessor,
   createRowBandProcessor,
 } from './row-band-processor'
+import type { LUTData } from './types'
 import { NEUTRAL_USER_COLOR_INTENT } from './user-color-intent'
 
 function resolvedGraph(
@@ -43,6 +48,36 @@ function resolvedGraph(
 const lutLookGraph: SupportedExportColorGraphDescriptor = {
   ...resolvedGraph(),
   lutProfile: getLUTColorProfile('display-srgb')!,
+}
+
+/** A scene-creative LUT from ARRI LogC3 to LogC3, in ARRI Wide Gamut 3. */
+const LOGC3_CREATIVE_PROFILE: LUTColorProfile = {
+  ...getLUTColorProfile('arri-awg3-logc3')!,
+  role: 'scene-creative',
+  outputGamut: 'arri-wide-gamut-3',
+  outputTransfer: 'logc3',
+  outputRange: 'full',
+}
+
+/**
+ * A 33-point LogC3 lattice that scales scene light by `gain` (1: identity),
+ * confirmed as `profile`.
+ */
+function logC3Lut(gain: number, profile = LOGC3_CREATIVE_PROFILE): LUTData {
+  const lut = toLUTData(generateIdentityLUT(33))
+  const data = lut.data.map((code) => logC3Encode(logC3Decode(code) * gain))
+  return {
+    ...lut,
+    data,
+    profileResolution: { kind: 'confirmed', confidence: 'user', profile },
+  }
+}
+
+function lutGraph(
+  lut: LUTData,
+  overrides: Partial<ExportColorGraphInput> = {},
+): SupportedExportColorGraphDescriptor {
+  return resolvedGraph({ styleKind: 'custom', lut, ...overrides })
 }
 
 function seededSamples(count: number, seed: number) {
@@ -125,11 +160,45 @@ describe('resolveHdrGainMapSupport', () => {
     })
   })
 
-  it('refuses a LUT look and an unsupported graph', () => {
+  it('gives a scene-creative LUT that outputs camera log an HDR rendition', () => {
+    expect(resolveHdrGainMapSupport(lutGraph(logC3Lut(1)))).toEqual({
+      supported: true,
+    })
+  })
+
+  it('refuses a LUT that outputs a display signal', () => {
+    const displayOutputs: LUTColorProfile[] = [
+      getLUTColorProfile('display-srgb')!,
+      { ...LOGC3_CREATIVE_PROFILE, role: 'combined-look-output' },
+      { ...LOGC3_CREATIVE_PROFILE, role: 'technical-output' },
+      {
+        ...LOGC3_CREATIVE_PROFILE,
+        outputGamut: 'srgb-rec709',
+        outputTransfer: 'gamma24',
+      },
+    ]
+    for (const profile of displayOutputs) {
+      expect(lutHasHdrRendition(profile), profile.role).toBe(false)
+    }
     expect(resolveHdrGainMapSupport(lutLookGraph)).toEqual({
       supported: false,
-      reason: 'lut-look',
+      reason: 'lut-display-output',
     })
+    expect(
+      resolveHdrGainMapSupport(
+        lutGraph(
+          logC3Lut(1, {
+            ...LOGC3_CREATIVE_PROFILE,
+            role: 'combined-look-output',
+            outputGamut: 'srgb-rec709',
+            outputTransfer: 'bt709',
+          }),
+        ),
+      ),
+    ).toEqual({ supported: false, reason: 'lut-display-output' })
+  })
+
+  it('refuses an unsupported graph', () => {
     expect(
       resolveHdrGainMapSupport({
         supported: false,
@@ -239,6 +308,69 @@ describe('createHdrGainMapRowBandProcessor', () => {
         )
       }
     }
+  })
+
+  it('writes the SDR bytes a scene-creative LUT export writes', () => {
+    const width = 7
+    const rows = 5
+    const source = seededSamples(width * rows * 3, 20_261_102)
+    for (const graph of [
+      lutGraph(logC3Lut(0.5), { intensity: 1, userExposureEv: 1.5 }),
+      lutGraph(logC3Lut(2), { intensity: 0.6, userSaturation: 30 }),
+    ]) {
+      const sdr = createRowBandProcessor({ width, rowBandRows: rows, graph })
+        .processUint16Rows(source, rows)
+        .slice()
+      expect(
+        createHdrGainMapRowBandProcessor({
+          width,
+          rowBandRows: rows,
+          graph,
+        }).processUint16Rows(source, rows).sdr,
+      ).toEqual(sdr)
+    }
+  })
+
+  it('records the scene a scene-creative LUT look renders', () => {
+    const highlight = [0.5, 0.5, 0.5]
+    // 3 EV over 0.5: a scene of 4 times SDR white.
+    const exposure = { userExposureEv: 3 }
+    // An identity log LUT keeps the scene: the same rendition as no LUT.
+    const identity = processPixel(
+      highlight,
+      lutGraph(logC3Lut(1), { intensity: 1, ...exposure }),
+    )
+    expect(identity).toEqual(processPixel(highlight, resolvedGraph(exposure)))
+
+    // A LUT that takes a stop of scene light halves the HDR highlight.
+    const stopDown = processPixel(
+      highlight,
+      lutGraph(logC3Lut(0.5), { intensity: 1, ...exposure }),
+    )
+    expect(stopDown.sdr).toEqual([255, 255, 255])
+    for (const value of reconstructHdr(stopDown.sdr, stopDown.gainMap)) {
+      expect(value).toBeCloseTo(2, 1)
+    }
+
+    // The look strength mixes the LUT's scene with the edited one.
+    const halfStrength = processPixel(
+      highlight,
+      lutGraph(logC3Lut(0.5), { intensity: 0.5, ...exposure }),
+    )
+    for (const value of reconstructHdr(
+      halfStrength.sdr,
+      halfStrength.gainMap,
+    )) {
+      expect(value).toBeCloseTo(3, 1)
+    }
+
+    // At zero strength the rendition is the edited scene's.
+    expect(
+      processPixel(
+        highlight,
+        lutGraph(logC3Lut(0.5), { intensity: 0, ...exposure }),
+      ),
+    ).toEqual(processPixel(highlight, resolvedGraph(exposure)))
   })
 
   it('refuses a graph without an HDR rendition', () => {

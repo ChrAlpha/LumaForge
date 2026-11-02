@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { SupportedExportColorGraphDescriptor } from './color-graph'
 import { resolveExportColorGraph } from './color-graph'
+import { generateIdentityLUT, toLUTData } from './cube-parser'
 import {
   encodeHdrPreviewRows,
   HDR_ABOVE_SDR_BASE_SCALE,
@@ -121,6 +122,57 @@ describe('createHdrPreviewRowBandProcessor', () => {
     }
   })
 
+  it('draws a scene-creative LUT look from the scene that look renders', () => {
+    const lutGraph = resolveExportColorGraph({
+      ...NEUTRAL_USER_COLOR_INTENT,
+      userExposureEv: 2,
+      styleKind: 'custom',
+      builtinPreset: null,
+      intensity: 1,
+      lut: {
+        ...toLUTData(generateIdentityLUT(17)),
+        profileResolution: {
+          kind: 'confirmed',
+          confidence: 'user',
+          profile: {
+            ...getLUTColorProfile('sony-sgamut3cine-slog3')!,
+            outputGamut: 's-gamut3-cine',
+            outputTransfer: 's-log3',
+            outputRange: 'full',
+          },
+        },
+      },
+    })
+    if (!lutGraph.supported) throw new Error(lutGraph.message)
+    const plainGraph = resolveExportColorGraph({
+      ...NEUTRAL_USER_COLOR_INTENT,
+      userExposureEv: 2,
+      styleKind: 'none',
+      builtinPreset: null,
+      intensity: 1,
+      lut: null,
+    })
+    if (!plainGraph.supported) throw new Error(plainGraph.message)
+    const source = Uint16Array.of(30_000, 30_000, 30_000, 60_000, 20_000, 9_000)
+    // An identity log LUT keeps the scene, so it draws what no LUT draws.
+    const draw = (drawn: SupportedExportColorGraphDescriptor) =>
+      Array.from(
+        createHdrPreviewRowBandProcessor({
+          width: 2,
+          rowBandRows: 1,
+          graph: drawn,
+          view: 'stop-down',
+        }).processUint16Rows(source, 1),
+      )
+    const lutDraw = draw(lutGraph)
+    draw(plainGraph).forEach((byte, index) => {
+      expect(
+        Math.abs(lutDraw[index] - byte),
+        `byte ${index}`,
+      ).toBeLessThanOrEqual(1)
+    })
+  })
+
   it('refuses a look without an HDR rendition', () => {
     const lutLook: SupportedExportColorGraphDescriptor = {
       ...graph,
@@ -142,6 +194,7 @@ describe('lUMA_COLOR_HDR_PREVIEW_WGSL', () => {
     for (const [name, matrix] of [
       ['HDR_PROPHOTO_TO_REC2020', getGamutMatrix('prophoto-rgb', 'rec2020')],
       ['HDR_REC2020_TO_SRGB', getGamutMatrix('rec2020', 'srgb-rec709')],
+      ['HDR_SRGB_TO_PROPHOTO', getGamutMatrix('srgb-rec709', 'prophoto-rgb')],
     ] as const) {
       const source = LUMA_COLOR_HDR_PREVIEW_WGSL.split(
         `${name}: mat3x3f = mat3x3f(`,

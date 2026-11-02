@@ -27,6 +27,7 @@ export {
   HDR_GAIN_MAP_NEUTRAL_CODE,
   HDR_GAIN_MAP_OFFSET,
   hdrGainMapLog2FromCode,
+  lutHasHdrRendition,
   resolveHdrGainMapSupport,
 } from './hdr-gain-map'
 export type { HdrPreviewView } from './hdr-preview'

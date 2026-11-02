@@ -1,15 +1,26 @@
-import type { ExportColorGraphDescriptor } from './color-graph'
-import { EXPORT_PLAIN_STEP_KINDS } from './color-graph'
+import type {
+  ExportColorGraphDescriptor,
+  ExportColorGraphStep,
+} from './color-graph'
+import {
+  EXPORT_LUT_STEP_KINDS,
+  EXPORT_PLAIN_STEP_KINDS,
+  resolveEffectiveLUTOutputTransfer,
+} from './color-graph'
 import { HDR_NOMINAL_PEAK_LINEAR } from './hdr-reference'
+import { isSceneLogTransfer } from './log-encoding'
 import { getGamutMatrix } from './matrix'
+import type { LUTColorProfile } from './registry'
 
 /**
  * The HDR rendition a gain-map export carries, and the gain map (ISO 21496-1)
  * that lifts the SDR export onto it. The SDR export stays the base image,
  * unchanged; the gain map adds the HDR rendition on top of it.
  *
- * The HDR rendition is the scene after every user step, in linear BT.2020,
- * where 1.0 is HDR Reference White (203 cd/m², the SDR export's white). Each
+ * The HDR rendition is the scene the look renders, in linear BT.2020, where
+ * 1.0 is HDR Reference White (203 cd/m², the SDR export's white): the scene
+ * after every user step, or for a scene-creative LUT that scene mixed by the
+ * look strength with the LUT's output decoded back to scene light. Each
  * channel clips to [0, the nominal peak]. An in-gamut color below SDR white
  * is the same in both renditions, so its gain is zero.
  *
@@ -73,15 +84,41 @@ export type HdrGainMapSupport =
   | {
       supported: false
       /**
-       * `lut-look`: a LUT's output is an SDR display signal, and nothing
-       * defines how it continues above SDR white.
+       * `lut-display-output`: the LUT outputs a display signal graded for
+       * SDR, and nothing defines how it continues above SDR white.
        */
-      reason: 'unsupported-pipeline' | 'lut-look'
+      reason: 'unsupported-pipeline' | 'lut-display-output'
     }
 
 /**
- * Whether a graph has an HDR rendition: only a supported graph without a
- * LUT. Its scene values above SDR white are the HDR highlights.
+ * Whether a LUT's output still holds the scene above SDR white: a
+ * scene-creative LUT that outputs a scene-referred log encoding maps scene
+ * light to scene light, so its output decodes to the HDR highlights. Every
+ * other LUT outputs a display signal for an SDR screen.
+ */
+export function lutHasHdrRendition(profile: LUTColorProfile): boolean {
+  const outputTransfer = resolveEffectiveLUTOutputTransfer(profile)
+  return (
+    profile.role === 'scene-creative' &&
+    outputTransfer !== undefined &&
+    isSceneLogTransfer(outputTransfer)
+  )
+}
+
+function hasStepKinds(
+  steps: readonly ExportColorGraphStep[],
+  kinds: readonly ExportColorGraphStep['kind'][],
+) {
+  return (
+    steps.length === kinds.length &&
+    steps.every((step, index) => step.kind === kinds[index])
+  )
+}
+
+/**
+ * Whether a graph has an HDR rendition: a supported graph without a LUT, or
+ * one whose LUT keeps the scene (`lutHasHdrRendition`). Its scene values
+ * above SDR white are the HDR highlights.
  */
 export function resolveHdrGainMapSupport(
   graph: ExportColorGraphDescriptor,
@@ -89,14 +126,19 @@ export function resolveHdrGainMapSupport(
   if (!graph.supported) {
     return { supported: false, reason: 'unsupported-pipeline' }
   }
-  if (graph.lutProfile !== null) {
-    return { supported: false, reason: 'lut-look' }
+  const { lutProfile, steps } = graph
+  if (lutProfile === null) {
+    return hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
+      ? { supported: true }
+      : { supported: false, reason: 'unsupported-pipeline' }
   }
-  const { steps } = graph
-  const plain =
-    steps.length === EXPORT_PLAIN_STEP_KINDS.length &&
-    steps.every((step, index) => step.kind === EXPORT_PLAIN_STEP_KINDS[index])
-  return plain
+  if (!lutHasHdrRendition(lutProfile)) {
+    return { supported: false, reason: 'lut-display-output' }
+  }
+  const output = steps.find((step) => step.kind === 'lut-output-to-srgb')
+  return hasStepKinds(steps, EXPORT_LUT_STEP_KINDS) &&
+    output?.role === 'scene-creative' &&
+    isSceneLogTransfer(output.transfer)
     ? { supported: true }
     : { supported: false, reason: 'unsupported-pipeline' }
 }
@@ -164,8 +206,8 @@ const [B0, B1, B2, B3, B4, B5, B6, B7, B8] = getGamutMatrix(
 )
 
 /**
- * Gain map codes for rows whose scene values (linear ProPhoto, after every
- * user step) and SDR bytes the plain graph already produced.
+ * Gain map codes for rows whose scene values (linear ProPhoto: the scene the
+ * look renders) and SDR bytes the graph already produced.
  */
 export function encodeHdrGainMapRows(
   scene: Float32Array,

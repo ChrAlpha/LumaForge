@@ -103,8 +103,8 @@ function requireHdrRendition(graph: SupportedExportColorGraphDescriptor) {
   if (support.supported) return
   throw new LmfgError('export.refused', {
     message:
-      support.reason === 'lut-look'
-        ? 'HDR export needs a look without a LUT: a LUT outputs an SDR display signal, which has no HDR rendition.'
+      support.reason === 'lut-display-output'
+        ? 'HDR export needs a look without a LUT or a scene-creative LUT that outputs camera log: this LUT outputs an SDR display signal, which has no HDR rendition.'
         : 'This color graph has no HDR rendition.',
     details: { stage: 'hdr', reason: support.reason },
     suggestedNextActions: ['lmfg render export without --hdr'],

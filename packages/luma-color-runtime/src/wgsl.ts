@@ -104,12 +104,18 @@ fn applyDisplayLut(sceneLinearProPhoto: vec3f) -> vec3f {
   return linearToSrgbExtended(displayLinearOutput);
 }
 
-fn applySceneLutToDisplayLinear(sceneLinearProPhoto: vec3f) -> vec3f {
+// A scene-creative LUT's output as scene light in the display gamut, before
+// the clamp the SDR picture applies; above 1.0 where the look keeps highlights.
+fn sceneLutOutputDisplayLinear(sceneLinearProPhoto: vec3f) -> vec3f {
   let lutInputLinear = params.inputToLutGamut * sceneLinearProPhoto;
   let lutInputEncoded = applySignalRangeForLutInput(encodeTransfer(lutInputLinear, params.lutInputTransfer), params.lutInputRange);
   let lutOutputEncoded = removeSignalRangeFromLutOutput(applyLut(lutInputEncoded), params.lutOutputRange);
   let lutOutputLinear = decodeTransfer(lutOutputEncoded, params.lutOutputTransfer);
-  return max(params.lutOutputToDisplayGamut * lutOutputLinear, vec3f(0.0));
+  return params.lutOutputToDisplayGamut * lutOutputLinear;
+}
+
+fn applySceneLutToDisplayLinear(sceneLinearProPhoto: vec3f) -> vec3f {
+  return max(sceneLutOutputDisplayLinear(sceneLinearProPhoto), vec3f(0.0));
 }
 
 fn applyCombinedOutputLut(sceneLinearProPhoto: vec3f) -> vec3f {

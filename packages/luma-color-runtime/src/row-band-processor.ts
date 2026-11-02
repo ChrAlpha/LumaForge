@@ -8,7 +8,7 @@ import type { HdrPreviewView } from './hdr-preview'
 import { encodeHdrPreviewRows } from './hdr-preview'
 import { compressLutInputToDomain } from './lut-domain'
 import { clamp01, mix, sampleLutTrilinear } from './lut3d'
-import { getGamutMatrix } from './matrix'
+import { getGamutMatrix, mat3Multiply } from './matrix'
 import { getTransferFunction } from './registry'
 import { applyUserSaturationTo } from './saturation'
 import {
@@ -48,6 +48,7 @@ const LEGAL_RANGE_SCALE = (940 - 64) / 1023
 const LEGAL_RANGE_OFFSET = 64 / 1023
 const LEGAL_RANGE_INV_SCALE = 1023 / (940 - 64)
 const PROPHOTO_TO_SRGB_MATRIX = getGamutMatrix('prophoto-rgb', 'srgb-rec709')
+const SRGB_TO_PROPHOTO_MATRIX = getGamutMatrix('srgb-rec709', 'prophoto-rgb')
 
 function applySignalRangeForLutInput(value: number, isLegalRange: boolean) {
   if (!isLegalRange) return value
@@ -253,6 +254,11 @@ function compileSceneStage(
   }
 }
 
+/**
+ * Writes the graph's SDR bytes for `linear`, with the edited scene in linear
+ * ProPhoto as `sceneScratch`. An applier compiled for the HDR rendition
+ * leaves the scene the look renders there on return: its source.
+ */
 type GraphApplier = (
   linear: Float32Array,
   bytes: Uint8Array,
@@ -292,21 +298,16 @@ function compilePlainGraphApplier(steps: PlainSteps): GraphApplier {
   }
 }
 
-function compileGraphApplier(
-  graph: SupportedExportColorGraphDescriptor,
+/**
+ * The LUT graph's applier. With `writeLookScene` a scene-creative LUT also
+ * leaves the scene its look renders in `sceneScratch`: the edited scene
+ * mixed by the look strength with the LUT output in linear ProPhoto,
+ * unclamped, as the SDR bytes mix them in display light.
+ */
+function compileLutGraphApplier(
+  steps: LutSteps,
+  writeLookScene: boolean,
 ): GraphApplier {
-  const { steps } = graph
-  if (
-    graph.lutProfile === null &&
-    hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
-  ) {
-    return compilePlainGraphApplier(steps)
-  }
-
-  if (!hasStepKinds(steps, EXPORT_LUT_STEP_KINDS)) {
-    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
-  }
-
   const applyScene = compileSceneStage(steps)
   const inputMatrix = steps[8].matrix
   const encodeStep = steps[9]
@@ -323,6 +324,15 @@ function compileGraphApplier(
   const outputIsLegalRange = outputStep.range === 'legal'
   const role = outputStep.role
   const intensity = outputStep.intensity
+  if (writeLookScene && role !== 'scene-creative') {
+    throw new Error('HDR_GAIN_MAP_UNSUPPORTED_PIPELINE')
+  }
+  // LUT output to linear ProPhoto through the step's own display matrix, so
+  // the look scene and the SDR bytes read the same LUT output gamut.
+  const lutOutputToProPhoto = mat3Multiply(
+    SRGB_TO_PROPHOTO_MATRIX,
+    outputMatrix,
+  )
   const domainMin = lutStep.domainMin
   const domainMax = lutStep.domainMax
   const inverseDomainSpanR =
@@ -417,6 +427,30 @@ function compileGraphApplier(
         removeSignalRangeFromLutOutput(lutSample[2], outputIsLegalRange),
       )
 
+      if (writeLookScene) {
+        sceneScratch[index] = mix(
+          sceneR,
+          lutOutputToProPhoto[0] * lutOutputLinearR +
+            lutOutputToProPhoto[1] * lutOutputLinearG +
+            lutOutputToProPhoto[2] * lutOutputLinearB,
+          intensity,
+        )
+        sceneScratch[index + 1] = mix(
+          sceneG,
+          lutOutputToProPhoto[3] * lutOutputLinearR +
+            lutOutputToProPhoto[4] * lutOutputLinearG +
+            lutOutputToProPhoto[5] * lutOutputLinearB,
+          intensity,
+        )
+        sceneScratch[index + 2] = mix(
+          sceneB,
+          lutOutputToProPhoto[6] * lutOutputLinearR +
+            lutOutputToProPhoto[7] * lutOutputLinearG +
+            lutOutputToProPhoto[8] * lutOutputLinearB,
+          intensity,
+        )
+      }
+
       const styledDisplayLinearR = clampMin0(
         outputMatrix[0] * lutOutputLinearR +
           outputMatrix[1] * lutOutputLinearG +
@@ -464,6 +498,33 @@ function compileGraphApplier(
       )
     }
   }
+}
+
+/**
+ * The graph's applier. With `hdr` the graph must have an HDR rendition, and
+ * the applier leaves the scene that rendition is drawn from in
+ * `sceneScratch`; the SDR bytes are the same either way.
+ */
+function compileGraphApplier(
+  graph: SupportedExportColorGraphDescriptor,
+  { hdr = false }: { hdr?: boolean } = {},
+): GraphApplier {
+  if (hdr && !resolveHdrGainMapSupport(graph).supported) {
+    throw new Error('HDR_GAIN_MAP_UNSUPPORTED_PIPELINE')
+  }
+  const { steps } = graph
+  if (
+    graph.lutProfile === null &&
+    hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
+  ) {
+    return compilePlainGraphApplier(steps)
+  }
+
+  if (!hasStepKinds(steps, EXPORT_LUT_STEP_KINDS)) {
+    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
+  }
+
+  return compileLutGraphApplier(steps, hdr)
 }
 
 export type RowBandProcessor = {
@@ -569,8 +630,8 @@ export type HdrGainMapRowBandProcessor = {
 }
 
 /**
- * The row-band processor of a gain-map export: the plain graph's SDR bytes
- * plus the gain map that lifts them to the HDR rendition. It refuses a graph
+ * The row-band processor of a gain-map export: the graph's SDR bytes plus
+ * the gain map that lifts them to the HDR rendition. It refuses a graph
  * without an HDR rendition (`resolveHdrGainMapSupport`).
  */
 export function createHdrGainMapRowBandProcessor({
@@ -588,15 +649,7 @@ export function createHdrGainMapRowBandProcessor({
   if (!Number.isSafeInteger(maxLength)) {
     throw new TypeError('ROW_BAND_PROCESSOR_INVALID_ROW_BAND_ROWS')
   }
-  const { steps } = graph
-  if (
-    !resolveHdrGainMapSupport(graph).supported ||
-    !hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
-  ) {
-    throw new Error('HDR_GAIN_MAP_UNSUPPORTED_PIPELINE')
-  }
-
-  const applyGraph = compilePlainGraphApplier(steps)
+  const applyGraph = compileGraphApplier(graph, { hdr: true })
   const floatScratch = new Float32Array(maxLength)
   const sceneScratch = new Float32Array(maxLength)
   const sdrScratch = new Uint8Array(maxLength)
@@ -638,20 +691,24 @@ export function createHdrPreviewRowBandProcessor({
 }: CreateRowBandProcessorInput & {
   view: HdrPreviewView
 }): HdrPreviewRowBandProcessor {
-  const gainMapRows = createHdrGainMapRowBandProcessor({
-    width,
+  assertPositiveSafeInteger(width, 'ROW_BAND_PROCESSOR_INVALID_WIDTH')
+  assertPositiveSafeInteger(
     rowBandRows,
-    graph,
-  })
+    'ROW_BAND_PROCESSOR_INVALID_ROW_BAND_ROWS',
+  )
+
   const maxLength = expectedRowLength(width, rowBandRows)
-  const applyGraph = compilePlainGraphApplier(graph.steps as PlainSteps)
+  if (!Number.isSafeInteger(maxLength)) {
+    throw new TypeError('ROW_BAND_PROCESSOR_INVALID_ROW_BAND_ROWS')
+  }
+  const applyGraph = compileGraphApplier(graph, { hdr: true })
   const floatScratch = new Float32Array(maxLength)
   const sceneScratch = new Float32Array(maxLength)
   const sdrScratch = new Uint8Array(maxLength)
   const outScratch = new Uint8Array(maxLength)
 
   return {
-    rowBandRows: gainMapRows.rowBandRows,
+    rowBandRows,
     processUint16Rows(source, rowCount) {
       const length = validateRows(source.length, width, rowBandRows, rowCount)
       const linear = floatScratch.subarray(0, length)

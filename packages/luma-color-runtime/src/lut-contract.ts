@@ -1,5 +1,6 @@
 import type { ColorGamutId } from './constants'
 import type { TransferFunctionId } from './log-encoding'
+import { isDisplayTransfer } from './log-encoding'
 import type { LUTColorProfile, LUTRole, SignalRange } from './registry'
 import {
   getColorGamut,
@@ -8,12 +9,6 @@ import {
   TIER1_LUT_COLOR_PROFILES,
 } from './registry'
 import type { LUTContractSelection, StoredLUTContractSelection } from './types'
-
-const DISPLAY_LIKE_INPUT_TRANSFERS = new Set<TransferFunctionId>([
-  'srgb',
-  'bt709',
-  'gamma24',
-])
 
 const SUPPORTED_INTENT_ROLES = new Set<LUTRole>([
   'technical-output',
@@ -89,7 +84,7 @@ export function hasDisplayLikeInput(selection: {
   return Boolean(
     selection.inputGamut === 'srgb-rec709' &&
     selection.inputTransfer &&
-    DISPLAY_LIKE_INPUT_TRANSFERS.has(selection.inputTransfer),
+    isDisplayTransfer(selection.inputTransfer),
   )
 }
 

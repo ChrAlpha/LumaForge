@@ -5,7 +5,7 @@ import { getGamutMatrix } from './matrix'
 /**
  * What a preview shows of the HDR rendition a gain-map export carries, on a
  * display of any range. Each view is drawn from the scene values the gain
- * map is computed from (linear ProPhoto after every user step), through the
+ * map is computed from (linear ProPhoto: the scene the look renders), through the
  * same clip to the nominal peak in BT.2020, so it shows what the export
  * records rather than an estimate of it.
  *
@@ -78,8 +78,8 @@ function toSrgbByte(linear: number) {
 }
 
 /**
- * Preview bytes (sRGB, three per pixel) for rows whose scene values and SDR
- * bytes the plain graph already produced. `scene` and `sdr` hold `length`
+ * Preview bytes (sRGB, three per pixel) for rows whose look scene values and
+ * SDR bytes the graph already produced. `scene` and `sdr` hold `length`
  * values; `out` receives as many.
  */
 export function encodeHdrPreviewRows(
@@ -139,7 +139,7 @@ const wgslMatrix = (matrix: ArrayLike<number>) =>
 /**
  * The same views for the WGSL preview, plus the HDR rendition as extended
  * linear sRGB for a display that shows values above SDR white. The host
- * supplies the edited scene value and the SDR picture as linear sRGB.
+ * supplies the scene the look renders and the SDR picture as linear sRGB.
  */
 export const LUMA_COLOR_HDR_PREVIEW_WGSL = /* wgsl */ `
 const HDR_NOMINAL_PEAK: f32 = ${HDR_NOMINAL_PEAK_LINEAR};
@@ -150,6 +150,14 @@ const HDR_ABOVE_SDR_BASE_SCALE: f32 = ${HDR_ABOVE_SDR_BASE_SCALE};
 const HDR_ABOVE_SDR_FADE_STOPS: f32 = ${HDR_ABOVE_SDR_FADE_STOPS};
 const HDR_ABOVE_SDR_LOW_TINT: vec3f = vec3f(${HDR_ABOVE_SDR_LOW_TINT.join(', ')});
 const HDR_ABOVE_SDR_HIGH_TINT: vec3f = vec3f(${HDR_ABOVE_SDR_HIGH_TINT.join(', ')});
+
+const HDR_SRGB_TO_PROPHOTO: mat3x3f = ${wgslMatrix(getGamutMatrix('srgb-rec709', 'prophoto-rgb'))};
+
+// The scene a scene-creative LUT look renders: the edited scene mixed by the
+// look strength with the LUT output (scene light, display gamut, unclamped).
+fn hdrLutLookSceneLinearProPhoto(editedScene: vec3f, lutOutputDisplayLinear: vec3f, intensity: f32) -> vec3f {
+  return mix(editedScene, HDR_SRGB_TO_PROPHOTO * lutOutputDisplayLinear, intensity);
+}
 
 fn hdrRenditionRec2020(scene: vec3f) -> vec3f {
   return clamp(HDR_PROPHOTO_TO_REC2020 * scene, vec3f(0.0), vec3f(HDR_NOMINAL_PEAK));

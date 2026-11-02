@@ -117,16 +117,21 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 - The HDR rendition of a gain-map export and its ISO 21496-1 gain map.
   `createHdrGainMapRowBandProcessor` writes the SDR bytes
   `createRowBandProcessor` writes, plus one gain map code per sample that
-  lifts them to the scene in linear BT.2020 (1.0 is HDR Reference White,
-  clipped at the nominal peak). Every gain map shares one fixed range
+  lifts them to the scene the look renders in linear BT.2020 (1.0 is HDR
+  Reference White, clipped at the nominal peak). Every gain map shares one fixed range
   (`HDR_GAIN_MAP_LOG2_MIN`, `HDR_GAIN_MAP_LOG2_MAX`, with zero gain at
   `HDR_GAIN_MAP_NEUTRAL_CODE`), primaries `HDR_GAIN_MAP_GAMUT`, offsets
   `HDR_GAIN_MAP_OFFSET`, gamma `HDR_GAIN_MAP_GAMMA`, and headrooms `HDR_GAIN_MAP_BASE_HEADROOM` and
   `HDR_GAIN_MAP_ALTERNATE_HEADROOM`; `hdrGainMapLog2FromCode` reads a code as
   a decoder does. A gain outside the range throws
   `HDR_GAIN_MAP_OUT_OF_RANGE` before anything is encoded.
-  `resolveHdrGainMapSupport` gives only a graph without a LUT an HDR
-  rendition (`lut-look` otherwise).
+  `resolveHdrGainMapSupport` gives a graph an HDR rendition when it has no
+  LUT, or when its LUT keeps the scene (`lutHasHdrRendition`: a
+  scene-creative LUT whose output is a scene-referred log encoding, decoded
+  back to scene light and mixed with the edited scene by the look strength);
+  any other LUT outputs a display signal (`lut-display-output`).
+  `isSceneLogTransfer` and `isDisplayTransfer` name the two kinds of
+  encoding.
 - HDR preview views for a display of any range (`HdrPreviewView`,
   `HDR_PREVIEW_VIEWS`): `above-sdr` dims the SDR picture to gray and tints
   what the HDR rendition lifts above SDR white, from
@@ -270,5 +275,5 @@ this exact version.
   `selectiveColor` in its parameter type. It already handled them at runtime;
   its output is unchanged.
 - `ProcessingParams` keeps its name and its color fields, and `styleKind:
-  'builtin'` with `builtinPreset` stays valid; `resolveExportColorGraph`
+'builtin'` with `builtinPreset` stays valid; `resolveExportColorGraph`
   still refuses a built-in preset with `unsupported-pipeline`.

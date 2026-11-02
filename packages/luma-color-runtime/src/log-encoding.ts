@@ -109,6 +109,26 @@ export function isHdrTransfer(
   return (HDR_TRANSFER_IDS as readonly TransferFunctionId[]).includes(id)
 }
 
+/** The SDR display encodings: code value 1.0 is display white. */
+const DISPLAY_TRANSFER_IDS = Object.freeze([
+  'srgb',
+  'bt709',
+  'gamma24',
+] as const satisfies readonly TransferFunctionId[])
+
+export function isDisplayTransfer(id: TransferFunctionId): boolean {
+  return (DISPLAY_TRANSFER_IDS as readonly TransferFunctionId[]).includes(id)
+}
+
+/**
+ * The scene-referred log encodings: camera and ACES log curves, whose code
+ * values carry scene light well above diffuse white. Neither a display
+ * signal, an HDR display signal, nor linear light.
+ */
+export function isSceneLogTransfer(id: TransferFunctionId): boolean {
+  return !isDisplayTransfer(id) && !isHdrTransfer(id) && id !== 'linear'
+}
+
 /**
  * S-Log2 encoding (Sony)
  */
