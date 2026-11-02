@@ -1,4 +1,7 @@
-import { resolveUnsupportedLUTOutputReason } from '@lumaforge/luma-color-runtime'
+import {
+  lutHasHdrRendition,
+  resolveUnsupportedLUTOutputReason,
+} from '@lumaforge/luma-color-runtime'
 
 import type { FullResExportReason } from './export-result'
 import type { ImageSession, PreviewBundle, StyleAsset } from './session'
@@ -60,6 +63,24 @@ export function deriveLutContractExportRefusal(
   }
 
   return { code: 'lut-input-unconfirmed' }
+}
+
+/**
+ * Whether the session's look has the HDR rendition a gain map stores: no
+ * look, or a LUT whose confirmed contract keeps the scene (the color
+ * runtime's `lutHasHdrRendition`). The export resolves its graph and asks
+ * the color runtime again before any work.
+ */
+export function styleHasHdrRendition(
+  activeStyle: StyleAsset | null | undefined,
+): boolean {
+  if (!activeStyle) return true
+  if (activeStyle.kind !== 'custom') return false
+  const profileResolution = activeStyle.lutAsset?.profileResolution
+  return (
+    profileResolution?.kind === 'confirmed' &&
+    lutHasHdrRendition(profileResolution.profile)
+  )
 }
 
 /**

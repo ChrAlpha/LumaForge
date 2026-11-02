@@ -16,7 +16,10 @@ import {
   getCapabilityVectorSnapshot,
 } from '~/lib/runtime/capability-vector'
 
-import { deriveExportRefusal } from '../../model/derive-session'
+import {
+  deriveExportRefusal,
+  styleHasHdrRendition,
+} from '../../model/derive-session'
 import type {
   ExportResultKind,
   FullResExportReason,
@@ -216,10 +219,7 @@ export function deriveFullResExportReadiness(input: {
     return refuseFullResExport(sessionRefusal)
   }
 
-  // Only a look without a LUT has an HDR rendition: a LUT outputs an SDR
-  // display signal. The export resolves its graph and asks the color runtime
-  // again before any work; this is the session's view of the same rule.
-  if (input.hdrGainMap && input.session.activeStyle) {
+  if (input.hdrGainMap && !styleHasHdrRendition(input.session.activeStyle)) {
     return refuseFullResExport({ code: 'hdr-look-unsupported' })
   }
 

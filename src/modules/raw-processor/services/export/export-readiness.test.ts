@@ -433,7 +433,7 @@ describe('export readiness helpers', () => {
     ).toBeUndefined()
   })
 
-  it('refuses an HDR export of a LUT look after the session refusals', () => {
+  it('refuses an HDR export of a display LUT look after the session refusals', () => {
     const style: ImageSession['activeStyle'] = {
       kind: 'custom',
       name: 'LUT',
@@ -463,6 +463,31 @@ describe('export readiness helpers', () => {
       deriveFullResExportReadiness({
         ...input,
         session: createSession(),
+        hdrGainMap: true,
+      }).canExport,
+    ).toBe(true)
+
+    // A scene-creative LUT that outputs camera log keeps the scene.
+    const sceneLook: ImageSession['activeStyle'] = {
+      ...style,
+      lutAsset: {
+        ...style.lutAsset!,
+        profileResolution: {
+          kind: 'confirmed',
+          confidence: 'user',
+          profile: {
+            ...getLUTColorProfile('arri-awg3-logc3')!,
+            outputGamut: 'arri-wide-gamut-3',
+            outputTransfer: 'logc3',
+            outputRange: 'full',
+          },
+        },
+      },
+    }
+    expect(
+      deriveFullResExportReadiness({
+        ...input,
+        session: { ...createSession(), activeStyle: sceneLook },
         hdrGainMap: true,
       }).canExport,
     ).toBe(true)
