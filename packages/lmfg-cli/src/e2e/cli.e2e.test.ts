@@ -969,7 +969,66 @@ describeWithFixture('lmfg agent loop', () => {
       reproduced: true,
       hdr_gain_map: true,
     })
-  }, 360_000)
+
+    // A LUT that outputs PQ: its display light is the HDR rendition, and
+    // the SDR export rolls that light off onto SDR white.
+    const pqParams = JSON.stringify({
+      exposure_ev: 1,
+      intensity: 0.8,
+      lut: {
+        path: 'scene.cube',
+        contract: {
+          role: 'combined-look-output',
+          input_profile: 'rec2100-pq',
+          output_gamut: 'rec2020',
+          output_transfer: 'pq',
+          output_range: 'full',
+        },
+      },
+    })
+    const exportPq = (name: string, ...extra: string[]) =>
+      cli.run(
+        'render',
+        'export',
+        '--session',
+        sessionId,
+        '--params-json',
+        pqParams,
+        '--output',
+        name,
+        ...extra,
+      )
+    const pqSdr = await exportPq('pq-sdr')
+    expect(pqSdr.code, pqSdr.stdout).toBe(0)
+    const pqHdr = await exportPq('pq-hdr', '--hdr')
+    expect(pqHdr.code, pqHdr.stdout).toBe(0)
+    expect(pqHdr.envelope.result!.hdr_gain_map).toBe(true)
+    const pqHdrBytes = await output(pqHdr.envelope.result!)
+    expect(() => assertGainMapJpeg(new Uint8Array(pqHdrBytes))).not.toThrow()
+    expect(
+      Buffer.compare(
+        primaryWithoutApp2(pqHdrBytes),
+        await output(pqSdr.envelope.result!),
+      ),
+    ).toBe(0)
+    const pqReplay = await cli.run(
+      'render',
+      'replay',
+      '--session',
+      sessionId,
+      '--manifest',
+      fileURLToPath(pqHdr.envelope.result!.manifest_uri as string),
+      '--lut',
+      'scene.cube',
+      '--name',
+      'pq-hdr',
+    )
+    expect(pqReplay.code, pqReplay.stdout).toBe(0)
+    expect(pqReplay.envelope.result).toMatchObject({
+      reproduced: true,
+      hdr_gain_map: true,
+    })
+  }, 540_000)
 
   it('fails closed with spec exit codes', async () => {
     const browser = await cli.run(

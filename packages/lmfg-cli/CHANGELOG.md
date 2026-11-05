@@ -30,12 +30,16 @@ follows Keep a Changelog; versions follow semver.
 
 ### Added
 
+- LUT contracts may declare an HDR output (`output_transfer` `pq` or
+  `hlg`). Its SDR export rolls the LUT's light off onto SDR white with the
+  BT.2390 EETF, and `render replay` reproduces it.
 - `render export --hdr` writes an ISO 21496-1 gain-map JPEG: the SDR export
   as the primary image, scan data unchanged, plus a full-resolution gain map
   to the HDR rendition (linear BT.2020, 203 cd/m² reference white, 1000 cd/m²
-  peak). A look without a LUT or with a `scene-creative` LUT that outputs a
-  log encoding has one; any other LUT is refused (`export.refused`, exit 8,
-  reason `lut-display-output`) before any decode. `lmfg.render.export.v1` and `lmfg.render.replay.v1` results report
+  peak). A look without a LUT, with a `scene-creative` LUT that outputs a
+  log encoding, or with a LUT that outputs `pq` or `hlg` has one; any other
+  LUT is refused (`export.refused`, exit 8, reason `lut-display-output`)
+  before any decode. `lmfg.render.export.v1` and `lmfg.render.replay.v1` results report
   `hdr_gain_map`, the export manifest records `output.hdr_gain_map`, and
   `render replay` re-renders the gain map a manifest records. `capabilities`
   lists `hdr-gain-map-export` for the CPU tier.

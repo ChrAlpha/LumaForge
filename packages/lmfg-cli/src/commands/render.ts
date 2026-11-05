@@ -292,7 +292,7 @@ function registerExport(render: Command, host: CommandHost): void {
     )
     .option(
       '--hdr',
-      'also write an ISO 21496-1 gain map to the HDR rendition (looks without a LUT only)',
+      'also write an ISO 21496-1 gain map to the HDR rendition (no LUT, a scene-creative LUT with a log output, or a LUT with a PQ or HLG output)',
     )
     .action(async function (this: Command, options: ExportOptions) {
       const ctx = host.context(this)
