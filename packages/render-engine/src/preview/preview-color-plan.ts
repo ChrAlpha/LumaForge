@@ -51,8 +51,6 @@ export type PreviewColorPlanReason =
   | 'lut-output-profile-missing'
   /** The confirmed contract has a linear LUT output, which export refuses. */
   | 'lut-output-transfer-linear'
-  /** The confirmed contract has an HDR (PQ or HLG) LUT output, which export refuses. */
-  | 'lut-output-transfer-hdr'
   /** Export refused the contract for a reason not listed above. */
   | 'lut-contract-refused'
   /** A builtin style is selected without a preset. */
@@ -69,7 +67,6 @@ export const PREVIEW_COLOR_PLAN_REASONS: readonly PreviewColorPlanReason[] =
     'lut-output-range-unknown',
     'lut-output-profile-missing',
     'lut-output-transfer-linear',
-    'lut-output-transfer-hdr',
     'lut-contract-refused',
     'builtin-preset-missing',
     'builtin-no-ts-executor',
@@ -129,7 +126,6 @@ const LUT_OUTPUT_REFUSAL_REASONS: Record<
   'output-range-unknown': 'lut-output-range-unknown',
   'output-profile-missing': 'lut-output-profile-missing',
   'output-transfer-linear': 'lut-output-transfer-linear',
-  'output-transfer-hdr': 'lut-output-transfer-hdr',
 }
 
 /** Why export refuses a custom LUT's contract, or null when it accepts it. */

@@ -134,6 +134,36 @@ function inferOutputAnnotation(
   const normalized = normalizeProfileText(signature)
   const compact = compactProfileText(signature)
 
+  // A BT.2100 output signal on the BT.2020 primaries: PQ (HDR10, ST 2084)
+  // or HLG, or Rec.2100 without its transfer, which the user still chooses.
+  const hdrOutput = normalized.match(
+    /\b(?:to|for)\s+(?:(?:rec|bt)\s*2100\s+)?(pq|hlg|hdr\s*10|st\s*2084)\b/,
+  )?.[1]
+  const compactHdrOutput = ['pq', 'hlg', 'hdr10', 'st2084'].find((marker) =>
+    ['to', 'torec2100', 'tobt2100'].some((prefix) =>
+      compact.includes(prefix + marker),
+    ),
+  )
+  const hdrTransfer = hdrOutput ?? compactHdrOutput
+  if (hdrTransfer) {
+    return {
+      role: 'combined-look-output',
+      outputGamut: 'rec2020',
+      outputTransfer: hdrTransfer === 'hlg' ? 'hlg' : 'pq',
+      outputRange: 'full',
+    }
+  }
+  if (
+    /\b(?:to|for)\s+(?:rec|bt)\s*2100\b/.test(normalized) ||
+    ['torec2100', 'tobt2100'].some((marker) => compact.includes(marker))
+  ) {
+    return {
+      role: 'combined-look-output',
+      outputGamut: 'rec2020',
+      outputRange: 'full',
+    }
+  }
+
   if (
     /\b(?:to|for)\s+(?:rec\s*709|bt\s*709|bt\s*1886)\b/.test(normalized) ||
     /\b(?:bt\s*709|bt\s*1886)\b/.test(normalized) ||
@@ -186,21 +216,9 @@ function hasUnsupportedOutputAnnotation(signature: string): boolean {
   const compact = compactProfileText(signature)
   return (
     /\b(?:to|for)\s+(?:cineon|log\s*c)\b/.test(normalized) ||
-    // An HDR (PQ or HLG) output, which export cannot render to an SDR JPEG.
-    /\b(?:to|for)\s+(?:pq|hlg|hdr\s*10|(?:rec|bt)\s*2100|st\s*2084)\b/.test(
-      normalized,
-    ) ||
-    [
-      'tocineon',
-      'forcineon',
-      'tologc',
-      'forlogc',
-      'tohlg',
-      'tohdr10',
-      'torec2100',
-      'tobt2100',
-      'tost2084',
-    ].some((marker) => compact.includes(marker))
+    ['tocineon', 'forcineon', 'tologc', 'forlogc'].some((marker) =>
+      compact.includes(marker),
+    )
   )
 }
 

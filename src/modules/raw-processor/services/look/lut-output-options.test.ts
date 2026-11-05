@@ -92,10 +92,13 @@ describe('lutOutputOptions', () => {
     expect(isExportableOutputOption(toSearchOutputOption(sony))).toBe(true)
     for (const id of ['rec2100-pq', 'rec2100-hlg']) {
       const hdr = getLUTColorProfile(id)!
-      expect(isExportableOutputOption(toSearchOutputOption(hdr)), id).toBe(
-        false,
-      )
+      expect(isExportableOutputOption(toSearchOutputOption(hdr)), id).toBe(true)
     }
+    expect(
+      isExportableOutputOption(
+        toSearchOutputOption({ ...sony, inputTransfer: 'linear' }),
+      ),
+    ).toBe(false)
   })
 
   it('composes the full contract through the carrier profile', () => {

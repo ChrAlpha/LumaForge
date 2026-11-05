@@ -3,12 +3,13 @@ import type {
   ExportColorGraphStep,
 } from './color-graph'
 import {
+  EXPORT_HDR_LUT_STEP_KINDS,
   EXPORT_LUT_STEP_KINDS,
   EXPORT_PLAIN_STEP_KINDS,
   resolveEffectiveLUTOutputTransfer,
 } from './color-graph'
 import { HDR_NOMINAL_PEAK_LINEAR } from './hdr-reference'
-import { isSceneLogTransfer } from './log-encoding'
+import { isHdrTransfer, isSceneLogTransfer } from './log-encoding'
 import { getGamutMatrix } from './matrix'
 import type { LUTColorProfile } from './registry'
 
@@ -17,12 +18,20 @@ import type { LUTColorProfile } from './registry'
  * that lifts the SDR export onto it. The SDR export stays the base image,
  * unchanged; the gain map adds the HDR rendition on top of it.
  *
- * The HDR rendition is the scene the look renders, in linear BT.2020, where
+ * The HDR rendition is the light the look renders, in linear BT.2020, where
  * 1.0 is HDR Reference White (203 cd/m², the SDR export's white): the scene
- * after every user step, or for a scene-creative LUT that scene mixed by the
- * look strength with the LUT's output decoded back to scene light. Each
- * channel clips to [0, the nominal peak]. An in-gamut color below SDR white
- * is the same in both renditions, so its gain is zero.
+ * after every user step; for a scene-creative LUT with a log output, that
+ * scene mixed by the look strength with the LUT's output decoded back to
+ * scene light; for a LUT with an HDR (PQ or HLG) output, that scene mixed
+ * the same way with the display light of the LUT's signal. Each channel
+ * clips to [0, the nominal peak].
+ *
+ * Without a LUT, a color inside the sRGB gamut and at or below SDR white is
+ * the same in both renditions, so its gain is zero. A LUT look can differ
+ * below SDR white too: the SDR export clamps each side of the strength mix
+ * to the sRGB gamut before it mixes, and an HDR output's SDR picture rolls
+ * off from the knee of its tone map, so the gain map carries those
+ * differences as well.
  *
  * The gain map records, per channel, log2((hdr + offset) / (base + offset)),
  * with the base converted to BT.2020. Every map uses the same fixed range, so
@@ -84,25 +93,23 @@ export type HdrGainMapSupport =
   | {
       supported: false
       /**
-       * `lut-display-output`: the LUT outputs a display signal graded for
-       * SDR, and nothing defines how it continues above SDR white.
+       * `lut-display-output`: the LUT outputs an SDR display signal, and
+       * nothing defines how it continues above SDR white.
        */
       reason: 'unsupported-pipeline' | 'lut-display-output'
     }
 
 /**
- * Whether a LUT's output still holds the scene above SDR white: a
- * scene-creative LUT that outputs a scene-referred log encoding maps scene
- * light to scene light, so its output decodes to the HDR highlights. Every
- * other LUT outputs a display signal for an SDR screen.
+ * Whether a LUT's output holds light above SDR white: an HDR (PQ or HLG)
+ * output signal, or a scene-creative LUT that outputs a scene-referred log
+ * encoding, which maps scene light to scene light. Every other LUT outputs
+ * an SDR display signal.
  */
 export function lutHasHdrRendition(profile: LUTColorProfile): boolean {
   const outputTransfer = resolveEffectiveLUTOutputTransfer(profile)
-  return (
-    profile.role === 'scene-creative' &&
-    outputTransfer !== undefined &&
-    isSceneLogTransfer(outputTransfer)
-  )
+  if (outputTransfer === undefined) return false
+  if (isHdrTransfer(outputTransfer)) return true
+  return profile.role === 'scene-creative' && isSceneLogTransfer(outputTransfer)
 }
 
 function hasStepKinds(
@@ -117,8 +124,7 @@ function hasStepKinds(
 
 /**
  * Whether a graph has an HDR rendition: a supported graph without a LUT, or
- * one whose LUT keeps the scene (`lutHasHdrRendition`). Its scene values
- * above SDR white are the HDR highlights.
+ * one whose LUT output holds light above SDR white (`lutHasHdrRendition`).
  */
 export function resolveHdrGainMapSupport(
   graph: ExportColorGraphDescriptor,
@@ -135,6 +141,7 @@ export function resolveHdrGainMapSupport(
   if (!lutHasHdrRendition(lutProfile)) {
     return { supported: false, reason: 'lut-display-output' }
   }
+  if (hasStepKinds(steps, EXPORT_HDR_LUT_STEP_KINDS)) return { supported: true }
   const output = steps.find((step) => step.kind === 'lut-output-to-srgb')
   return hasStepKinds(steps, EXPORT_LUT_STEP_KINDS) &&
     output?.role === 'scene-creative' &&

@@ -10,12 +10,9 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
 
 - `TransferFunctionId` gains `pq` (SMPTE ST 2084) and `hlg` (BT.2100 HLG).
   Code that switches exhaustively over the union needs a case for each.
-- A confirmed LUT whose output transfer is `pq` or `hlg` is refused by
-  `resolveExportColorGraph` and `resolveUnsupportedLUTOutputReason`
-  (`unsupported-output`, cause `output-transfer-hdr`): mapping an HDR signal
-  to the SDR JPEG needs a tone mapping the contract does not declare. Text
-  inference resolves LUT names such as `to PQ`, `to HLG`, `to Rec.2100` or
-  `to HDR10` as `unsupported-output`.
+- `ExportColorGraphStep` gains `lut-hdr-output-to-srgb`, the output step of
+  a LUT whose output transfer is `pq` or `hlg`. Code that switches
+  exhaustively over step kinds needs a case for it.
 
 - Removed `ProcessingParams`, a duplicate of `ColorGraphIntent`. Use
   `ColorGraphIntent` for the complete color intent and `LookSelection` for
@@ -100,17 +97,30 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   applies, the declared one or a display look's input transfer.
 - `UnsupportedLUTOutputReason.cause` (`UnsupportedLUTOutputCause`): the
   contract gap behind a refused LUT output (`output-range-unknown`,
-  `output-profile-missing`, `output-transfer-linear`,
-  `output-transfer-hdr`), so readers report it without restating the export
-  rules.
+  `output-profile-missing`, `output-transfer-linear`), so readers report it
+  without restating the export rules.
 - The BT.2100 HDR signal encodings as LUT transfers: `pq` and `hlg`, with
   TS and WGSL encode/decode. Linear 1.0 is HDR Reference White (203 cd/m²,
   58% PQ, 75% HLG); HLG is the scene-referred OETF without the display
   OOTF. `HDR_TRANSFER_IDS`, `HdrTransferFunctionId` and `isHdrTransfer`
   name them.
 - The HDR reference constants: `HDR_REFERENCE_WHITE_NITS` (203),
-  `HDR_NOMINAL_PEAK_NITS` (1000), `HDR_NOMINAL_PEAK_LINEAR` and
-  `PQ_PEAK_NITS`.
+  `HDR_NOMINAL_PEAK_NITS` (1000), `HDR_NOMINAL_PEAK_LINEAR`, `PQ_PEAK_NITS`,
+  and `HLG_SYSTEM_GAMMA` (1.2, the reference display's).
+- LUTs whose output is an HDR signal (`pq` or `hlg`). `resolveExportColorGraph`
+  ends their graph in `lut-hdr-output-to-srgb` (`EXPORT_HDR_LUT_STEP_KINDS`),
+  which records the BT.2100 operating point it renders at: the LUT's signal
+  becomes display light through the reference display's EOTF (PQ absolute;
+  HLG with the OOTF at 1000 cd/m² and system gamma 1.2), 1.0 at reference
+  white. Its SDR picture is that light through the BT.2390 EETF from the
+  nominal peak onto SDR white, applied to the largest sRGB channel and
+  scaled into all three (`HDR_TO_SDR_TONE_MAP`, unchanged up to
+  `HDR_TO_SDR_KNEE_LINEAR`); the look strength mixes it with the edited
+  scene in linear light, so zero strength writes the export without a look.
+  `LUMA_COLOR_HDR_OUTPUT_WGSL` draws the same in the WGSL preview. Text
+  inference reads LUT names such as `to PQ`, `to HLG`, `to HDR10` or
+  `to Rec.2100 PQ` as a Rec.2100 output contract (`to Rec.2100` alone leaves
+  the transfer to choose).
 - Built-in input profiles `rec2100-pq` and `rec2100-hlg` (BT.2020 primaries
   with PQ or HLG), and `Rec.2100`, `BT.2100` and `ITU-R BT.2100` as aliases of
   the `rec2020` gamut.
@@ -126,10 +136,12 @@ The format follows Keep a Changelog; versions follow semver. Releases up to
   a decoder does. A gain outside the range throws
   `HDR_GAIN_MAP_OUT_OF_RANGE` before anything is encoded.
   `resolveHdrGainMapSupport` gives a graph an HDR rendition when it has no
-  LUT, or when its LUT keeps the scene (`lutHasHdrRendition`: a
-  scene-creative LUT whose output is a scene-referred log encoding, decoded
-  back to scene light and mixed with the edited scene by the look strength);
-  any other LUT outputs a display signal (`lut-display-output`).
+  LUT, or when its LUT output holds light above SDR white
+  (`lutHasHdrRendition`): an HDR (`pq` or `hlg`) output, whose display light
+  is the rendition, or a scene-creative LUT whose output is a scene-referred
+  log encoding, decoded back to scene light; either is mixed with the edited
+  scene by the look strength. Any other LUT outputs an SDR display signal
+  (`lut-display-output`).
   `isSceneLogTransfer` and `isDisplayTransfer` name the two kinds of
   encoding.
 - HDR preview views for a display of any range (`HdrPreviewView`,

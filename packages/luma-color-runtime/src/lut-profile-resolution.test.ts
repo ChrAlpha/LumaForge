@@ -233,24 +233,31 @@ describe('lUT explicit profile labels', () => {
     }
   })
 
-  it('detects unsupported HDR (PQ or HLG) directional outputs', () => {
-    for (const sourceName of [
-      'SLog3_SGamut3Cine_to_PQ.cube',
-      'SLog3_SGamut3Cine_to_HLG.cube',
-      'SLog3_SGamut3Cine_toHLG.cube',
-      'LogC4_to_Rec2100_PQ_1000nits.cube',
-      'VLog_for_BT2100_HLG.cube',
-      'SLog3_to_HDR10.cube',
-      'SLog3_to_ST2084.cube',
-    ]) {
-      expect(
-        resolveLUTProfile({
-          title: 'Technical HDR LUT',
-          sourceName,
-          comments: [],
-        }),
+  it('reads HDR (PQ or HLG) directional outputs as Rec.2100 output contracts', () => {
+    for (const [sourceName, outputTransfer] of [
+      ['SLog3_SGamut3Cine_to_PQ.cube', 'pq'],
+      ['SLog3_SGamut3Cine_to_HLG.cube', 'hlg'],
+      ['SLog3_SGamut3Cine_toHLG.cube', 'hlg'],
+      ['LogC4_to_Rec2100_PQ_1000nits.cube', 'pq'],
+      ['VLog_for_BT2100_HLG.cube', 'hlg'],
+      ['SLog3_to_HDR10.cube', 'pq'],
+      ['SLog3_to_ST2084.cube', 'pq'],
+      ['LogC4_to_Rec2100.cube', undefined],
+    ] as const) {
+      const resolution = resolveLUTProfile({
+        title: 'Technical HDR LUT',
         sourceName,
-      ).toMatchObject({ kind: 'unsupported-output' })
+        comments: [],
+      })
+      expect(resolution.kind, sourceName).toBe('recommended')
+      if (resolution.kind !== 'recommended') continue
+      const recommendation = resolution.recommendations[0]
+      expect(recommendation, sourceName).toMatchObject({
+        role: 'combined-look-output',
+        outputGamut: 'rec2020',
+        outputRange: 'full',
+      })
+      expect(recommendation?.outputTransfer, sourceName).toBe(outputTransfer)
     }
   })
 

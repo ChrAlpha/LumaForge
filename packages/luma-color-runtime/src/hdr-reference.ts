@@ -20,3 +20,10 @@ export const HDR_NOMINAL_PEAK_LINEAR =
 
 /** Absolute luminance a PQ (SMPTE ST 2084) code value of 1.0 stands for. */
 export const PQ_PEAK_NITS = 10000
+
+/**
+ * HLG system gamma (BT.2100) of the reference display, whose peak is the
+ * nominal peak: the OOTF exponent that turns HLG scene light into display
+ * light there.
+ */
+export const HLG_SYSTEM_GAMMA = 1.2

@@ -36,7 +36,7 @@ describe('useLutContractBrowserState', () => {
     expect(result.current.hasInputMatches).toBe(true)
     expect(result.current.hasOutputMatches).toBe(true)
   })
-  it('lists Rec.2100 HDR carriers as inputs but never offers them as outputs', () => {
+  it('lists Rec.2100 HDR carriers as inputs and outputs', () => {
     const { result } = renderHook(() =>
       useLutContractBrowserState({ query: 'Rec.2100', suggestions: [] }),
     )
@@ -50,7 +50,8 @@ describe('useLutContractBrowserState', () => {
     expect(inputIds).toEqual(
       expect.arrayContaining(['rec2100-pq', 'rec2100-hlg']),
     )
-    expect(outputIds).not.toContain('rec2100-pq')
-    expect(outputIds).not.toContain('rec2100-hlg')
+    expect(outputIds).toEqual(
+      expect.arrayContaining(['rec2100-pq', 'rec2100-hlg']),
+    )
   })
 })

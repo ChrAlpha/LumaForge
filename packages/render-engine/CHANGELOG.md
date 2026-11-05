@@ -66,6 +66,12 @@ predates this file.
 
 ### Added
 
+- `parseRenderManifest` accepts a color graph whose LUT outputs an HDR
+  signal: the `EXPORT_HDR_LUT_STEP_KINDS` sequence, its
+  `lut-hdr-output-to-srgb` step holding the matrix, `pq` or `hlg` transfer,
+  range, role, intensity, reference white and nominal peak in cd/m², HLG
+  system gamma, and the `bt2390-eetf-maxrgb` tone map. The descriptor
+  version stays 2: the plain and SDR LUT sequences are unchanged.
 - `renderCpuPreviewFrame` takes an optional `hdrView` (`above-sdr` or
   `stop-down`) and draws that view of the gain-map export's HDR rendition
   instead of the SDR picture; the CPU preview worker's `render` request and

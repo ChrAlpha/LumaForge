@@ -2,13 +2,28 @@ import type {
   ExportColorGraphStep,
   SupportedExportColorGraphDescriptor,
 } from './color-graph'
-import { EXPORT_LUT_STEP_KINDS, EXPORT_PLAIN_STEP_KINDS } from './color-graph'
+import {
+  EXPORT_HDR_LUT_STEP_KINDS,
+  EXPORT_LUT_STEP_KINDS,
+  EXPORT_PLAIN_STEP_KINDS,
+} from './color-graph'
 import { encodeHdrGainMapRows, resolveHdrGainMapSupport } from './hdr-gain-map'
+import {
+  createHdrDisplayLightDecoder,
+  HDR_TO_SDR_TONE_MAP,
+  toneMapHdrToSdr,
+} from './hdr-output'
 import type { HdrPreviewView } from './hdr-preview'
 import { encodeHdrPreviewRows } from './hdr-preview'
+import {
+  HDR_NOMINAL_PEAK_NITS,
+  HDR_REFERENCE_WHITE_NITS,
+  HLG_SYSTEM_GAMMA,
+} from './hdr-reference'
+import { isHdrTransfer } from './log-encoding'
 import { compressLutInputToDomain } from './lut-domain'
 import { clamp01, mix, sampleLutTrilinear } from './lut3d'
-import { getGamutMatrix, mat3Multiply } from './matrix'
+import { getGamutMatrix } from './matrix'
 import { getTransferFunction } from './registry'
 import { applyUserSaturationTo } from './saturation'
 import {
@@ -78,6 +93,7 @@ type StepsOfKinds<Kinds extends readonly ExportColorGraphStep['kind'][]> = {
 
 type PlainSteps = StepsOfKinds<typeof EXPORT_PLAIN_STEP_KINDS>
 type LutSteps = StepsOfKinds<typeof EXPORT_LUT_STEP_KINDS>
+type HdrLutSteps = StepsOfKinds<typeof EXPORT_HDR_LUT_STEP_KINDS>
 
 function hasStepKinds<Kinds extends readonly ExportColorGraphStep['kind'][]>(
   steps: readonly ExportColorGraphStep[],
@@ -198,7 +214,7 @@ function compileSelectiveColor(
  * selective color, written to `sceneScratch` in linear ProPhoto.
  */
 function compileSceneStage(
-  steps: PlainSteps | LutSteps,
+  steps: PlainSteps | LutSteps | HdrLutSteps,
 ): (linear: Float32Array, sceneScratch: Float32Array) => void {
   const rawRenderExposureMultiplier = getRawRenderExposureMultiplier(steps[1])
   const colorBalanceGain = getUserColorBalanceGain(steps[2])
@@ -299,40 +315,33 @@ function compilePlainGraphApplier(steps: PlainSteps): GraphApplier {
 }
 
 /**
- * The LUT graph's applier. With `writeLookScene` a scene-creative LUT also
- * leaves the scene its look renders in `sceneScratch`: the edited scene
- * mixed by the look strength with the LUT output in linear ProPhoto,
- * unclamped, as the SDR bytes mix them in display light.
+ * Samples the LUT for one pixel of the edited scene (linear ProPhoto) and its
+ * SDR display light, writing the LUT's output signal with its range removed.
+ * A display look reads the display light; every other role reads the scene
+ * in its input gamut.
  */
-function compileLutGraphApplier(
-  steps: LutSteps,
-  writeLookScene: boolean,
-): GraphApplier {
-  const applyScene = compileSceneStage(steps)
-  const inputMatrix = steps[8].matrix
-  const encodeStep = steps[9]
-  const lutStep = steps[10]
-  const outputStep = steps[11]
-  const outputMatrix = outputStep.matrix
-  const encodeTransfer = getTransferFunction(encodeStep.transfer)
-  const decodeTransfer = getTransferFunction(outputStep.transfer)
-  if (!encodeTransfer || !decodeTransfer) {
-    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
-  }
+type LutSampler = (
+  sceneR: number,
+  sceneG: number,
+  sceneB: number,
+  baseDisplayLinearR: number,
+  baseDisplayLinearG: number,
+  baseDisplayLinearB: number,
+  out: MutableRgb,
+) => void
 
+function compileLutSampler(
+  inputStep: StepOfKind<'gamut-to-lut-input'>,
+  encodeStep: StepOfKind<'encode-lut-transfer'>,
+  lutStep: StepOfKind<'lut3d'>,
+  outputStep: StepOfKind<'lut-output-to-srgb' | 'lut-hdr-output-to-srgb'>,
+): LutSampler {
+  const inputMatrix = inputStep.matrix
+  const encodeTransfer = getTransferFunction(encodeStep.transfer)
+  if (!encodeTransfer) throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
+  const readsDisplay = outputStep.role === 'display-look' || !inputMatrix
   const inputIsLegalRange = encodeStep.range === 'legal'
   const outputIsLegalRange = outputStep.range === 'legal'
-  const role = outputStep.role
-  const intensity = outputStep.intensity
-  if (writeLookScene && role !== 'scene-creative') {
-    throw new Error('HDR_GAIN_MAP_UNSUPPORTED_PIPELINE')
-  }
-  // LUT output to linear ProPhoto through the step's own display matrix, so
-  // the look scene and the SDR bytes read the same LUT output gamut.
-  const lutOutputToProPhoto = mat3Multiply(
-    SRGB_TO_PROPHOTO_MATRIX,
-    outputMatrix,
-  )
   const domainMin = lutStep.domainMin
   const domainMax = lutStep.domainMax
   const inverseDomainSpanR =
@@ -343,7 +352,151 @@ function compileLutGraphApplier(
     domainMax[2] === domainMin[2] ? 0 : 1 / (domainMax[2] - domainMin[2])
   const lutInputEncoded: MutableRgb = [0, 0, 0]
   const lutInputDomain: MutableRgb = [0, 0, 0]
-  const lutSample: [number, number, number] = [0, 0, 0]
+
+  return (
+    sceneR,
+    sceneG,
+    sceneB,
+    baseDisplayLinearR,
+    baseDisplayLinearG,
+    baseDisplayLinearB,
+    out,
+  ) => {
+    let lutInputLinearR = baseDisplayLinearR
+    let lutInputLinearG = baseDisplayLinearG
+    let lutInputLinearB = baseDisplayLinearB
+
+    if (!readsDisplay) {
+      lutInputLinearR =
+        inputMatrix[0] * sceneR +
+        inputMatrix[1] * sceneG +
+        inputMatrix[2] * sceneB
+      lutInputLinearG =
+        inputMatrix[3] * sceneR +
+        inputMatrix[4] * sceneG +
+        inputMatrix[5] * sceneB
+      lutInputLinearB =
+        inputMatrix[6] * sceneR +
+        inputMatrix[7] * sceneG +
+        inputMatrix[8] * sceneB
+    }
+
+    lutInputEncoded[0] = applySignalRangeForLutInput(
+      encodeTransfer.encode(lutInputLinearR),
+      inputIsLegalRange,
+    )
+    lutInputEncoded[1] = applySignalRangeForLutInput(
+      encodeTransfer.encode(lutInputLinearG),
+      inputIsLegalRange,
+    )
+    lutInputEncoded[2] = applySignalRangeForLutInput(
+      encodeTransfer.encode(lutInputLinearB),
+      inputIsLegalRange,
+    )
+    compressLutInputToDomain(
+      lutInputEncoded,
+      domainMin,
+      domainMax,
+      lutInputDomain,
+    )
+
+    sampleLutTrilinear(
+      lutStep.data,
+      lutStep.size,
+      normalizeLutSample(lutInputDomain[0], domainMin[0], inverseDomainSpanR),
+      normalizeLutSample(lutInputDomain[1], domainMin[1], inverseDomainSpanG),
+      normalizeLutSample(lutInputDomain[2], domainMin[2], inverseDomainSpanB),
+      out,
+    )
+    out[0] = removeSignalRangeFromLutOutput(out[0], outputIsLegalRange)
+    out[1] = removeSignalRangeFromLutOutput(out[1], outputIsLegalRange)
+    out[2] = removeSignalRangeFromLutOutput(out[2], outputIsLegalRange)
+  }
+}
+
+/** The edited scene (linear ProPhoto) as SDR display light, at or above zero. */
+function writeBaseDisplayLinear(
+  sceneR: number,
+  sceneG: number,
+  sceneB: number,
+  out: MutableRgb,
+) {
+  out[0] = clampMin0(
+    PROPHOTO_TO_SRGB_MATRIX[0] * sceneR +
+      PROPHOTO_TO_SRGB_MATRIX[1] * sceneG +
+      PROPHOTO_TO_SRGB_MATRIX[2] * sceneB,
+  )
+  out[1] = clampMin0(
+    PROPHOTO_TO_SRGB_MATRIX[3] * sceneR +
+      PROPHOTO_TO_SRGB_MATRIX[4] * sceneG +
+      PROPHOTO_TO_SRGB_MATRIX[5] * sceneB,
+  )
+  out[2] = clampMin0(
+    PROPHOTO_TO_SRGB_MATRIX[6] * sceneR +
+      PROPHOTO_TO_SRGB_MATRIX[7] * sceneG +
+      PROPHOTO_TO_SRGB_MATRIX[8] * sceneB,
+  )
+}
+
+/**
+ * Writes the scene the look renders to `sceneScratch`: the edited scene mixed
+ * by the look strength with the LUT's light (sRGB primaries, linear,
+ * unclamped) carried to linear ProPhoto.
+ */
+function writeLookSceneAt(
+  sceneScratch: Float32Array,
+  index: number,
+  lutLinearR: number,
+  lutLinearG: number,
+  lutLinearB: number,
+  intensity: number,
+) {
+  sceneScratch[index] = mix(
+    sceneScratch[index],
+    SRGB_TO_PROPHOTO_MATRIX[0] * lutLinearR +
+      SRGB_TO_PROPHOTO_MATRIX[1] * lutLinearG +
+      SRGB_TO_PROPHOTO_MATRIX[2] * lutLinearB,
+    intensity,
+  )
+  sceneScratch[index + 1] = mix(
+    sceneScratch[index + 1],
+    SRGB_TO_PROPHOTO_MATRIX[3] * lutLinearR +
+      SRGB_TO_PROPHOTO_MATRIX[4] * lutLinearG +
+      SRGB_TO_PROPHOTO_MATRIX[5] * lutLinearB,
+    intensity,
+  )
+  sceneScratch[index + 2] = mix(
+    sceneScratch[index + 2],
+    SRGB_TO_PROPHOTO_MATRIX[6] * lutLinearR +
+      SRGB_TO_PROPHOTO_MATRIX[7] * lutLinearG +
+      SRGB_TO_PROPHOTO_MATRIX[8] * lutLinearB,
+    intensity,
+  )
+}
+
+/**
+ * The LUT graph's applier. With `writeLookScene` a scene-creative LUT also
+ * leaves the scene its look renders in `sceneScratch`: the edited scene
+ * mixed by the look strength with the LUT output in linear ProPhoto,
+ * unclamped, as the SDR bytes mix them in display light.
+ */
+function compileLutGraphApplier(
+  steps: LutSteps,
+  writeLookScene: boolean,
+): GraphApplier {
+  const applyScene = compileSceneStage(steps)
+  const outputStep = steps[11]
+  const sampleLut = compileLutSampler(steps[8], steps[9], steps[10], outputStep)
+  const outputMatrix = outputStep.matrix
+  const decodeTransfer = getTransferFunction(outputStep.transfer)
+  if (!decodeTransfer) throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
+  const role = outputStep.role
+  const intensity = outputStep.intensity
+  if (writeLookScene && role !== 'scene-creative') {
+    throw new Error('HDR_GAIN_MAP_UNSUPPORTED_PIPELINE')
+  }
+  const base: MutableRgb = [0, 0, 0]
+  const lutSample: MutableRgb = [0, 0, 0]
 
   return (linear, bytes, sceneScratch) => {
     const length = linear.length
@@ -353,119 +506,50 @@ function compileLutGraphApplier(
       const sceneR = sceneScratch[index]
       const sceneG = sceneScratch[index + 1]
       const sceneB = sceneScratch[index + 2]
-
-      const baseDisplayLinearR = clampMin0(
-        PROPHOTO_TO_SRGB_MATRIX[0] * sceneR +
-          PROPHOTO_TO_SRGB_MATRIX[1] * sceneG +
-          PROPHOTO_TO_SRGB_MATRIX[2] * sceneB,
-      )
-      const baseDisplayLinearG = clampMin0(
-        PROPHOTO_TO_SRGB_MATRIX[3] * sceneR +
-          PROPHOTO_TO_SRGB_MATRIX[4] * sceneG +
-          PROPHOTO_TO_SRGB_MATRIX[5] * sceneB,
-      )
-      const baseDisplayLinearB = clampMin0(
-        PROPHOTO_TO_SRGB_MATRIX[6] * sceneR +
-          PROPHOTO_TO_SRGB_MATRIX[7] * sceneG +
-          PROPHOTO_TO_SRGB_MATRIX[8] * sceneB,
-      )
-
-      let lutInputLinearR = baseDisplayLinearR
-      let lutInputLinearG = baseDisplayLinearG
-      let lutInputLinearB = baseDisplayLinearB
-
-      if (role !== 'display-look' && inputMatrix) {
-        lutInputLinearR =
-          inputMatrix[0] * sceneR +
-          inputMatrix[1] * sceneG +
-          inputMatrix[2] * sceneB
-        lutInputLinearG =
-          inputMatrix[3] * sceneR +
-          inputMatrix[4] * sceneG +
-          inputMatrix[5] * sceneB
-        lutInputLinearB =
-          inputMatrix[6] * sceneR +
-          inputMatrix[7] * sceneG +
-          inputMatrix[8] * sceneB
-      }
-
-      lutInputEncoded[0] = applySignalRangeForLutInput(
-        encodeTransfer.encode(lutInputLinearR),
-        inputIsLegalRange,
-      )
-      lutInputEncoded[1] = applySignalRangeForLutInput(
-        encodeTransfer.encode(lutInputLinearG),
-        inputIsLegalRange,
-      )
-      lutInputEncoded[2] = applySignalRangeForLutInput(
-        encodeTransfer.encode(lutInputLinearB),
-        inputIsLegalRange,
-      )
-      compressLutInputToDomain(
-        lutInputEncoded,
-        domainMin,
-        domainMax,
-        lutInputDomain,
-      )
-
-      sampleLutTrilinear(
-        lutStep.data,
-        lutStep.size,
-        normalizeLutSample(lutInputDomain[0], domainMin[0], inverseDomainSpanR),
-        normalizeLutSample(lutInputDomain[1], domainMin[1], inverseDomainSpanG),
-        normalizeLutSample(lutInputDomain[2], domainMin[2], inverseDomainSpanB),
+      writeBaseDisplayLinear(sceneR, sceneG, sceneB, base)
+      const baseDisplayLinearR = base[0]
+      const baseDisplayLinearG = base[1]
+      const baseDisplayLinearB = base[2]
+      sampleLut(
+        sceneR,
+        sceneG,
+        sceneB,
+        baseDisplayLinearR,
+        baseDisplayLinearG,
+        baseDisplayLinearB,
         lutSample,
       )
 
-      const lutOutputLinearR = decodeTransfer.decode(
-        removeSignalRangeFromLutOutput(lutSample[0], outputIsLegalRange),
-      )
-      const lutOutputLinearG = decodeTransfer.decode(
-        removeSignalRangeFromLutOutput(lutSample[1], outputIsLegalRange),
-      )
-      const lutOutputLinearB = decodeTransfer.decode(
-        removeSignalRangeFromLutOutput(lutSample[2], outputIsLegalRange),
-      )
+      const lutOutputLinearR = decodeTransfer.decode(lutSample[0])
+      const lutOutputLinearG = decodeTransfer.decode(lutSample[1])
+      const lutOutputLinearB = decodeTransfer.decode(lutSample[2])
+      const lutDisplayLinearR =
+        outputMatrix[0] * lutOutputLinearR +
+        outputMatrix[1] * lutOutputLinearG +
+        outputMatrix[2] * lutOutputLinearB
+      const lutDisplayLinearG =
+        outputMatrix[3] * lutOutputLinearR +
+        outputMatrix[4] * lutOutputLinearG +
+        outputMatrix[5] * lutOutputLinearB
+      const lutDisplayLinearB =
+        outputMatrix[6] * lutOutputLinearR +
+        outputMatrix[7] * lutOutputLinearG +
+        outputMatrix[8] * lutOutputLinearB
 
       if (writeLookScene) {
-        sceneScratch[index] = mix(
-          sceneR,
-          lutOutputToProPhoto[0] * lutOutputLinearR +
-            lutOutputToProPhoto[1] * lutOutputLinearG +
-            lutOutputToProPhoto[2] * lutOutputLinearB,
-          intensity,
-        )
-        sceneScratch[index + 1] = mix(
-          sceneG,
-          lutOutputToProPhoto[3] * lutOutputLinearR +
-            lutOutputToProPhoto[4] * lutOutputLinearG +
-            lutOutputToProPhoto[5] * lutOutputLinearB,
-          intensity,
-        )
-        sceneScratch[index + 2] = mix(
-          sceneB,
-          lutOutputToProPhoto[6] * lutOutputLinearR +
-            lutOutputToProPhoto[7] * lutOutputLinearG +
-            lutOutputToProPhoto[8] * lutOutputLinearB,
+        writeLookSceneAt(
+          sceneScratch,
+          index,
+          lutDisplayLinearR,
+          lutDisplayLinearG,
+          lutDisplayLinearB,
           intensity,
         )
       }
 
-      const styledDisplayLinearR = clampMin0(
-        outputMatrix[0] * lutOutputLinearR +
-          outputMatrix[1] * lutOutputLinearG +
-          outputMatrix[2] * lutOutputLinearB,
-      )
-      const styledDisplayLinearG = clampMin0(
-        outputMatrix[3] * lutOutputLinearR +
-          outputMatrix[4] * lutOutputLinearG +
-          outputMatrix[5] * lutOutputLinearB,
-      )
-      const styledDisplayLinearB = clampMin0(
-        outputMatrix[6] * lutOutputLinearR +
-          outputMatrix[7] * lutOutputLinearG +
-          outputMatrix[8] * lutOutputLinearB,
-      )
+      const styledDisplayLinearR = clampMin0(lutDisplayLinearR)
+      const styledDisplayLinearG = clampMin0(lutDisplayLinearG)
+      const styledDisplayLinearB = clampMin0(lutDisplayLinearB)
 
       if (role === 'scene-creative') {
         bytes[index] = toSrgbByte(
@@ -480,22 +564,111 @@ function compileLutGraphApplier(
         continue
       }
 
-      const baseDisplayColorR = linearToSrgb(baseDisplayLinearR)
-      const baseDisplayColorG = linearToSrgb(baseDisplayLinearG)
-      const baseDisplayColorB = linearToSrgb(baseDisplayLinearB)
-      const styledDisplayColorR = linearToSrgb(styledDisplayLinearR)
-      const styledDisplayColorG = linearToSrgb(styledDisplayLinearG)
-      const styledDisplayColorB = linearToSrgb(styledDisplayLinearB)
-
       bytes[index] = toEncodedByte(
-        mix(baseDisplayColorR, styledDisplayColorR, intensity),
+        mix(
+          linearToSrgb(baseDisplayLinearR),
+          linearToSrgb(styledDisplayLinearR),
+          intensity,
+        ),
       )
       bytes[index + 1] = toEncodedByte(
-        mix(baseDisplayColorG, styledDisplayColorG, intensity),
+        mix(
+          linearToSrgb(baseDisplayLinearG),
+          linearToSrgb(styledDisplayLinearG),
+          intensity,
+        ),
       )
       bytes[index + 2] = toEncodedByte(
-        mix(baseDisplayColorB, styledDisplayColorB, intensity),
+        mix(
+          linearToSrgb(baseDisplayLinearB),
+          linearToSrgb(styledDisplayLinearB),
+          intensity,
+        ),
       )
+    }
+  }
+}
+
+/**
+ * The applier of a graph whose LUT outputs an HDR signal. The LUT's display
+ * light is the look's HDR rendition; its SDR picture is that light through
+ * the BT.2390 EETF onto SDR white. Both mix with the edited scene by the look
+ * strength in linear light, so at zero strength each is the export without a
+ * look. With `writeLookScene` the applier leaves the HDR rendition's scene in
+ * `sceneScratch`.
+ */
+function compileHdrLutGraphApplier(
+  steps: HdrLutSteps,
+  writeLookScene: boolean,
+): GraphApplier {
+  const applyScene = compileSceneStage(steps)
+  const outputStep = steps[11]
+  if (
+    outputStep.referenceWhiteNits !== HDR_REFERENCE_WHITE_NITS ||
+    outputStep.nominalPeakNits !== HDR_NOMINAL_PEAK_NITS ||
+    outputStep.hlgSystemGamma !== HLG_SYSTEM_GAMMA ||
+    outputStep.toneMap !== HDR_TO_SDR_TONE_MAP ||
+    !isHdrTransfer(outputStep.transfer)
+  ) {
+    throw new Error('FULL_RES_EXPORT_UNSUPPORTED_PIPELINE')
+  }
+  const sampleLut = compileLutSampler(steps[8], steps[9], steps[10], outputStep)
+  const outputMatrix = outputStep.matrix
+  const decodeDisplayLight = createHdrDisplayLightDecoder(
+    outputStep.transfer,
+    outputMatrix,
+  )
+  const intensity = outputStep.intensity
+  const base: MutableRgb = [0, 0, 0]
+  const lutSample: MutableRgb = [0, 0, 0]
+  const lutLight: MutableRgb = [0, 0, 0]
+  const sdrLook: MutableRgb = [0, 0, 0]
+
+  return (linear, bytes, sceneScratch) => {
+    const length = linear.length
+    applyScene(linear, sceneScratch)
+
+    for (let index = 0; index < length; index += 3) {
+      const sceneR = sceneScratch[index]
+      const sceneG = sceneScratch[index + 1]
+      const sceneB = sceneScratch[index + 2]
+      writeBaseDisplayLinear(sceneR, sceneG, sceneB, base)
+      sampleLut(sceneR, sceneG, sceneB, base[0], base[1], base[2], lutSample)
+      decodeDisplayLight(lutSample[0], lutSample[1], lutSample[2], lutLight)
+
+      const lutDisplayLinearR =
+        outputMatrix[0] * lutLight[0] +
+        outputMatrix[1] * lutLight[1] +
+        outputMatrix[2] * lutLight[2]
+      const lutDisplayLinearG =
+        outputMatrix[3] * lutLight[0] +
+        outputMatrix[4] * lutLight[1] +
+        outputMatrix[5] * lutLight[2]
+      const lutDisplayLinearB =
+        outputMatrix[6] * lutLight[0] +
+        outputMatrix[7] * lutLight[1] +
+        outputMatrix[8] * lutLight[2]
+
+      if (writeLookScene) {
+        writeLookSceneAt(
+          sceneScratch,
+          index,
+          lutDisplayLinearR,
+          lutDisplayLinearG,
+          lutDisplayLinearB,
+          intensity,
+        )
+      }
+
+      toneMapHdrToSdr(
+        clampMin0(lutDisplayLinearR),
+        clampMin0(lutDisplayLinearG),
+        clampMin0(lutDisplayLinearB),
+        sdrLook,
+      )
+      bytes[index] = toSrgbByte(mix(base[0], sdrLook[0], intensity))
+      bytes[index + 1] = toSrgbByte(mix(base[1], sdrLook[1], intensity))
+      bytes[index + 2] = toSrgbByte(mix(base[2], sdrLook[2], intensity))
     }
   }
 }
@@ -518,6 +691,10 @@ function compileGraphApplier(
     hasStepKinds(steps, EXPORT_PLAIN_STEP_KINDS)
   ) {
     return compilePlainGraphApplier(steps)
+  }
+
+  if (hasStepKinds(steps, EXPORT_HDR_LUT_STEP_KINDS)) {
+    return compileHdrLutGraphApplier(steps, hdr)
   }
 
   if (!hasStepKinds(steps, EXPORT_LUT_STEP_KINDS)) {

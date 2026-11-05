@@ -4,6 +4,7 @@ import {
   USER_REGIONAL_TONE_PIVOT,
 } from './tone'
 
+export { LUMA_COLOR_HDR_OUTPUT_WGSL } from './hdr-output'
 export { LUMA_COLOR_HDR_PREVIEW_WGSL } from './hdr-preview'
 export { LUMA_COLOR_OKLAB_WGSL } from './oklab-wgsl'
 export { LUMA_COLOR_USER_SATURATION_WGSL } from './saturation-wgsl'
@@ -17,7 +18,8 @@ export { LUMA_COLOR_TRANSFER_WGSL } from './transfer-wgsl'
 
 // Host shader ABI: `params` supplies LUT size/domain/role/range/transfer values,
 // gamut matrices and selective-color chroma clamps. `lutTexture`/`lutSampler`
-// bind the 3D LUT; `linearProPhotoToLinearSrgb` is supplied by the host.
+// bind the 3D LUT; `linearProPhotoToLinearSrgb` is supplied by the host, and
+// `hdrSignalDisplayLight` by `LUMA_COLOR_HDR_OUTPUT_WGSL`.
 export const LUMA_COLOR_RANGE_WGSL = /* wgsl */ `
 const LUT_RANGE_FULL: i32 = 0;
 const LUT_RANGE_LEGAL: i32 = 1;
@@ -112,6 +114,20 @@ fn sceneLutOutputDisplayLinear(sceneLinearProPhoto: vec3f) -> vec3f {
   let lutOutputEncoded = removeSignalRangeFromLutOutput(applyLut(lutInputEncoded), params.lutOutputRange);
   let lutOutputLinear = decodeTransfer(lutOutputEncoded, params.lutOutputTransfer);
   return params.lutOutputToDisplayGamut * lutOutputLinear;
+}
+
+// An HDR LUT output's display light in sRGB primaries (1.0: reference white),
+// unclamped. A display look reads the SDR display light; every other role
+// reads the scene in its input gamut.
+fn hdrLutOutputDisplayLinear(sceneLinearProPhoto: vec3f, baseDisplayLinear: vec3f) -> vec3f {
+  var lutInputLinear = params.inputToLutGamut * sceneLinearProPhoto;
+  if (params.lutRole == LUT_ROLE_DISPLAY_LOOK) {
+    lutInputLinear = baseDisplayLinear;
+  }
+  let lutInputEncoded = applySignalRangeForLutInput(encodeTransfer(lutInputLinear, params.lutInputTransfer), params.lutInputRange);
+  let lutOutputEncoded = removeSignalRangeFromLutOutput(applyLut(lutInputEncoded), params.lutOutputRange);
+  let lutLight = hdrSignalDisplayLight(lutOutputEncoded, params.lutOutputTransfer, params.lutOutputToDisplayGamut);
+  return params.lutOutputToDisplayGamut * lutLight;
 }
 
 fn applySceneLutToDisplayLinear(sceneLinearProPhoto: vec3f) -> vec3f {

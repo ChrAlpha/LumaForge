@@ -248,18 +248,6 @@ describe('resolvePreviewColorPlan: custom LUT contracts', () => {
       'lut-output-transfer-linear',
     ],
     [
-      'a PQ output',
-      lut(confirmed(profile({ outputGamut: 'rec2020', outputTransfer: 'pq' }))),
-      'lut-output-transfer-hdr',
-    ],
-    [
-      'an HLG output',
-      lut(
-        confirmed(profile({ outputGamut: 'rec2020', outputTransfer: 'hlg' })),
-      ),
-      'lut-output-transfer-hdr',
-    ],
-    [
       'a display look with a linear output',
       lut(
         confirmed(

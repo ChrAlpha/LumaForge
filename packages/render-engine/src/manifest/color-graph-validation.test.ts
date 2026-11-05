@@ -5,7 +5,6 @@ import type {
 } from '@lumaforge/luma-color-runtime'
 import {
   generateIdentityLUT,
-  isHdrTransfer,
   NEUTRAL_USER_COLOR_INTENT,
   resolveExportColorGraph,
   TIER1_LUT_COLOR_PROFILES,
@@ -84,6 +83,15 @@ const logProfile: LUTColorProfile = {
   outputRange: 'legal',
 }
 
+function hdrProfile(outputTransfer: 'pq' | 'hlg'): LUTColorProfile {
+  return {
+    ...logProfile,
+    role: 'combined-look-output',
+    outputGamut: 'rec2020',
+    outputTransfer,
+  }
+}
+
 describe('checkColorGraphIdentity on what the current writers record', () => {
   const written: [string, () => Json][] = [
     ['a neutral graph', () => identityFor()],
@@ -115,6 +123,14 @@ describe('checkColorGraphIdentity on what the current writers record', () => {
       'a legal-range technical LUT with an explicit output',
       () => identityFor({ lut: lutWith(logProfile) }),
     ],
+    [
+      'a LUT with a PQ output',
+      () => identityFor({ lut: lutWith(hdrProfile('pq')) }),
+    ],
+    [
+      'a LUT with an HLG output',
+      () => identityFor({ lut: lutWith(hdrProfile('hlg')) }),
+    ],
   ]
 
   it.each(written)('accepts %s', (_label, build) => {
@@ -122,10 +138,9 @@ describe('checkColorGraphIdentity on what the current writers record', () => {
   })
 
   it('accepts every built-in LUT input profile as a display look', () => {
-    // A display look outputs its input transfer, and export refuses an HDR one.
-    for (const profile of TIER1_LUT_COLOR_PROFILES.filter(
-      (candidate) => !isHdrTransfer(candidate.inputTransfer),
-    )) {
+    // A display look outputs its input transfer, so the Rec.2100 profiles
+    // end in the HDR output step.
+    for (const profile of TIER1_LUT_COLOR_PROFILES) {
       const graph = identityFor({
         lut: lutWith({ ...profile, role: 'display-look' }),
       })
@@ -257,6 +272,35 @@ describe('checkColorGraphIdentity refusals', () => {
       'color_graph.descriptor.steps.8.matrix',
       'color_graph.descriptor.steps.10.data_sha256',
       'color_graph.descriptor.steps.10.data_encoding',
+    ])
+  })
+
+  it('refuses an HDR output step off its operating point', () => {
+    const graph = refingerprinted(
+      (d) => {
+        d.steps[11].transfer = 'srgb'
+        d.steps[11].toneMap = 'reinhard'
+        delete d.steps[11].hlgSystemGamma
+      },
+      identityFor({ lut: lutWith(hdrProfile('hlg')) }),
+    )
+    expect(pathsOf(graph)).toEqual([
+      'color_graph.descriptor.steps.11.transfer',
+      'color_graph.descriptor.steps.11.hlgSystemGamma',
+      'color_graph.descriptor.steps.11.toneMap',
+    ])
+  })
+
+  it('refuses an HDR output step in the SDR LUT sequence', () => {
+    const graph = refingerprinted(
+      (d) => (d.steps[11].kind = 'lut-output-to-srgb'),
+      identityFor({ lut: lutWith(hdrProfile('pq')) }),
+    )
+    expect(pathsOf(graph)).toEqual([
+      'color_graph.descriptor.steps.11.referenceWhiteNits',
+      'color_graph.descriptor.steps.11.nominalPeakNits',
+      'color_graph.descriptor.steps.11.hlgSystemGamma',
+      'color_graph.descriptor.steps.11.toneMap',
     ])
   })
 

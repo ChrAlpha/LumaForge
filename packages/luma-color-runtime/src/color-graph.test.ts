@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import type { ExportColorGraphInput, ExportColorGraphStep } from './color-graph'
 import {
+  EXPORT_HDR_LUT_STEP_KINDS,
   resolveExportColorGraph,
   resolveUnsupportedLUTOutputReason,
 } from './color-graph'
 import { generateIdentityLUT, toLUTData } from './cube-parser'
+import { getGamutMatrix } from './matrix'
 import type { LUTColorProfile } from './registry'
 import { getLUTColorProfile } from './registry'
 import type { HSLBandId, HSLBandShift } from './selective-color'
@@ -463,6 +465,44 @@ describe('resolveExportColorGraph', () => {
     )
   })
 
+  it('routes a PQ or HLG output through the HDR output step at the BT.2100 operating point', () => {
+    for (const transfer of ['pq', 'hlg'] as const) {
+      const graph = resolveExportColorGraph(
+        graphInput({
+          styleKind: 'custom',
+          intensity: 0.7,
+          lut: lutWith(
+            confirmed({
+              ...registryProfile('sony-sgamut3cine-slog3'),
+              role: 'combined-look-output',
+              outputGamut: 'rec2020',
+              outputTransfer: transfer,
+              outputRange: 'legal',
+            }),
+          ),
+        }),
+      )
+
+      expect(graph.supported).toBe(true)
+      if (!graph.supported) throw new Error('Expected supported graph')
+      expect(graph.steps.map((step) => step.kind)).toEqual(
+        EXPORT_HDR_LUT_STEP_KINDS,
+      )
+      expect(graph.steps[11]).toEqual({
+        kind: 'lut-hdr-output-to-srgb',
+        matrix: getGamutMatrix('rec2020', 'srgb-rec709'),
+        transfer,
+        range: 'legal',
+        role: 'combined-look-output',
+        intensity: 0.7,
+        referenceWhiteNits: 203,
+        nominalPeakNits: 1000,
+        hlgSystemGamma: 1.2,
+        toneMap: 'bt2390-eetf-maxrgb',
+      })
+    }
+  })
+
   it('resolves omitted display-look output transfer from the LUT input transfer', () => {
     const profile = registryProfile('rec709-gamma24')
     expect(profile.role).toBe('display-look')
@@ -706,8 +746,17 @@ describe('resolveUnsupportedLUTOutputReason', () => {
     outputRange: 'full',
   }
 
-  it('accepts a complete display-encoded output', () => {
+  it('accepts a complete display-encoded or HDR output', () => {
     expect(resolveUnsupportedLUTOutputReason(technical)).toBeUndefined()
+    for (const outputTransfer of ['pq', 'hlg'] as const) {
+      expect(
+        resolveUnsupportedLUTOutputReason({
+          ...technical,
+          outputGamut: 'rec2020',
+          outputTransfer,
+        }),
+      ).toBeUndefined()
+    }
   })
 
   it.each([
@@ -721,16 +770,6 @@ describe('resolveUnsupportedLUTOutputReason', () => {
       { outputTransfer: 'linear' },
       'unsupported-output',
       'output-transfer-linear',
-    ],
-    [
-      { outputGamut: 'rec2020', outputTransfer: 'pq' },
-      'unsupported-output',
-      'output-transfer-hdr',
-    ],
-    [
-      { outputGamut: 'rec2020', outputTransfer: 'hlg' },
-      'unsupported-output',
-      'output-transfer-hdr',
     ],
   ] as const)('names the gap of %o', (change, code, cause) => {
     expect(

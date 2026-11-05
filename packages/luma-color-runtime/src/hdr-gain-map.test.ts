@@ -73,6 +73,24 @@ function logC3Lut(gain: number, profile = LOGC3_CREATIVE_PROFILE): LUTData {
   }
 }
 
+/** A LUT from Rec.2100 to Rec.2100 in `transfer` that keeps the signal. */
+function rec2100IdentityLut(transfer: 'pq' | 'hlg'): LUTData {
+  return {
+    ...toLUTData(generateIdentityLUT(33)),
+    profileResolution: {
+      kind: 'confirmed',
+      confidence: 'user',
+      profile: {
+        ...getLUTColorProfile(`rec2100-${transfer}`)!,
+        role: 'combined-look-output',
+        outputGamut: 'rec2020',
+        outputTransfer: transfer,
+        outputRange: 'full',
+      },
+    },
+  }
+}
+
 function lutGraph(
   lut: LUTData,
   overrides: Partial<ExportColorGraphInput> = {},
@@ -196,6 +214,27 @@ describe('resolveHdrGainMapSupport', () => {
         ),
       ),
     ).toEqual({ supported: false, reason: 'lut-display-output' })
+  })
+
+  it('gives a LUT with an HDR (PQ or HLG) output an HDR rendition', () => {
+    for (const transfer of ['pq', 'hlg'] as const) {
+      const lut = rec2100IdentityLut(transfer)
+      if (lut.profileResolution.kind !== 'confirmed')
+        throw new Error('confirmed')
+      for (const role of [
+        'display-look',
+        'scene-creative',
+        'technical-output',
+        'combined-look-output',
+      ] as const) {
+        expect(
+          lutHasHdrRendition({ ...lut.profileResolution.profile, role }),
+        ).toBe(true)
+      }
+      expect(resolveHdrGainMapSupport(lutGraph(lut))).toEqual({
+        supported: true,
+      })
+    }
   })
 
   it('refuses an unsupported graph', () => {
@@ -371,6 +410,93 @@ describe('createHdrGainMapRowBandProcessor', () => {
         lutGraph(logC3Lut(0.5), { intensity: 0, ...exposure }),
       ),
     ).toEqual(processPixel(highlight, resolvedGraph(exposure)))
+  })
+
+  it('rolls an HDR LUT output off into the SDR picture and keeps its light', () => {
+    const graph = lutGraph(rec2100IdentityLut('pq'), { intensity: 1 })
+    // Below the knee the SDR picture is the light itself: the export
+    // without a look.
+    const midtone = [0.2, 0.15, 0.1]
+    expect(processPixel(midtone, graph).sdr).toEqual(processPixel(midtone).sdr)
+
+    // One and two times reference white, which the SDR export without a
+    // look clips alike; the PQ output's SDR picture keeps them apart below
+    // SDR white, and its gain map restores each.
+    const pixels = [1, 2].map((ev) => ({
+      plain: processPixel(
+        [0.5, 0.5, 0.5],
+        resolvedGraph({ userExposureEv: ev }),
+      ),
+      pq: processPixel(
+        [0.5, 0.5, 0.5],
+        lutGraph(rec2100IdentityLut('pq'), {
+          intensity: 1,
+          userExposureEv: ev,
+        }),
+      ),
+    }))
+    for (const { plain } of pixels) expect(plain.sdr).toEqual([255, 255, 255])
+    const [white, twice] = pixels.map(({ pq }) => pq)
+    expect(white.sdr[0]).toBeLessThan(twice.sdr[0])
+    expect(twice.sdr[0]).toBeLessThan(255)
+    for (const value of reconstructHdr(white.sdr, white.gainMap)) {
+      expect(value).toBeCloseTo(1, 1)
+    }
+    for (const value of reconstructHdr(twice.sdr, twice.gainMap)) {
+      expect(value).toBeCloseTo(2, 1)
+    }
+  })
+
+  it('shows an HLG output on its reference display', () => {
+    const lut = rec2100IdentityLut('hlg')
+    // A LUT that outputs 75% HLG everywhere: HDR Reference White.
+    const white = { ...lut, data: lut.data.map(() => 0.75) }
+    const pixel = processPixel([0.1, 0.1, 0.1], lutGraph(white))
+    for (const value of reconstructHdr(pixel.sdr, pixel.gainMap)) {
+      expect(value).toBeCloseTo(1, 1)
+    }
+    // Reference white sits below SDR white in the SDR picture.
+    for (const code of pixel.sdr) {
+      expect(code).toBeGreaterThan(225)
+      expect(code).toBeLessThan(235)
+    }
+  })
+
+  it('writes the export without a look for an HDR LUT output at zero strength', () => {
+    const width = 7
+    const rows = 5
+    const source = seededSamples(width * rows * 3, 20_261_105)
+    for (const transfer of ['pq', 'hlg'] as const) {
+      const edits = { userExposureEv: 2, userSaturation: 20 }
+      const lut = lutGraph(rec2100IdentityLut(transfer), {
+        intensity: 0,
+        ...edits,
+      })
+      const plain = createHdrGainMapRowBandProcessor({
+        width,
+        rowBandRows: rows,
+        graph: resolvedGraph(edits),
+      }).processUint16Rows(source, rows)
+      const expected = {
+        sdr: plain.sdr.slice(),
+        gainMap: plain.gainMap.slice(),
+      }
+      const rendered = createHdrGainMapRowBandProcessor({
+        width,
+        rowBandRows: rows,
+        graph: lut,
+      }).processUint16Rows(source, rows)
+      expect(rendered.sdr).toEqual(expected.sdr)
+      expect(rendered.gainMap).toEqual(expected.gainMap)
+      // The SDR export of the graph writes the gain-map export's primary.
+      expect(
+        createRowBandProcessor({
+          width,
+          rowBandRows: rows,
+          graph: lut,
+        }).processUint16Rows(source, rows),
+      ).toEqual(expected.sdr)
+    }
   })
 
   it('refuses a graph without an HDR rendition', () => {

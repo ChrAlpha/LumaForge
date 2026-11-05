@@ -1,7 +1,13 @@
 import type { LumaColorBalanceParams } from './color-balance'
 import { resolveColorBalanceParams } from './color-balance'
 import type { ColorGamutId } from './constants'
-import type { TransferFunctionId } from './log-encoding'
+import { HDR_TO_SDR_TONE_MAP } from './hdr-output'
+import {
+  HDR_NOMINAL_PEAK_NITS,
+  HDR_REFERENCE_WHITE_NITS,
+  HLG_SYSTEM_GAMMA,
+} from './hdr-reference'
+import type { HdrTransferFunctionId, TransferFunctionId } from './log-encoding'
 import { isHdrTransfer } from './log-encoding'
 import type { Mat3 } from './matrix'
 import { getGamutMatrix, mat3Identity } from './matrix'
@@ -103,6 +109,24 @@ export type ExportColorGraphStep =
       role: LUTRole
       intensity: number
     }
+  | {
+      /**
+       * A LUT whose output is an HDR signal: its display light (BT.2100 EOTF
+       * of the reference display, 1.0 at reference white) mixed by the look
+       * strength with the edited scene, in linear light. The SDR picture
+       * takes the LUT's light through `toneMap` before that mix.
+       */
+      kind: 'lut-hdr-output-to-srgb'
+      matrix: Mat3
+      transfer: HdrTransferFunctionId
+      range: SignalRange
+      role: LUTRole
+      intensity: number
+      referenceWhiteNits: number
+      nominalPeakNits: number
+      hlgSystemGamma: number
+      toneMap: typeof HDR_TO_SDR_TONE_MAP
+    }
   | { kind: 'output-srgb' }
 
 export type ExportColorGraphDescriptor =
@@ -152,6 +176,16 @@ export const EXPORT_LUT_STEP_KINDS = [
   'output-srgb',
 ] as const
 
+/** The step sequence of a supported export graph whose LUT outputs HDR. */
+export const EXPORT_HDR_LUT_STEP_KINDS = [
+  ...EXPORT_SCENE_STEP_KINDS,
+  'gamut-to-lut-input',
+  'encode-lut-transfer',
+  'lut3d',
+  'lut-hdr-output-to-srgb',
+  'output-srgb',
+] as const
+
 const OUTPUT_GAMUT = 'srgb-rec709'
 const OUTPUT_TRANSFER = 'srgb'
 const IDENTITY_RAW_RENDER_EXPOSURE: RawRenderExposure = {
@@ -176,7 +210,6 @@ export type UnsupportedLUTOutputCause =
   | 'output-range-unknown'
   | 'output-profile-missing'
   | 'output-transfer-linear'
-  | 'output-transfer-hdr'
 
 /**
  * Why a confirmed LUT profile cannot feed full-resolution JPEG export:
@@ -229,17 +262,6 @@ export function resolveUnsupportedLUTOutputReason(
       cause: 'output-transfer-linear',
       message:
         'This LUT output transfer is not supported by full-resolution JPEG export.',
-    }
-  }
-
-  // The output transform maps a LUT's output to the SDR JPEG; an HDR signal
-  // would need a tone mapping the contract does not declare.
-  if (isHdrTransfer(effectiveOutputTransfer)) {
-    return {
-      code: 'unsupported-output',
-      cause: 'output-transfer-hdr',
-      message:
-        'This LUT outputs an HDR signal (PQ or HLG), which full-resolution JPEG export does not support.',
     }
   }
 
@@ -409,6 +431,52 @@ export function resolveExportColorGraph(
     outputGamut === OUTPUT_GAMUT
       ? mat3Identity()
       : getGamutMatrix(outputGamut, OUTPUT_GAMUT)
+  const outputTransfer = effectiveOutputTransfer!
+  const lutSteps: ExportColorGraphStep[] = [
+    {
+      kind: 'gamut-to-lut-input',
+      matrix: inputMatrix,
+      gamut: profile.inputGamut,
+    },
+    {
+      kind: 'encode-lut-transfer',
+      transfer: profile.inputTransfer,
+      range: profile.inputRange,
+    },
+    {
+      kind: 'lut3d',
+      size: input.lut.size,
+      data: input.lut.data,
+      domainMin: input.lut.domainMin,
+      domainMax: input.lut.domainMax,
+    },
+  ]
+
+  if (isHdrTransfer(outputTransfer)) {
+    return {
+      supported: true,
+      outputGamut: OUTPUT_GAMUT,
+      outputTransfer: OUTPUT_TRANSFER,
+      lutProfile: profile,
+      steps: [
+        ...base,
+        ...lutSteps,
+        {
+          kind: 'lut-hdr-output-to-srgb',
+          matrix: outputMatrix,
+          transfer: outputTransfer,
+          range: outputRange,
+          role: profile.role,
+          intensity: input.intensity,
+          referenceWhiteNits: HDR_REFERENCE_WHITE_NITS,
+          nominalPeakNits: HDR_NOMINAL_PEAK_NITS,
+          hlgSystemGamma: HLG_SYSTEM_GAMMA,
+          toneMap: HDR_TO_SDR_TONE_MAP,
+        },
+        { kind: 'output-srgb' },
+      ],
+    }
+  }
 
   return {
     supported: true,
@@ -417,27 +485,11 @@ export function resolveExportColorGraph(
     lutProfile: profile,
     steps: [
       ...base,
-      {
-        kind: 'gamut-to-lut-input',
-        matrix: inputMatrix,
-        gamut: profile.inputGamut,
-      },
-      {
-        kind: 'encode-lut-transfer',
-        transfer: profile.inputTransfer,
-        range: profile.inputRange,
-      },
-      {
-        kind: 'lut3d',
-        size: input.lut.size,
-        data: input.lut.data,
-        domainMin: input.lut.domainMin,
-        domainMax: input.lut.domainMax,
-      },
+      ...lutSteps,
       {
         kind: 'lut-output-to-srgb',
         matrix: outputMatrix,
-        transfer: effectiveOutputTransfer!,
+        transfer: outputTransfer,
         range: outputRange,
         role: profile.role,
         intensity: input.intensity,

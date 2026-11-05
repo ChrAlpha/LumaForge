@@ -79,7 +79,6 @@ export const PREVIEW_LOOK_REASON_COPY: Record<PreviewLookReason, MessageKey> = {
   'lut-output-range-unknown': 'raw.previewLook.lutOutputRangeUnknown',
   'lut-output-profile-missing': 'raw.previewLook.lutOutputProfileMissing',
   'lut-output-transfer-linear': 'raw.previewLook.lutOutputTransferLinear',
-  'lut-output-transfer-hdr': 'raw.previewLook.lutOutputTransferHdr',
   'lut-contract-refused': 'raw.previewLook.lutContractRefused',
   'builtin-preset-missing': 'raw.previewLook.builtinPresetMissing',
   'builtin-no-ts-executor': 'raw.previewLook.builtinCpuPreview',
@@ -107,8 +106,7 @@ export function previewLookReasonContractSide(
     case 'lut-output-unsupported':
     case 'lut-output-range-unknown':
     case 'lut-output-profile-missing':
-    case 'lut-output-transfer-linear':
-    case 'lut-output-transfer-hdr': {
+    case 'lut-output-transfer-linear': {
       return 'output'
     }
     default: {

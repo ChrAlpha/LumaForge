@@ -153,8 +153,8 @@ const HDR_ABOVE_SDR_HIGH_TINT: vec3f = vec3f(${HDR_ABOVE_SDR_HIGH_TINT.join(', '
 
 const HDR_SRGB_TO_PROPHOTO: mat3x3f = ${wgslMatrix(getGamutMatrix('srgb-rec709', 'prophoto-rgb'))};
 
-// The scene a scene-creative LUT look renders: the edited scene mixed by the
-// look strength with the LUT output (scene light, display gamut, unclamped).
+// The scene a LUT look with an HDR rendition renders: the edited scene mixed
+// by the look strength with the LUT's light (sRGB primaries, unclamped).
 fn hdrLutLookSceneLinearProPhoto(editedScene: vec3f, lutOutputDisplayLinear: vec3f, intensity: f32) -> vec3f {
   return mix(editedScene, HDR_SRGB_TO_PROPHOTO * lutOutputDisplayLinear, intensity);
 }

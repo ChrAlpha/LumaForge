@@ -10,8 +10,10 @@
 // refused rather than read as current.
 
 import {
+  EXPORT_HDR_LUT_STEP_KINDS,
   EXPORT_LUT_STEP_KINDS,
   EXPORT_PLAIN_STEP_KINDS,
+  HDR_TO_SDR_TONE_MAP,
   HSL_BAND_IDS,
 } from '@lumaforge/luma-color-runtime'
 
@@ -229,6 +231,17 @@ const STEP_FIELDS: Readonly<Record<string, FieldRules>> = {
     role: 'string',
     intensity: 'number',
   },
+  'lut-hdr-output-to-srgb': {
+    matrix: 'mat3',
+    transfer: { oneOf: ['pq', 'hlg'] },
+    range: SIGNAL_RANGE,
+    role: 'string',
+    intensity: 'number',
+    referenceWhiteNits: 'number',
+    nominalPeakNits: 'number',
+    hlgSystemGamma: 'number',
+    toneMap: { oneOf: [HDR_TO_SDR_TONE_MAP] },
+  },
   'output-srgb': {},
 }
 
@@ -257,17 +270,19 @@ function checkSteps(
     report(path, `must be an array, got ${describeValue(steps)}.`)
     return
   }
-  const expected: readonly string[] = appliesLut
-    ? EXPORT_LUT_STEP_KINDS
-    : EXPORT_PLAIN_STEP_KINDS
   const kinds = steps.map(stepKind)
-  if (
-    kinds.length !== expected.length ||
-    kinds.some((kind, index) => kind !== expected[index])
-  ) {
+  const sequences: readonly (readonly string[])[] = appliesLut
+    ? [EXPORT_LUT_STEP_KINDS, EXPORT_HDR_LUT_STEP_KINDS]
+    : [EXPORT_PLAIN_STEP_KINDS]
+  const expected = sequences.find(
+    (sequence) =>
+      kinds.length === sequence.length &&
+      kinds.every((kind, index) => kind === sequence[index]),
+  )
+  if (!expected) {
     report(
       path,
-      `must be the ${appliesLut ? 'LUT' : 'plain'} export step sequence ${expected.join(', ')}; got ${kinds.map((kind) => (typeof kind === 'string' ? kind : describeValue(kind))).join(', ') || 'no steps'}.`,
+      `must be ${appliesLut ? 'a LUT' : 'the plain'} export step sequence (${sequences.map((sequence) => sequence.join(', ')).join('; or ')}); got ${kinds.map((kind) => (typeof kind === 'string' ? kind : describeValue(kind))).join(', ') || 'no steps'}.`,
     )
     return
   }

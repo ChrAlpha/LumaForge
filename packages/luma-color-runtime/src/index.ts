@@ -30,6 +30,7 @@ export {
   lutHasHdrRendition,
   resolveHdrGainMapSupport,
 } from './hdr-gain-map'
+export { HDR_TO_SDR_KNEE_LINEAR, HDR_TO_SDR_TONE_MAP } from './hdr-output'
 export type { HdrPreviewView } from './hdr-preview'
 export {
   HDR_ABOVE_SDR_BASE_SCALE,
