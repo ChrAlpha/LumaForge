@@ -959,6 +959,8 @@ describeWithFixture('lmfg agent loop', () => {
       sessionId,
       '--manifest',
       fileURLToPath(sceneHdr.envelope.result!.manifest_uri as string),
+      '--lut',
+      'scene.cube',
       '--name',
       'scene-hdr',
     )
