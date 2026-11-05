@@ -174,6 +174,7 @@ export type ExportManifest = {
     }
   }
   lut: unknown
+  color_graph: { descriptor: { steps: Record<string, unknown>[] } }
   environment: {
     native_artifacts: { build_id: string; variant: 'desktop' | 'low-memory' }
   }

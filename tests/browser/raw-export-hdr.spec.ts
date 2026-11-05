@@ -1,9 +1,10 @@
 import { Buffer } from 'node:buffer'
+import { writeFile } from 'node:fs/promises'
 
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
-import { downloadJpeg, downloadManifest } from './support/files'
+import { createCube, downloadJpeg, downloadManifest } from './support/files'
 import { dngFile, PUBLIC_DNG_SIZE } from './support/fixtures'
 import { readCanvas } from './support/frames'
 import {
@@ -229,5 +230,53 @@ test('HDR gain map export: the SDR JPEG unchanged, its gain map indexed beside i
     reference_white_nits: 203,
     nominal_peak_nits: 1000,
     quality: 98,
+  })
+})
+
+test('HDR gain map export over a LUT that outputs PQ', async ({
+  page,
+}, testInfo) => {
+  testInfo.setTimeout(600_000)
+  const raw = await dngFile(testInfo, 'hdr-pq.dng')
+  // A Rec.2100 PQ to PQ LUT that keeps the signal, its contract declared in
+  // the file.
+  const cubePath = testInfo.outputPath('rec2100-pq.cube')
+  await writeFile(
+    cubePath,
+    [
+      '# LUMAFORGE_ROLE=combined-look-output',
+      '# LUMAFORGE_INPUT_PROFILE=rec2100-pq',
+      '# LUMAFORGE_OUTPUT_GAMUT=rec2020',
+      '# LUMAFORGE_OUTPUT_TRANSFER=pq',
+      '# LUMAFORGE_OUTPUT_RANGE=full',
+      createCube('Rec.2100 PQ identity'),
+    ].join('\n'),
+    'utf8',
+  )
+  await openLab(page, testInfo)
+  await chooseRaw(page, raw)
+  await waitForLoaded(page, raw.name)
+  await page
+    .locator('input[type="file"][accept=".cube"]')
+    .first()
+    .setInputFiles(cubePath)
+  await openTool(page, 'Export')
+  await hdrOption(page).check()
+  await expect(hdrOption(page)).toBeChecked()
+  await exportFullResolution(page)
+  const hdr = await downloadJpeg(page)
+  const { manifest } = await downloadManifest(page)
+
+  const [primary, gainMap] = mpEntries(hdr.bytes)
+  expect(primary.size + gainMap.size).toBe(hdr.bytes.length)
+  expect(
+    app2(headerSegments(hdr.bytes, gainMap.start), ISO_21496_URN),
+  ).toHaveLength(1)
+  expect(manifest.output.sha256).toBe(hdr.sha256)
+  expect(manifest.output.hdr_gain_map).toMatchObject({ gamut: 'rec2020' })
+  expect(manifest.color_graph.descriptor.steps.at(-2)).toMatchObject({
+    kind: 'lut-hdr-output-to-srgb',
+    transfer: 'pq',
+    toneMap: 'bt2390-eetf-maxrgb',
   })
 })
