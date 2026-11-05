@@ -1,5 +1,6 @@
 import {
   LUMA_COLOR_BALANCE_WGSL,
+  LUMA_COLOR_HDR_OUTPUT_WGSL,
   LUMA_COLOR_HDR_PREVIEW_WGSL,
   LUMA_COLOR_LUT_WGSL,
   LUMA_COLOR_OKLAB_WGSL,
@@ -98,6 +99,7 @@ ${LUMA_COLOR_TONE_WGSL}
 ${LUMA_COLOR_OKLAB_WGSL}
 ${LUMA_COLOR_SELECTIVE_COLOR_WGSL}
 ${LUMA_COLOR_USER_SATURATION_WGSL}
+${LUMA_COLOR_HDR_OUTPUT_WGSL}
 ${LUMA_COLOR_HDR_PREVIEW_WGSL}
 
 fn luminance709(color: vec3f) -> f32 {
@@ -199,7 +201,21 @@ fn processColor(technicalBaseSceneLinearProPhoto: vec3f) -> vec4f {
   if (params.styleKind == STYLE_BUILTIN) {
     styledColor = mix(editedBaseDisplayColor, applyBuiltinStyle(editedBaseDisplayColor), intensity);
   } else if (params.styleKind == STYLE_CUSTOM && params.useLut != 0) {
-    if (isSceneCreativeLut()) {
+    if (isHdrOutputTransfer(params.lutOutputTransfer)) {
+      // An HDR output's light is the look's HDR rendition; its SDR picture
+      // is that light through the EETF. Both mix with the edited scene in
+      // linear light.
+      let lutLight = hdrLutOutputDisplayLinear(editedBaseSceneLinearProPhoto, editedBaseDisplayLinear);
+      let sdrLook = hdrToSdrDisplayLinear(max(lutLight, vec3f(0.0)));
+      let mixedDisplayLinear = mix(editedBaseDisplayLinear, sdrLook, intensity);
+      styledColor = linearToSrgb(mixedDisplayLinear);
+      sdrDisplayLinear = mixedDisplayLinear;
+      hdrSceneLinearProPhoto = hdrLutLookSceneLinearProPhoto(
+        editedBaseSceneLinearProPhoto,
+        lutLight,
+        intensity
+      );
+    } else if (isSceneCreativeLut()) {
       let lutOutputDisplayLinear = sceneLutOutputDisplayLinear(editedBaseSceneLinearProPhoto);
       let styledDisplayLinear = max(lutOutputDisplayLinear, vec3f(0.0));
       let mixedDisplayLinear = mix(editedBaseDisplayLinear, styledDisplayLinear, intensity);

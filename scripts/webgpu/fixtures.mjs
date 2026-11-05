@@ -76,6 +76,24 @@ export function makeLut(
   }
 }
 
+/** Non-neutral user color, so a preview that drops it with the look shows. */
+export const ADJUSTED_USER_COLOR = Object.freeze({
+  userExposureEv: 0.35,
+  userContrast: 18,
+  userHighlights: -22,
+  userShadows: 16,
+  userWhites: -8,
+  userBlacks: 6,
+  userTemperature: 21,
+  userTint: -9,
+  userSaturation: 14,
+  userVibrance: 11,
+  selectiveColor: {
+    orange: { hue: 12, saturation: -18, lightness: 6 },
+    blue: { hue: -9, saturation: 15, lightness: -4 },
+  },
+})
+
 export function scenarios(transferIds = []) {
   const result = [{ name: 'neutral', params: {} }]
   for (const preset of [
@@ -170,6 +188,16 @@ export function scenarios(transferIds = []) {
       params: { styleKind: 'custom', intensity: 1 },
     })
   }
+  // An HDR (PQ or HLG) output: the SDR picture rolls the LUT's light off
+  // through the EETF, over adjusted user color.
+  for (const transfer of ['pq', 'hlg']) {
+    for (const intensity of [0.71, 1])
+      result.push({
+        name: `lut-hdr-output-${transfer}${intensity === 1 ? '-full' : ''}`,
+        lut: makeHdrOutputLut(transfer),
+        params: { ...ADJUSTED_USER_COLOR, styleKind: 'custom', intensity },
+      })
+  }
   const domain = makeLut()
   domain.domainMin = [-0.15, -0.05, -0.2]
   domain.domainMax = [0.7, 0.9, 0.8]
@@ -192,10 +220,8 @@ export function scenarios(transferIds = []) {
         name: `transfer-output-${transfer}`,
         lut: output,
         params: { styleKind: 'custom', intensity: 1 },
-        // Export refuses a linear or an HDR (PQ, HLG) LUT output.
-        ...(['linear', 'pq', 'hlg'].includes(transfer)
-          ? { exportRefused: true }
-          : {}),
+        // Export refuses a linear LUT output.
+        ...(transfer === 'linear' ? { exportRefused: true } : {}),
       },
     )
   }
@@ -203,23 +229,13 @@ export function scenarios(transferIds = []) {
   return result
 }
 
-/** Non-neutral user color, so a preview that drops it with the look shows. */
-export const ADJUSTED_USER_COLOR = Object.freeze({
-  userExposureEv: 0.35,
-  userContrast: 18,
-  userHighlights: -22,
-  userShadows: 16,
-  userWhites: -8,
-  userBlacks: 6,
-  userTemperature: 21,
-  userTint: -9,
-  userSaturation: 14,
-  userVibrance: 11,
-  selectiveColor: {
-    orange: { hue: 12, saturation: -18, lightness: 6 },
-    blue: { hue: -9, saturation: 15, lightness: -4 },
-  },
-})
+/** A Rec.2100 output LUT from ACEScct, in PQ or HLG. */
+export function makeHdrOutputLut(transfer) {
+  const lut = makeLut('combined-look-output', 'acescct')
+  lut.profileResolution.profile.outputGamut = 'rec2020'
+  lut.profileResolution.profile.outputTransfer = transfer
+  return lut
+}
 
 /**
  * Custom LUTs whose contract export refuses, at partial strength over adjusted
@@ -232,9 +248,6 @@ export function refusedLutScenarios() {
   const linearTechnical = makeLut('technical-output', 'acescct')
   linearTechnical.profileResolution.profile.outputGamut = 'rec2020'
   linearTechnical.profileResolution.profile.outputTransfer = 'linear'
-  const hdrTechnical = makeLut('technical-output', 'acescct')
-  hdrTechnical.profileResolution.profile.outputGamut = 'rec2020'
-  hdrTechnical.profileResolution.profile.outputTransfer = 'pq'
   const unknownRange = makeLut('display-look', 'srgb')
   unknownRange.profileResolution.profile.outputRange = 'unknown'
   const missingOutput = makeLut('combined-look-output', 's-log3', true)
@@ -247,7 +260,6 @@ export function refusedLutScenarios() {
   return [
     ['display-linear-output', linearDisplay, 0.63],
     ['technical-linear-output', linearTechnical, 0.37],
-    ['technical-hdr-output', hdrTechnical, 0.58],
     ['output-range-unknown', unknownRange, 0.81],
     ['output-profile-missing', missingOutput, 0.52],
     ['input-unconfirmed', unconfirmed, 0.44],

@@ -117,10 +117,7 @@ describe('webGPU validation scenarios', () => {
     expect(refused.map((scenario) => scenario.name)).toEqual(
       expect.arrayContaining([
         'transfer-output-linear',
-        'transfer-output-pq',
-        'transfer-output-hlg',
         'lut-refused-display-linear-output',
-        'lut-refused-technical-hdr-output',
         'lut-refused-input-unconfirmed',
       ]),
     )

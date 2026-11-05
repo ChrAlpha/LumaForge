@@ -2,6 +2,7 @@ import {
   ADJUSTED_USER_COLOR,
   base64ToBytes,
   LIMITS,
+  makeHdrOutputLut,
   makeImage,
   makeLut,
   pixelDiff,
@@ -275,7 +276,8 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
     // HDR views draw the gain-map export's HDR rendition from the scene the
     // TS executor reads. The bright scenes lift highlights above SDR white,
     // and the clipped one past the nominal peak. A scene-creative LUT that
-    // outputs camera log renders the scene its look keeps, mixed by strength.
+    // outputs camera log renders the scene its look keeps, and a PQ or HLG
+    // output LUT its display light, each mixed by strength.
     const decodeSrgb = (value) =>
       value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
     const encodeSrgb = (value) =>
@@ -296,6 +298,16 @@ export async function runAcceptance({ iterations, unfilterable, goldens }) {
         },
         sceneLut,
       ],
+      ...['pq', 'hlg'].map((transfer) => [
+        `${transfer}-lut`,
+        {
+          ...ADJUSTED_USER_COLOR,
+          userExposureEv: 1,
+          styleKind: 'custom',
+          intensity: 0.71,
+        },
+        makeHdrOutputLut(transfer),
+      ]),
     ]) {
       for (const hdrView of ['above-sdr', 'stop-down']) {
         const name = `u16/hdr-${hdrView}/${label}`

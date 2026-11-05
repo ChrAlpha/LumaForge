@@ -59,13 +59,15 @@ const NO_LUT_UNIFORMS: LUTPipelineProfileUniforms = {
 
 function graphStep<Kind extends ExportColorGraphStep['kind']>(
   graph: SupportedExportColorGraphDescriptor | null,
-  kind: Kind,
+  ...kinds: Kind[]
 ): Extract<ExportColorGraphStep, { kind: Kind }> {
   const step = graph?.steps.find(
     (candidate): candidate is Extract<ExportColorGraphStep, { kind: Kind }> =>
-      candidate.kind === kind,
+      (kinds as readonly string[]).includes(candidate.kind),
   )
-  if (!step) throw new Error(`A drawn LUT has no ${kind} export step.`)
+  if (!step) {
+    throw new Error(`A drawn LUT has no ${kinds.join(' or ')} export step.`)
+  }
   return step
 }
 
@@ -92,7 +94,11 @@ export function resolveGpuPreviewLook(
     }
   const input = graphStep(plan.graph, 'gamut-to-lut-input')
   const encode = graphStep(plan.graph, 'encode-lut-transfer')
-  const output = graphStep(plan.graph, 'lut-output-to-srgb')
+  const output = graphStep(
+    plan.graph,
+    'lut-output-to-srgb',
+    'lut-hdr-output-to-srgb',
+  )
   return {
     look: plan.effective,
     lut: plan.lut,
