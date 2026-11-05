@@ -42,10 +42,12 @@ image-editor assumptions.
 - A full-resolution JPEG may also carry an ISO 21496-1 HDR gain map
   (BT.2020 primaries, 203-nit reference white, 1000-nit nominal peak). Its
   primary is the plain SDR export byte for byte once its APP2 segments go.
-  Only a look without a LUT, or with a scene-creative LUT whose output is a
-  scene-referred log encoding, has the HDR rendition the map stores; a LUT
-  that outputs a display signal has none, and a LUT whose output is HDR (PQ
-  or HLG) stays refused.
+  Only a look without a LUT, with a scene-creative LUT whose output is a
+  scene-referred log encoding, or with a LUT whose output is HDR (PQ or HLG)
+  has the HDR rendition the map stores; a LUT that outputs an SDR display
+  signal has none. An HDR output's SDR picture is its BT.2100 display light
+  through the BT.2390 EETF onto SDR white, and the look strength mixes both
+  renditions with the edited scene in linear light.
 - Color and LUT work is contract work. Preserve input gamut, transfer/log curve,
   LUT intent, scene-referred working assumptions, and output handling.
 - The editing controls are a bounded set the export path reproduces: tone,
@@ -476,8 +478,10 @@ These are owner decisions. They override cleanup advice that says otherwise.
 - HDR gain map export and its preview views. `resolveHdrGainMapSupport` in
   `packages/luma-color-runtime/src/hdr-gain-map.ts` decides which graphs have
   an HDR rendition (`lutHasHdrRendition` for a LUT: scene-creative with a
-  log output), and the engine writes and verifies the
-  container (`packages/render-engine/src/export/jpeg/gain-map-container.ts`);
+  log output, or any role with a PQ or HLG output, whose display light and
+  SDR picture `packages/luma-color-runtime/src/hdr-output.ts` defines), and
+  the engine writes and verifies the container
+  (`packages/render-engine/src/export/jpeg/gain-map-container.ts`);
   the HQ preview JPEG never carries a gain map. The preview's views
   (`src/modules/raw-processor/services/preview/hdr-preview-output.ts`, chosen
   through `src/modules/raw-processor/components/shared/HdrPreviewControl.tsx`)

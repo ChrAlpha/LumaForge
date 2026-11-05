@@ -70,8 +70,10 @@ Good defaults:
   family, such as ARRI LogC, Sony S-Log, Fujifilm F-Log, Canon Log, Nikon N-Log,
   Panasonic V-Log, or RED Log3G10.
 - If the LUT expects an HDR video signal, choose Rec.2100 HLG or PQ as its
-  input. A LUT that outputs HLG or PQ is refused, because the JPEG export needs
-  an SDR output.
+  input. If it outputs one (for example `SLog3_to_HLG`), choose Rec.2100 HLG
+  or PQ as its output: the JPEG then shows the LUT's highlights rolled off
+  smoothly onto SDR white, and midtones up to about 88 nits stay as the LUT
+  made them.
 - If you are unsure, preview the result and prefer the contract that keeps skin,
   skies, shadows, and highlights plausible. Avoid contracts that produce crushed
   blacks, neon colors, or washed-out contrast unless that is the intended look.
@@ -146,12 +148,14 @@ data is byte for byte what a plain export writes, and LumaForge adds only the
 gain map and the metadata that points to it. A
 viewer that reads ISO 21496-1 gain maps on an HDR screen uses it to show
 highlights brighter than SDR white, up to 1000 nits. The HQ preview JPEG
-never carries one. The option needs a look without a LUT, or a creative LUT whose input and
-output are the same camera log (its contract has a camera log on both
-sides): such a LUT keeps the scene, so its highlights above SDR white become
-the HDR picture, mixed in at the look strength. Any other LUT is graded for
-an SDR display, so there is no HDR picture behind it to store, and export
-stays disabled until you clear the LUT or turn the option off.
+never carries one. The option needs a look without a LUT, a creative LUT
+whose output is camera log, or a LUT whose output is HLG or PQ. A creative
+LUT with a camera log output keeps the scene, so its highlights above SDR
+white become the HDR picture, mixed in at the look strength. An HLG or PQ
+output is an HDR picture already, mixed in the same way; the SDR JPEG is that
+picture with its highlights rolled off onto SDR white. Any other LUT is
+graded for an SDR display, so there is no HDR picture behind it to store, and
+export stays disabled until you clear the LUT or turn the option off.
 
 While the option is on, the export panel lets you choose what the preview
 shows:

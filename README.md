@@ -98,13 +98,15 @@ finished JPEG with a look they already enjoy.
 - Upload a custom `.cube` LUT and declare its input and output contract.
 - Work with profile families such as ARRI LogC, RED Log3G10, Sony S-Log,
   Panasonic V-Log, Fujifilm F-Log, Canon Log, Nikon N-Log, ACES, Rec.2100 HLG
-  and PQ inputs, and display sRGB.
+  and PQ inputs and outputs, and display sRGB. A LUT that outputs HLG or PQ
+  gets its SDR picture by rolling the highlights off onto SDR white
+  (ITU-R BT.2390).
 - Export a full-resolution JPEG (quality 0.92) through a bounded worker path,
   with download, share, and clipboard actions where the browser supports them.
   If an earlier export of the same file was interrupted, the next export you
   start uses a safer setting; nothing resumes or exports on its own.
-- Add an HDR gain map to the full-resolution JPEG when the look uses no LUT
-  or a log-to-log creative LUT.
+- Add an HDR gain map to the full-resolution JPEG when the look uses no LUT,
+  a creative LUT that outputs camera log, or a LUT that outputs HLG or PQ.
   Every viewer still gets the same SDR JPEG; an HDR screen that reads
   ISO 21496-1 gain maps shows highlights up to 1000 nits. The preview shows
   the HDR picture on an HDR screen in a WebGPU browser, and on any screen
@@ -134,10 +136,13 @@ produces as a BT.2100-style HDR picture (BT.2020 primaries, reference white
 at 203 nits, peak at 1000 nits) and stores its ratio to the SDR JPEG as an
 ISO 21496-1 gain map. The SDR JPEG keeps the bytes a plain export writes;
 only the gain map and its metadata are added around it. Without a LUT that
-scene is the adjusted one. A creative LUT whose input and output are camera
-log maps scene light to scene light, so its output, decoded and mixed in at
-the chosen strength, is the scene. Any other LUT outputs a picture graded for
-an SDR display, with no HDR picture behind it, so the option refuses it.
+scene is the adjusted one. A creative LUT whose output is camera log maps
+scene light to scene light, so its output, decoded and mixed in at the chosen
+strength, is the scene. A LUT whose output is HLG or PQ already is an HDR
+picture: shown on the BT.2100 reference display and mixed in the same way,
+it is the HDR picture, and the SDR JPEG is that picture with its highlights
+rolled off onto SDR white. Any other LUT outputs a picture graded for an SDR
+display, with no HDR picture behind it, so the option refuses it.
 
 LUT contracts are the small bit of structure that lets LumaForge apply creative
 looks to RAW files without making the user build a color pipeline by hand.
